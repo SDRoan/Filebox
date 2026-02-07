@@ -156,14 +156,5 @@ File Box/
 - `POST /api/share/user` - Share with user
 - `GET /api/share/shared/with-me` - Get shared files
 
-## Notes
 
-- Files are stored locally in `server/uploads/` directory
-- Default storage limit is 10GB per user
-- JWT tokens expire after 7 days
-- Make sure to change `JWT_SECRET` in production
-
-## License
-
-MIT
 
