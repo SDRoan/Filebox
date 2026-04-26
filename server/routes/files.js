@@ -14,8 +14,28 @@ const analytics = require('../services/analytics');
 const appConfig = require('../config/appConfig');
 const StudyGroup = require('../models/StudyGroup');
 const FileMemory = require('../models/FileMemory');
-const predictiveOrgService = require('../services/predictiveOrganization');
+const documentProcessingService = require('../services/documentProcessingService');
+const {
+  buildDocxBufferFromHtml,
+  buildPdfBytesFromHtml,
+  htmlToPlainText,
+} = require('../services/richDocumentBuilder');
 const router = express.Router();
+
+const createHtmlFromText = (text = '') => {
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  const paragraphs = escaped
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${paragraph.replace(/\n/g, '<br>')}</p>`);
+
+  return paragraphs.length > 0 ? paragraphs.join('') : '<p></p>';
+};
 
 // Helper function to log activity
 const logActivity = async (user, action, fileId = null, folderId = null, details = '') => {
@@ -220,61 +240,8 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
     // Send response before background processing
     res.status(201).json(file);
 
-    // Extract text in background (non-blocking)
-    setImmediate(async () => {
-      try {
-        const textExtractor = require('../services/textExtractor');
-        const FileContent = require('../models/FileContent');
-        const aiSearch = require('../services/aiSearch');
-        const summarizationService = require('../services/summarization');
-        const aiConfig = require('../config/aiConfig');
-
-        if (textExtractor.isSupported(file.mimeType)) {
-          console.log(`[Extraction] Starting extraction for: ${file.originalName}`);
-          const extractedText = await textExtractor.extractText(file.path, file.mimeType);
-          console.log(`[Extraction] Extracted ${extractedText.length} characters from ${file.originalName}`);
-          
-          if (extractedText && extractedText.length > 0) {
-            console.log(`[Extraction] Generating embedding for: ${file.originalName}`);
-            const embedding = await aiSearch.generateEmbedding(extractedText);
-            console.log(`[Extraction] Generated embedding (length: ${embedding.length}) for: ${file.originalName}`);
-            
-            const fileContent = new FileContent({
-              file: file._id,
-              extractedText,
-              embedding,
-              extractionStatus: 'completed'
-            });
-
-            // Auto-generate summary if enabled
-            if (aiConfig.summarization.autoSummarize && summarizationService.isAvailable()) {
-              try {
-                console.log(`[Summarization] Auto-generating summary for: ${file.originalName}`);
-                const summary = await summarizationService.generateSummary(extractedText);
-                if (summary && summary.length > 0) {
-                  fileContent.summary = summary;
-                  fileContent.summaryGeneratedAt = new Date();
-                  fileContent.summaryModel = summarizationService.getConfig().model;
-                  console.log(`[Summarization] ✅ Auto-generated summary (${summary.length} chars)`);
-                }
-              } catch (summaryError) {
-                console.error(`[Summarization] ⚠️ Auto-summarization failed:`, summaryError.message);
-                // Don't fail extraction if summarization fails
-              }
-            }
-
-            await fileContent.save();
-            console.log(`[Extraction] ✅ Completed: ${file.originalName}`);
-          } else {
-            console.log(`[Extraction] ⚠️ No text extracted from: ${file.originalName}`);
-          }
-        } else {
-          console.log(`[Extraction] ⏭️ Skipping unsupported type: ${file.mimeType} (${file.originalName})`);
-        }
-      } catch (error) {
-        console.error('Background text extraction error:', error);
-        // Don't fail the upload if extraction fails
-      }
+    await documentProcessingService.queueFileProcessing(file, {
+      force: true,
     });
   } catch (error) {
     console.error('Upload error:', error);
@@ -744,33 +711,11 @@ router.patch('/move/:id', auth, async (req, res) => {
         }
       }
       
-      const sourceFolderId = file.parentFolder;
       file.parentFolder = targetFolderId && targetFolderId !== 'root' ? targetFolderId : null;
       await file.save();
       
       // Log activity
       await logActivity(req.user._id, 'moved', file._id, null, file.originalName);
-      
-      // Record pattern for predictive organization (non-blocking)
-      if (sourceFolderId !== file.parentFolder) {
-        setImmediate(async () => {
-          try {
-            await predictiveOrgService.recordPattern(
-              req.user._id,
-              file,
-              sourceFolderId,
-              file.parentFolder,
-              {
-                actionBefore: 'moved',
-                projectContext: null // Can be enhanced with file memory context
-              }
-            );
-          } catch (err) {
-            console.error('Error recording organization pattern:', err);
-            // Silent fail - pattern tracking is not critical
-          }
-        });
-      }
       
       const io = req.app.get('io');
       io.to(`user-${req.user._id}`).emit('file-moved', file);
@@ -1051,42 +996,26 @@ router.get('/preview-text/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'File not found' });
     }
 
-    // Check if we have extracted text in FileContent
-    let fileContent = await FileContent.findOne({ file: file._id });
-    
-    if (fileContent && fileContent.extractedText && fileContent.extractedText.length > 0) {
-      return res.json({
-        text: fileContent.extractedText,
-        textLength: fileContent.extractedText.length
-      });
-    }
-
-    // If no extracted text exists, try to extract it now
     const textExtractor = require('../services/textExtractor');
-    
-    // Check if extraction is supported (for Word docs, PDFs, etc.)
-    const mimeType = file.mimeType.toLowerCase();
-    const isWordDoc = mimeType.includes('word') || 
-                      mimeType.includes('document') || 
-                      mimeType.includes('msword') ||
-                      mimeType.includes('vnd.openxmlformats-officedocument.wordprocessingml');
-    const isSupported = isWordDoc || 
-                       mimeType.includes('pdf') || 
-                       mimeType.startsWith('text/') ||
-                       (textExtractor.isSupported && textExtractor.isSupported(file.mimeType));
-    
-    if (!isSupported) {
+    if (!textExtractor.isSupported(file.mimeType, file.originalName)) {
       return res.status(400).json({ 
         message: 'Text extraction not supported for this file type'
       });
     }
 
-    // Extract text
-    console.log(`[Preview] Extracting text from: ${file.originalName} (${file.mimeType})`);
-    const extractedText = await textExtractor.extractText(file.path, file.mimeType);
+    const extraction = await documentProcessingService.ensureExtraction(file, { force: false });
+    const extractedText = extraction.text || '';
+    const fileContent =
+      extraction.fileContent ||
+      (await FileContent.findOne({ file: file._id }).select('editorHtml extractionMethod'));
     
     if (!extractedText || extractedText.trim().length === 0) {
-      // For DOCX files, check if file exists and is valid
+      const mimeType = file.mimeType.toLowerCase();
+      const isWordDoc = mimeType.includes('word') ||
+        mimeType.includes('document') ||
+        mimeType.includes('msword') ||
+        mimeType.includes('vnd.openxmlformats-officedocument.wordprocessingml');
+
       if (isWordDoc) {
         const fs = require('fs-extra');
         const fileExists = await fs.pathExists(file.path);
@@ -1104,7 +1033,7 @@ router.get('/preview-text/:id', auth, async (req, res) => {
         }
       }
       return res.status(400).json({ 
-        message: 'No text could be extracted from this file. The file may be empty, corrupted, or in an unsupported format.'
+        message: extraction.error || 'No text could be extracted from this file. The file may be empty, corrupted, or in an unsupported format.'
       });
     }
     
@@ -1119,22 +1048,11 @@ router.get('/preview-text/:id', auth, async (req, res) => {
       });
     }
 
-    // Save to FileContent for future use
-    if (!fileContent) {
-      fileContent = new FileContent({
-        file: file._id,
-        extractedText,
-        extractionStatus: 'completed'
-      });
-    } else {
-      fileContent.extractedText = extractedText;
-      fileContent.extractionStatus = 'completed';
-    }
-    await fileContent.save();
-
     res.json({
       text: extractedText,
-      textLength: extractedText.length
+      textLength: extractedText.length,
+      extractionMethod: extraction.extractionMethod || extraction.fileContent?.extractionMethod || '',
+      editorHtml: fileContent?.editorHtml || '',
     });
   } catch (error) {
     console.error('Error getting preview text:', error);
@@ -1199,6 +1117,10 @@ router.put('/update/:id', auth, upload.single('file'), async (req, res) => {
     }
     await file.save();
 
+    await documentProcessingService.queueFileProcessing(file, {
+      force: true,
+    });
+
     // Log activity
     await logActivity(req.user._id, 'edited', file._id, null, `Updated ${file.originalName}`);
 
@@ -1216,7 +1138,7 @@ router.put('/update/:id', auth, upload.single('file'), async (req, res) => {
 // Update DOCX file from text content
 router.put('/update-docx/:id', auth, async (req, res) => {
   try {
-    const { text, fileName } = req.body;
+    const { text, html, fileName } = req.body;
     const file = await File.findById(req.params.id);
     
     if (!file) {
@@ -1228,9 +1150,11 @@ router.put('/update-docx/:id', auth, async (req, res) => {
       return res.status(403).json({ message: 'You do not have permission to edit this file' });
     }
 
-    const docx = require('docx');
     const fs = require('fs-extra');
     const path = require('path');
+    const editorHtml = typeof html === 'string' && html.trim().length > 0 ? html : createHtmlFromText(text || '');
+    const plainText =
+      typeof text === 'string' && text.trim().length > 0 ? text : htmlToPlainText(editorHtml);
 
     // Create a new version before updating
     const newVersion = new FileVersion({
@@ -1242,23 +1166,8 @@ router.put('/update-docx/:id', auth, async (req, res) => {
     });
     await newVersion.save();
 
-    // Convert text to DOCX paragraphs
-    const paragraphs = text.split('\n').map((line) => 
-      new docx.Paragraph({
-        children: [new docx.TextRun(line || ' ')],
-      })
-    );
-
-    // Create DOCX document
-    const doc = new docx.Document({
-      sections: [{
-        properties: {},
-        children: paragraphs,
-      }],
-    });
-
-    // Generate DOCX buffer
-    const buffer = await docx.Packer.toBuffer(doc);
+    // Generate DOCX buffer from the richer HTML editor model when available.
+    const buffer = await buildDocxBufferFromHtml(editorHtml);
 
     // Delete old file
     if (await fs.pathExists(file.path)) {
@@ -1283,6 +1192,28 @@ router.put('/update-docx/:id', auth, async (req, res) => {
     }
     await file.save();
 
+    await FileContent.findOneAndUpdate(
+      { file: file._id },
+      {
+        $set: {
+          extractedText: plainText,
+          extractedAt: new Date(),
+          extractionMethod: 'editor-rich-docx',
+          extractionStatus: 'completed',
+          editorHtml,
+          editorUpdatedAt: new Date(),
+        },
+        $setOnInsert: {
+          file: file._id,
+        },
+      },
+      { upsert: true },
+    );
+
+    await documentProcessingService.queueFileProcessing(file, {
+      force: true,
+    });
+
     // Log activity
     await logActivity(req.user._id, 'edited', file._id, null, `Updated ${file.originalName}`);
 
@@ -1300,7 +1231,7 @@ router.put('/update-docx/:id', auth, async (req, res) => {
 // Update PDF file from text content
 router.put('/update-pdf/:id', auth, async (req, res) => {
   try {
-    const { text, fileName } = req.body;
+    const { text, html, fileName } = req.body;
     const file = await File.findById(req.params.id);
     
     if (!file) {
@@ -1314,90 +1245,10 @@ router.put('/update-pdf/:id', auth, async (req, res) => {
 
     const fs = require('fs-extra');
     const path = require('path');
-    
-    // Try to use pdf-lib if available, otherwise use a simple text-to-PDF approach
-    let pdfBytes;
-    try {
-      const { PDFDocument, StandardFonts } = require('pdf-lib');
-      
-      // Create new PDF document
-      const pdfDoc = await PDFDocument.create();
-      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      
-      // Split text into pages (approximately 50 lines per page)
-      const lines = text.split('\n');
-      const linesPerPage = 50;
-      const pages = [];
-      
-      for (let i = 0; i < lines.length; i += linesPerPage) {
-        pages.push(lines.slice(i, i + linesPerPage));
-      }
-
-      if (pages.length === 0) {
-        pages.push(['']);
-      }
-
-      // Add pages with text
-      pages.forEach((pageLines) => {
-        const page = pdfDoc.addPage([612, 792]); // US Letter size
-        const pageText = pageLines.join('\n');
-        page.drawText(pageText, {
-          x: 50,
-          y: 750,
-          size: 12,
-          font: font,
-          maxWidth: 512,
-        });
-      });
-
-      // Generate PDF bytes
-      pdfBytes = await pdfDoc.save();
-    } catch (pdfLibError) {
-      // Fallback: Create a simple text-based PDF
-      // Note: Install pdf-lib for better PDF generation: npm install pdf-lib
-      console.log('pdf-lib not available, using fallback method:', pdfLibError.message);
-      
-      // Create a minimal PDF structure
-      const escapedText = text.replace(/[()\\]/g, '\\$&').substring(0, 1000); // Limit length
-      const pdfText = `%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>
-endobj
-4 0 obj
-<< /Length ${escapedText.length + 50} >>
-stream
-BT
-/F1 12 Tf
-50 750 Td
-(${escapedText}) Tj
-ET
-endstream
-endobj
-5 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
-endobj
-xref
-0 6
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000300 00000 n 
-0000000500 00000 n 
-trailer
-<< /Size 6 /Root 1 0 R >>
-startxref
-600
-%%EOF`;
-      
-      pdfBytes = Buffer.from(pdfText);
-    }
+    const editorHtml = typeof html === 'string' && html.trim().length > 0 ? html : createHtmlFromText(text || '');
+    const plainText =
+      typeof text === 'string' && text.trim().length > 0 ? text : htmlToPlainText(editorHtml);
+    const pdfBytes = await buildPdfBytesFromHtml(editorHtml);
 
     // Delete old file
     if (await fs.pathExists(file.path)) {
@@ -1422,6 +1273,28 @@ startxref
     }
     await file.save();
 
+    await FileContent.findOneAndUpdate(
+      { file: file._id },
+      {
+        $set: {
+          extractedText: plainText,
+          extractedAt: new Date(),
+          extractionMethod: 'editor-rich-pdf',
+          extractionStatus: 'completed',
+          editorHtml,
+          editorUpdatedAt: new Date(),
+        },
+        $setOnInsert: {
+          file: file._id,
+        },
+      },
+      { upsert: true },
+    );
+
+    await documentProcessingService.queueFileProcessing(file, {
+      force: true,
+    });
+
     // Log activity
     await logActivity(req.user._id, 'edited', file._id, null, `Updated ${file.originalName}`);
 
@@ -1437,4 +1310,3 @@ startxref
 });
 
 module.exports = router;
-

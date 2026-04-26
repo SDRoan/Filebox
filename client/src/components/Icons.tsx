@@ -40,6 +40,15 @@ export const FilesIcon: React.FC<IconProps> = (props) => (
   </Icon>
 );
 
+// Home Icon - Simple house
+export const HomeIcon: React.FC<IconProps> = (props) => (
+  <Icon {...props}>
+    <path d="M3 11.5L12 4l9 7.5" />
+    <path d="M5 10.5V20h14v-9.5" />
+    <path d="M10 20v-5h4v5" />
+  </Icon>
+);
+
 // Shared Icon - Two overlapping circles
 export const SharedIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
@@ -91,16 +100,6 @@ export const RelationshipsIcon: React.FC<IconProps> = (props) => (
     <circle cx="9" cy="9" r="3" />
     <circle cx="15" cy="15" r="3" />
     <line x1="11.5" y1="10.5" x2="12.5" y2="13.5" />
-  </Icon>
-);
-
-// Social Feed Icon - Grid/layout
-export const SocialFeedIcon: React.FC<IconProps> = (props) => (
-  <Icon {...props}>
-    <rect x="3" y="3" width="7" height="7" rx="1" />
-    <rect x="14" y="3" width="7" height="7" rx="1" />
-    <rect x="3" y="14" width="7" height="7" rx="1" />
-    <rect x="14" y="14" width="7" height="7" rx="1" />
   </Icon>
 );
 
@@ -202,20 +201,6 @@ export const MemoryIcon: React.FC<IconProps> = (props) => (
     <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44L2.5 20.5" />
     <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44L21.5 20.5" />
     <circle cx="12" cy="12" r="2" />
-  </Icon>
-);
-
-// Smart Organize Icon - Sparkles/magic
-export const SmartOrganizeIcon: React.FC<IconProps> = (props) => (
-  <Icon {...props}>
-    <path d="M12 2L2 7l10 5 10-5-10-5z" />
-    <path d="M2 17l10 5 10-5" />
-    <path d="M2 12l10 5 10-5" />
-    <circle cx="12" cy="12" r="1" fill="currentColor" />
-    <circle cx="7" cy="7" r="0.5" fill="currentColor" />
-    <circle cx="17" cy="7" r="0.5" fill="currentColor" />
-    <circle cx="7" cy="17" r="0.5" fill="currentColor" />
-    <circle cx="17" cy="17" r="0.5" fill="currentColor" />
   </Icon>
 );
 
@@ -550,29 +535,12 @@ export const IntegrationIcon: React.FC<IconProps> = (props) => (
   </Icon>
 );
 
-// Referral Icon - Gift/Star
-export const ReferralIcon: React.FC<IconProps> = (props) => (
-  <Icon {...props}>
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-  </Icon>
-);
-
 // Forum Icon - Message square
 export const ForumIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     <line x1="8" y1="10" x2="16" y2="10" />
     <line x1="8" y1="14" x2="16" y2="14" />
-  </Icon>
-);
-
-// Learning/Book Icon
-export const LearningIcon: React.FC<IconProps> = (props) => (
-  <Icon {...props}>
-    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-    <line x1="8" y1="7" x2="18" y2="7" />
-    <line x1="8" y1="11" x2="18" y2="11" />
   </Icon>
 );
 
@@ -646,6 +614,7 @@ export const UnusedIcon: React.FC<IconProps> = (props) => (
 );
 
 export default {
+  HomeIcon,
   FilesIcon,
   SharedIcon,
   StarredIcon,
@@ -653,7 +622,6 @@ export default {
   TeamFoldersIcon,
   FileRequestsIcon,
   RelationshipsIcon,
-  SocialFeedIcon,
   AnalyticsIcon,
   SecurityIcon,
   AIAssistantIcon,
@@ -665,7 +633,6 @@ export default {
   SaveIcon,
   ShareIcon,
   MemoryIcon,
-  SmartOrganizeIcon,
   FolderIcon,
   CloseIcon,
   CheckIcon,
@@ -709,10 +676,7 @@ export default {
   TemplateIcon,
   ShortcutIcon,
   IntegrationIcon,
-  ReferralIcon,
   ForumIcon,
-  LearningIcon,
   CloudBackupIcon,
   FilterIcon,
 };
-

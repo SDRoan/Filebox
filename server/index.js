@@ -20,13 +20,7 @@ const fileRequestRoutes = require('./routes/fileRequests');
 const searchRoutes = require('./routes/search');
 const debugRoutes = require('./routes/debug');
 const relationshipRoutes = require('./routes/relationships');
-const summarizationRoutes = require('./routes/summarization');
-const smartOrganizationRoutes = require('./routes/smartOrganization');
 const analyticsRoutes = require('./routes/analytics');
-const socialRoutes = require('./routes/social');
-
-// Import learning resource scheduler
-const learningResourceScheduler = require('./services/learningResourceScheduler');
 
 const app = express();
 const server = http.createServer(app);
@@ -74,11 +68,7 @@ app.use('/api/file-requests', fileRequestRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/debug', debugRoutes);
 app.use('/api/relationships', relationshipRoutes);
-app.use('/api/summarization', summarizationRoutes);
-app.use('/api/smart-org', smartOrganizationRoutes);
 app.use('/api/analytics', analyticsRoutes);
-app.use('/api/social', socialRoutes);
-app.use('/api/groups', require('./routes/groups'));
 app.use('/api/security', require('./routes/security'));
 app.use('/api/assignments', require('./routes/assignments'));
 app.use('/api/courses', require('./routes/courses'));
@@ -90,15 +80,12 @@ app.use('/api/summaries', require('./routes/summaries'));
 app.use('/api/signatures', require('./routes/signatures'));
 app.use('/api/ai-assistant', require('./routes/aiAssistant'));
 app.use('/api/file-memory', require('./routes/fileMemory'));
-app.use('/api/predictive-org', require('./routes/predictiveOrganization'));
 app.use('/api/cloud-backup', require('./routes/cloudBackup'));
 app.use('/api/templates', require('./routes/templates'));
 app.use('/api/web-shortcuts', require('./routes/webShortcuts'));
 app.use('/api/secured-links', require('./routes/securedLinks'));
 app.use('/api/integrations', require('./routes/integrations'));
-app.use('/api/referrals', require('./routes/referrals'));
 app.use('/api/forums', require('./routes/forums'));
-app.use('/api/learning', require('./routes/learning'));
 app.use('/api/course-notes', require('./routes/courseNotes'));
 app.use('/api/study-schedule', require('./routes/studySchedule'));
 app.use('/api/progress-tracking', require('./routes/progressTracking'));
@@ -257,13 +244,6 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`📡 Backend API:  http://localhost:${PORT}`);
   console.log(`🌐 Frontend App: http://localhost:${CLIENT_PORT}`);
   console.log('═'.repeat(70));
-  
-  // Start learning resource scheduler (updates resources every 24 hours)
-  try {
-    learningResourceScheduler.start();
-  } catch (error) {
-    console.error('Failed to start learning resource scheduler:', error);
-  }
   console.log(`\n✨  👉  OPEN YOUR BROWSER: http://localhost:${CLIENT_PORT}  👈  ✨\n`);
   console.log('═'.repeat(70) + '\n');
   
@@ -293,4 +273,3 @@ server.listen(PORT, '127.0.0.1', () => {
     }
   }, 1000);
 });
-

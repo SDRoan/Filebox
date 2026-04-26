@@ -216,12 +216,12 @@ export const filesAPI = {
     });
     return response.data;
   },
-  updateFileAsDocx: async (fileId: string, text: string, fileName: string) => {
-    const response = await api.put(`/files/update-docx/${fileId}`, { text, fileName });
+  updateFileAsDocx: async (fileId: string, text: string, fileName: string, html?: string) => {
+    const response = await api.put(`/files/update-docx/${fileId}`, { text, fileName, html });
     return response.data;
   },
-  updateFileAsPdf: async (fileId: string, text: string, fileName: string) => {
-    const response = await api.put(`/files/update-pdf/${fileId}`, { text, fileName });
+  updateFileAsPdf: async (fileId: string, text: string, fileName: string, html?: string) => {
+    const response = await api.put(`/files/update-pdf/${fileId}`, { text, fileName, html });
     return response.data;
   },
 };
@@ -435,22 +435,6 @@ export const searchAPI = {
   },
 };
 
-// Summarization API
-export const summarizationAPI = {
-  generateSummary: async (fileId: string, force: boolean = false) => {
-    const response = await api.post(`/summarization/${fileId}`, { force });
-    return response.data;
-  },
-  getSummary: async (fileId: string) => {
-    const response = await api.get(`/summarization/${fileId}`);
-    return response.data;
-  },
-  getConfig: async () => {
-    const response = await api.get('/summarization/config');
-    return response.data;
-  },
-};
-
 // Relationships API
 export const relationshipsAPI = {
   createRelationship: async (
@@ -487,170 +471,6 @@ export const relationshipsAPI = {
   },
   getSuggestions: async (fileId: string) => {
     const response = await api.get(`/relationships/suggestions/${fileId}`);
-    return response.data;
-  },
-};
-
-// Smart Organization API
-export const smartOrgAPI = {
-  analyzeFile: async (fileId: string) => {
-    const response = await api.post(`/smart-org/analyze/${fileId}`);
-    return response.data;
-  },
-  analyzeBulk: async (fileIds: string[]) => {
-    const response = await api.post('/smart-org/analyze-bulk', { fileIds });
-    return response.data;
-  },
-  getSuggestions: async (folderId?: string) => {
-    const url = folderId ? `/smart-org/suggest/${folderId}` : '/smart-org/suggest';
-    const response = await api.get(url);
-    return response.data;
-  },
-  organizeFiles: async (folderName: string, fileIds: string[], parentFolderId?: string) => {
-    const response = await api.post('/smart-org/organize', {
-      folderName,
-      fileIds,
-      parentFolderId
-    });
-    return response.data;
-  },
-};
-
-// Social API
-export const socialAPI = {
-  createPost: async (fileId?: string, folderId?: string, description?: string, isPublic?: boolean, groupId?: string) => {
-    const response = await api.post('/social/post', { fileId, folderId, description, isPublic, groupId });
-    return response.data;
-  },
-  getFeed: async (page: number = 1, limit: number = 20) => {
-    const response = await api.get('/social/feed', { params: { page, limit } });
-    return response.data;
-  },
-  getUserPosts: async (userId: string, page: number = 1, limit: number = 20) => {
-    const response = await api.get(`/social/user/${userId}/posts`, { params: { page, limit } });
-    return response.data;
-  },
-  likePost: async (postId: string) => {
-    const response = await api.post(`/social/post/${postId}/like`);
-    return response.data;
-  },
-  addComment: async (postId: string, text: string) => {
-    const response = await api.post(`/social/post/${postId}/comment`, { text });
-    return response.data;
-  },
-  deletePost: async (postId: string) => {
-    const response = await api.delete(`/social/post/${postId}`);
-    return response.data;
-  },
-  followUser: async (userId: string) => {
-    const response = await api.post(`/social/follow/${userId}`);
-    return response.data;
-  },
-  getFollowStatus: async (userId: string) => {
-    const response = await api.get(`/social/follow/${userId}`);
-    return response.data;
-  },
-  getUserStats: async (userId: string) => {
-    const response = await api.get(`/social/user/${userId}/stats`);
-    return response.data;
-  },
-  discoverUsers: async (limit: number = 10) => {
-    const response = await api.get('/social/discover', { params: { limit } });
-    return response.data;
-  },
-  repostPost: async (postId: string) => {
-    const response = await api.post(`/social/post/${postId}/repost`);
-    return response.data;
-  },
-  savePost: async (postId: string) => {
-    const response = await api.post(`/social/post/${postId}/save`);
-    return response.data;
-  },
-  getSavedPosts: async () => {
-    const response = await api.get('/social/saved');
-    return response.data;
-  },
-  searchUsers: async (query: string) => {
-    const response = await api.get('/social/search/users', { params: { q: query } });
-    return response.data;
-  },
-  getUserProfile: async (userId: string) => {
-    const response = await api.get(`/social/user/${userId}/profile`);
-    return response.data;
-  },
-  updateProfile: async (bio: string) => {
-    const response = await api.patch('/social/profile', { bio });
-    return response.data;
-  },
-  getNotifications: async (limit: number = 50) => {
-    const response = await api.get('/social/notifications', { params: { limit } });
-    return response.data;
-  },
-  markNotificationRead: async (notificationId: string) => {
-    const response = await api.patch(`/social/notifications/${notificationId}/read`);
-    return response.data;
-  },
-  markAllNotificationsRead: async () => {
-    const response = await api.patch('/social/notifications/read-all');
-    return response.data;
-  },
-};
-
-export const groupsAPI = {
-  createGroup: async (name: string, description: string, privacy: string = 'public') => {
-    const response = await api.post('/groups', { name, description, privacy });
-    return response.data;
-  },
-  getGroups: async (page: number = 1, limit: number = 20, search?: string) => {
-    const response = await api.get('/groups', { params: { page, limit, search } });
-    return response.data;
-  },
-  getGroup: async (groupId: string) => {
-    const response = await api.get(`/groups/${groupId}`);
-    return response.data;
-  },
-  joinGroup: async (groupId: string) => {
-    const response = await api.post(`/groups/${groupId}/join`);
-    return response.data;
-  },
-  leaveGroup: async (groupId: string) => {
-    const response = await api.post(`/groups/${groupId}/leave`);
-    return response.data;
-  },
-  getGroupPosts: async (groupId: string, page: number = 1, limit: number = 20) => {
-    const response = await api.get(`/groups/${groupId}/posts`, { params: { page, limit } });
-    return response.data;
-  },
-  addAdmin: async (groupId: string, userId: string) => {
-    const response = await api.post(`/groups/${groupId}/admin/${userId}`, { action: 'add' });
-    return response.data;
-  },
-  removeAdmin: async (groupId: string, userId: string) => {
-    const response = await api.post(`/groups/${groupId}/admin/${userId}`, { action: 'remove' });
-    return response.data;
-  },
-  requestToJoin: async (groupId: string, message?: string) => {
-    const response = await api.post(`/groups/${groupId}/join`, { message });
-    return response.data;
-  },
-  getJoinRequests: async (groupId: string) => {
-    const response = await api.get(`/groups/${groupId}/requests`);
-    return response.data;
-  },
-  acceptJoinRequest: async (groupId: string, requestId: string) => {
-    const response = await api.post(`/groups/${groupId}/requests/${requestId}/accept`);
-    return response.data;
-  },
-  rejectJoinRequest: async (groupId: string, requestId: string) => {
-    const response = await api.post(`/groups/${groupId}/requests/${requestId}/reject`);
-    return response.data;
-  },
-  inviteUsers: async (groupId: string, userIds: string[]) => {
-    const response = await api.post(`/groups/${groupId}/invite`, { userIds });
-    return response.data;
-  },
-  getMyJoinRequests: async () => {
-    const response = await api.get('/groups/requests/my');
     return response.data;
   },
 };
@@ -745,24 +565,6 @@ export const coursesAPI = {
 
 // Study Groups API
 // File Memory API
-// Predictive Organization API
-export const predictiveOrgAPI = {
-  getSuggestions: async (fileId: string, actionBefore?: string) => {
-    const response = await api.get(`/predictive-org/suggestions/${fileId}`, {
-      params: { actionBefore }
-    });
-    return response.data;
-  },
-  getPatterns: async () => {
-    const response = await api.get('/predictive-org/patterns');
-    return response.data;
-  },
-  recordFeedback: async (patternId: string, action: 'accepted' | 'rejected' | 'ignored') => {
-    const response = await api.post(`/predictive-org/feedback/${patternId}`, { action });
-    return response.data;
-  },
-};
-
 export const fileMemoryAPI = {
   getFileMemory: async (fileId: string) => {
     const response = await api.get(`/file-memory/file/${fileId}`);
@@ -974,18 +776,6 @@ export const collectionsAPI = {
   },
 };
 
-// File Summaries API
-export const summariesAPI = {
-  getSummary: async (fileId: string) => {
-    const response = await api.get(`/summaries/file/${fileId}`);
-    return response.data;
-  },
-  generateSummary: async (fileId: string) => {
-    const response = await api.post(`/summaries/file/${fileId}`);
-    return response.data;
-  },
-};
-
 // Signatures API
 export const signaturesAPI = {
   getSignatures: async () => {
@@ -1020,12 +810,22 @@ export const signaturesAPI = {
 
 // AI Assistant API
 export const aiAssistantAPI = {
-  chat: async (question: string, fileId?: string, context?: string) => {
+  chat: async (
+    question: string,
+    fileId?: string,
+    context?: string,
+    history?: Array<{ role: 'user' | 'assistant'; content: string }>
+  ) => {
     const response = await api.post('/ai-assistant/chat', {
       question,
       fileId,
-      context
+      context,
+      history,
     });
+    return response.data;
+  },
+  getStatus: async () => {
+    const response = await api.get('/ai-assistant/status');
     return response.data;
   },
   getFileInsights: async (fileId: string) => {
@@ -1332,38 +1132,6 @@ export const forumsAPI = {
   },
 };
 
-// Learning API
-export const learningAPI = {
-  getResources: async (params?: {
-    category?: string;
-    type?: string;
-    difficulty?: string;
-    search?: string;
-    tags?: string[];
-  }) => {
-    const queryParams = new URLSearchParams();
-    if (params?.category) queryParams.append('category', params.category);
-    if (params?.type) queryParams.append('type', params.type);
-    if (params?.difficulty) queryParams.append('difficulty', params.difficulty);
-    if (params?.search) queryParams.append('search', params.search);
-    if (params?.tags) {
-      params.tags.forEach(tag => queryParams.append('tags', tag));
-    }
-    
-    const queryString = queryParams.toString();
-    const response = await api.get(`/learning${queryString ? `?${queryString}` : ''}`);
-    return response.data;
-  },
-  getResource: async (resourceId: string) => {
-    const response = await api.get(`/learning/${resourceId}`);
-    return response.data;
-  },
-  rateResource: async (resourceId: string, rating: number) => {
-    const response = await api.post(`/learning/${resourceId}/rate`, { rating });
-    return response.data;
-  },
-};
-
 // Course Notes API
 export const courseNotesAPI = {
   getNotes: async (courseId: string) => {
@@ -1546,4 +1314,3 @@ export const studySessionsAPI = {
 };
 
 export default api;
-

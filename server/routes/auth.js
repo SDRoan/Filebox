@@ -8,6 +8,7 @@ const SecuritySettings = require('../models/SecuritySettings');
 const EmailVerification = require('../models/EmailVerification');
 const emailService = require('../services/emailService');
 const appConfig = require('../config/appConfig');
+const auth = require('../middleware/auth');
 const router = express.Router();
 
 // Helper function to create audit log
@@ -37,20 +38,21 @@ function generateVerificationCode() {
 router.post('/register', async (req, res) => {
   try {
     const { email, password, name } = req.body;
+    const normalizedEmail = email?.toLowerCase().trim();
 
-    if (!email || !password || !name) {
+    if (!normalizedEmail || !password || !name) {
       return res.status(400).json({ message: 'Please provide all fields' });
     }
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
     // Check if there's a pending verification for this email
     const existingVerification = await EmailVerification.findOne({ 
-      email, 
+      email: normalizedEmail, 
       verified: false,
       expiresAt: { $gt: new Date() }
     });
@@ -67,7 +69,7 @@ router.post('/register', async (req, res) => {
       existingVerification.registrationData = {
         name,
         password: hashedPassword,
-        email
+        email: normalizedEmail
       };
       existingVerification.expiresAt = expiresAt;
       existingVerification.attempts = 0;
@@ -75,12 +77,12 @@ router.post('/register', async (req, res) => {
     } else {
       // Create new verification
       await EmailVerification.create({
-        email,
+        email: normalizedEmail,
         code: verificationCode,
         registrationData: {
           name,
           password: hashedPassword,
-          email
+          email: normalizedEmail
         },
         expiresAt
       });
@@ -88,17 +90,17 @@ router.post('/register', async (req, res) => {
 
     // Send verification email
     try {
-      await emailService.sendVerificationCode(email, verificationCode, name);
+      await emailService.sendVerificationCode(normalizedEmail, verificationCode, name);
       res.status(200).json({ 
         message: 'Verification code sent to your email. Please check your inbox.',
-        email: email // Return email for frontend to use in verification step
+        email: normalizedEmail // Return email for frontend to use in verification step
       });
     } catch (emailError) {
       console.error('Error sending verification email:', emailError);
       // If email service is not configured, allow registration without verification
       if (!emailService.isConfigured()) {
         // Fallback: Create user directly if email service is not configured
-        const user = new User({ email, password: hashedPassword, name });
+        const user = new User({ email: normalizedEmail, password: hashedPassword, name });
         await user.save();
 
         const rootFolder = new Folder({
@@ -139,14 +141,15 @@ router.post('/register', async (req, res) => {
 router.post('/verify-code', async (req, res) => {
   try {
     const { email, code } = req.body;
+    const normalizedEmail = email?.toLowerCase().trim();
 
-    if (!email || !code) {
+    if (!normalizedEmail || !code) {
       return res.status(400).json({ message: 'Email and verification code are required' });
     }
 
     // Find verification record
     const verification = await EmailVerification.findOne({ 
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       verified: false
     });
 
@@ -178,7 +181,7 @@ router.post('/verify-code', async (req, res) => {
     const { name, password: hashedPassword } = verification.registrationData;
 
     // Double-check user doesn't exist
-    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       verification.verified = true;
       await verification.save();
@@ -187,7 +190,7 @@ router.post('/verify-code', async (req, res) => {
 
     // Create user
     const user = new User({ 
-      email: email.toLowerCase(), 
+      email: normalizedEmail, 
       password: hashedPassword, 
       name 
     });
@@ -232,13 +235,14 @@ router.post('/verify-code', async (req, res) => {
 router.post('/resend-code', async (req, res) => {
   try {
     const { email } = req.body;
+    const normalizedEmail = email?.toLowerCase().trim();
 
-    if (!email) {
+    if (!normalizedEmail) {
       return res.status(400).json({ message: 'Email is required' });
     }
 
     const verification = await EmailVerification.findOne({ 
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       verified: false
     });
 
@@ -254,7 +258,7 @@ router.post('/resend-code', async (req, res) => {
 
     try {
       await emailService.sendVerificationCode(
-        email.toLowerCase(), 
+        normalizedEmail, 
         verificationCode, 
         verification.registrationData.name
       );
@@ -273,27 +277,41 @@ router.post('/resend-code', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = email?.toLowerCase().trim();
     const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
     const userAgent = req.get('user-agent') || 'unknown';
 
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return res.status(400).json({ message: 'Please provide email and password' });
     }
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
-      await createAuditLog(null, 'login_failed', null, null, { email, reason: 'User not found' }, ipAddress, userAgent, 'failure');
+      await createAuditLog(null, 'login_failed', null, null, { email: normalizedEmail, reason: 'User not found' }, ipAddress, userAgent, 'failure');
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
     // Check if account is locked
     const securitySettings = await SecuritySettings.findOne({ userId: user._id });
     if (securitySettings && securitySettings.accountLockedUntil && securitySettings.accountLockedUntil > new Date()) {
-      await createAuditLog(user._id, 'login_failed', null, null, { email, reason: 'Account locked' }, ipAddress, userAgent, 'denied');
+      await createAuditLog(user._id, 'login_failed', null, null, { email: normalizedEmail, reason: 'Account locked' }, ipAddress, userAgent, 'denied');
       return res.status(403).json({ message: 'Account is temporarily locked. Please try again later.' });
     }
 
-    const isMatch = await user.comparePassword(password);
+    let isMatch = await user.comparePassword(password);
+
+    // Repair accounts affected by older double-hash registration flows.
+    if (!isMatch) {
+      const verification = await EmailVerification.findOne({ email: normalizedEmail }).sort({ createdAt: -1 });
+      const storedRegistrationHash = verification?.registrationData?.password;
+
+      if (storedRegistrationHash && await bcrypt.compare(password, storedRegistrationHash)) {
+        user.password = storedRegistrationHash;
+        await user.save();
+        isMatch = true;
+      }
+    }
+
     if (!isMatch) {
       // Increment failed login attempts
       if (securitySettings) {
@@ -304,7 +322,7 @@ router.post('/login', async (req, res) => {
         await securitySettings.save();
       }
       
-      await createAuditLog(user._id, 'login_failed', null, null, { email, reason: 'Invalid password' }, ipAddress, userAgent, 'failure');
+      await createAuditLog(user._id, 'login_failed', null, null, { email: normalizedEmail, reason: 'Invalid password' }, ipAddress, userAgent, 'failure');
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
@@ -327,7 +345,7 @@ router.post('/login', async (req, res) => {
     );
 
     // Create successful login audit log
-    await createAuditLog(user._id, 'login', null, null, { email }, ipAddress, userAgent, 'success');
+    await createAuditLog(user._id, 'login', null, null, { email: normalizedEmail }, ipAddress, userAgent, 'success');
 
     res.json({
       token,
@@ -347,29 +365,17 @@ router.post('/login', async (req, res) => {
 });
 
 // Get current user
-router.get('/me', async (req, res) => {
+router.get('/me', auth, async (req, res) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    
-    if (!token) {
-      return res.status(401).json({ message: 'No token provided' });
-    }
-
-    const decoded = jwt.verify(token, appConfig.jwt.secret);
-    const user = await User.findById(decoded.userId).select('-password');
-    
-    if (!user) {
-      return res.status(401).json({ message: 'User not found' });
-    }
-
     res.json({
       user: {
-        id: user._id,
-        email: user.email,
-        name: user.name,
-        storageUsed: user.storageUsed,
-        storageLimit: user.storageLimit
-      }
+        id: req.user._id,
+        email: req.user.email,
+        name: req.user.name,
+        storageUsed: req.user.storageUsed,
+        storageLimit: req.user.storageLimit
+      },
+      authBypassed: Boolean(req.authBypassed),
     });
   } catch (error) {
     res.status(401).json({ message: 'Invalid token' });
@@ -377,4 +383,3 @@ router.get('/me', async (req, res) => {
 });
 
 module.exports = router;
-

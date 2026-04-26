@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FileItemType, Folder } from '../types';
 import { searchAPI } from '../services/api';
+import { SearchIcon, FolderIcon, DocumentIcon, ImageIcon, VideoIcon } from './Icons';
 import './SearchBar.css';
 
 interface SearchBarProps {
@@ -14,6 +15,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onFileClick, onFolderClick }) => 
   const [loading, setLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Keyboard shortcut: Ctrl+K or Cmd+K to focus search
   useEffect(() => {
@@ -31,6 +33,17 @@ const SearchBar: React.FC<SearchBarProps> = ({ onFileClick, onFolderClick }) => 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [showResults]);
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setShowResults(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, []);
 
   useEffect(() => {
     if (query.trim().length === 0) {
@@ -76,73 +89,110 @@ const SearchBar: React.FC<SearchBarProps> = ({ onFileClick, onFolderClick }) => 
     setShowResults(false);
   };
 
+  const handleClear = () => {
+    setQuery('');
+    setShowResults(false);
+    inputRef.current?.focus();
+  };
+
+  const renderFileIcon = (file: FileItemType) => {
+    if (file.mimeType.startsWith('image/')) {
+      return <ImageIcon size={16} color="currentColor" />;
+    }
+    if (file.mimeType.startsWith('video/')) {
+      return <VideoIcon size={16} color="currentColor" />;
+    }
+    return <DocumentIcon size={16} color="currentColor" />;
+  };
+
+  const shouldShowDropdown = showResults && (loading || query.trim().length > 0);
+
   return (
-    <div className="search-bar-container">
-      <div className="search-input-wrapper">
+    <div className="global-search" ref={containerRef}>
+      <div className="global-search-meta">
+        <span className="global-search-title">Search your drive</span>
+        <span className="global-search-caption">Files, folders, and document text</span>
+      </div>
+      <div className="global-search-input-wrapper">
+        <SearchIcon size={18} color="currentColor" />
         <input
           ref={inputRef}
           type="text"
-          placeholder="Search files and folders..."
+          placeholder="Search files, folders, and text inside documents..."
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => query.trim().length > 0 && setShowResults(true)}
-          className="search-input"
+          className="global-search-input"
         />
-        <span className="search-icon"></span>
-        <div className="search-shortcut-hint">
-          <kbd>⌘</kbd><kbd>K</kbd>
-        </div>
+        {query ? (
+          <button
+            type="button"
+            className="global-search-clear"
+            onClick={handleClear}
+          >
+            Clear
+          </button>
+        ) : (
+          <div className="global-search-shortcut">
+            <kbd>⌘</kbd><kbd>K</kbd>
+          </div>
+        )}
       </div>
 
-      {showResults && (results.files.length > 0 || results.folders.length > 0 || loading) && (
-        <div className="search-results">
+      {shouldShowDropdown && (
+        <div className="global-search-results">
           {loading && (
-            <div className="search-loading">Searching...</div>
+            <div className="global-search-state">Searching...</div>
           )}
 
           {!loading && results.folders.length > 0 && (
-            <div className="search-section">
-              <div className="search-section-title">Folders</div>
+            <div className="global-search-section">
+              <div className="global-search-section-title">Folders</div>
               {results.folders.map((folder) => (
                 <div
                   key={folder._id}
-                  className="search-result-item"
+                  className="global-search-result-item"
                   onClick={() => handleFolderClick(folder)}
                 >
-                  <span className="result-icon"></span>
-                  <span className="result-name">{folder.name}</span>
+                  <span className="global-search-result-icon">
+                    <FolderIcon size={16} color="currentColor" />
+                  </span>
+                  <div className="global-search-result-body">
+                    <span className="global-search-result-name">{folder.name}</span>
+                    <span className="global-search-result-meta">Folder</span>
+                  </div>
                 </div>
               ))}
             </div>
           )}
 
           {!loading && results.files.length > 0 && (
-            <div className="search-section">
-              <div className="search-section-title">
+            <div className="global-search-section">
+              <div className="global-search-section-title">
                 Files
               </div>
               {results.files.map((file) => (
                 <div
                   key={file._id}
-                  className="search-result-item"
+                  className="global-search-result-item"
                   onClick={() => handleFileClick(file)}
                 >
-                  <span className="result-icon">
-                    {file.mimeType.startsWith('image/') ? '' :
-                     file.mimeType.startsWith('video/') ? 'Video' :
-                     file.mimeType.includes('pdf') ? '' : ''}
+                  <span className="global-search-result-icon">
+                    {renderFileIcon(file)}
                   </span>
-                  <span className="result-name">{file.originalName}</span>
-                  <span className="result-meta">
-                    {(file.size / 1024).toFixed(1)} KB
-                  </span>
+                  <div className="global-search-result-body">
+                    <span className="global-search-result-name">{file.originalName}</span>
+                    <span className="global-search-result-meta">
+                      {file.mimeType.includes('pdf') ? 'PDF' : file.mimeType.includes('word') ? 'Document' : 'File'} • {(file.size / 1024).toFixed(1)} KB
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
           )}
 
           {!loading && results.files.length === 0 && results.folders.length === 0 && query.trim().length > 0 && (
-            <div className="search-no-results">No results found</div>
+            <div className="global-search-state">No results found</div>
           )}
         </div>
       )}
@@ -151,4 +201,3 @@ const SearchBar: React.FC<SearchBarProps> = ({ onFileClick, onFolderClick }) => 
 };
 
 export default SearchBar;
-

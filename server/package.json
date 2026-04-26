@@ -5,9 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js",
-    "seed:learning": "node scripts/seedLearningResources.js",
-    "generate:learning": "node scripts/generateLearningResources.js"
+    "dev": "nodemon index.js"
   },
   "dependencies": {
     "@huggingface/inference": "^4.13.4",

@@ -1,7 +1,15 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { aiAssistantAPI, filesAPI } from '../services/api';
 import { FileItemType } from '../types';
-import { AIAssistantIcon, UploadIcon, DocumentIcon, LoadingIcon, CheckIcon, CloseIcon, ArrowRightIcon } from './Icons';
+import {
+  AIAssistantIcon,
+  UploadIcon,
+  DocumentIcon,
+  LoadingIcon,
+  CheckIcon,
+  CloseIcon,
+  ArrowRightIcon,
+} from './Icons';
 import './AIAssistant.css';
 
 interface Message {
@@ -27,17 +35,44 @@ interface UploadedFile {
   error?: string;
 }
 
+interface AssistantStatus {
+  reachable: boolean;
+  ready: boolean;
+  version?: string;
+  assistantModel?: string;
+  plannerModel?: string;
+  assistantMode?: string;
+  assistantModelAvailable?: boolean;
+  plannerModelAvailable?: boolean;
+  error?: string;
+}
+
+const MAX_UPLOAD_FILES = 10;
+const MAX_HISTORY_MESSAGES = 10;
+const SUPPORTED_TYPES = ['pdf', 'doc', 'docx', 'txt', 'md', 'rtf', 'odt'];
+
+const starterMessage: Message = {
+  id: 'welcome',
+  type: 'assistant',
+  content:
+    "I’m your local File Box copilot running on Ollama.\n\nYou can treat me like an AI version of the user inside this website. Ask me to do the same kinds of actions you would normally do yourself: create folders, move or rename files, share items, make file requests, create shortcuts, secured links, templates, team spaces, courses, assignments, study groups, backups, and more.",
+  timestamp: new Date(),
+};
+
+const suggestedPrompts = [
+  'What changed recently in my drive?',
+  'Summarize the selected file for me.',
+  'Create a folder called Tax Docs.',
+  'Create a file request called Upload W2 Forms.',
+  'Create a shortcut for https://openai.com called OpenAI.',
+  'Rename the selected file to cleaned-resume.pdf.',
+];
+
 const AIAssistant: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      type: 'assistant',
-      content: "Hi! I'm your AI assistant for File Box - think of me as ChatGPT for your File Box platform!\n\nI can answer **ANY question** about how to use File Box, including:\n- How to create relationships between files\n- How to share files with other users\n- How to use study groups and all their features\n- How to navigate and use any feature\n- How to organize your files\n- And much more!\n\nI can also **read and summarize your files** - just ask me to summarize any file, or select a file below.\n\n**What would you like to know?**",
-      timestamp: new Date()
-    }
-  ]);
+  const [messages, setMessages] = useState<Message[]>([starterMessage]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<AssistantStatus | null>(null);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [availableFiles, setAvailableFiles] = useState<FileItemType[]>([]);
   const [fileSearchQuery, setFileSearchQuery] = useState('');
@@ -45,14 +80,13 @@ const AIAssistant: React.FC = () => {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
-  const MAX_UPLOAD_FILES = 10;
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [messages, loading]);
 
   useEffect(() => {
+    loadAssistantStatus();
     loadAvailableFiles();
   }, []);
 
@@ -60,14 +94,25 @@ const AIAssistant: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const loadAssistantStatus = async () => {
+    try {
+      const data = await aiAssistantAPI.getStatus();
+      setStatus(data);
+    } catch (error: any) {
+      setStatus({
+        reachable: false,
+        ready: false,
+        error: error?.response?.data?.message || error?.message || 'Could not reach the local Ollama assistant.',
+      });
+    }
+  };
+
   const loadAvailableFiles = async () => {
     try {
       const data = await filesAPI.getFiles();
-      // Filter to only show files (not folders) and supported file types
-      const supportedTypes = ['pdf', 'doc', 'docx', 'txt', 'md', 'rtf', 'odt'];
-      const files = (data.files || []).filter((file: FileItemType) => 
-        !file.isFolder && 
-        supportedTypes.some(type => file.originalName.toLowerCase().endsWith(`.${type}`))
+      const files = (data.files || []).filter((file: FileItemType) =>
+        !file.isFolder &&
+        SUPPORTED_TYPES.some((type) => file.originalName.toLowerCase().endsWith(`.${type}`))
       );
       setAvailableFiles(files);
     } catch (error) {
@@ -75,202 +120,296 @@ const AIAssistant: React.FC = () => {
     }
   };
 
-  const handleFileUpload = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+  const selectedFile =
+    availableFiles.find((file) => file._id === selectedFileId) ||
+    uploadedFiles.find((upload) => upload.uploaded?._id === selectedFileId)?.uploaded ||
+    null;
 
-    const filesArray = Array.from(files);
-    
-    // Check if adding these files would exceed the limit
-    if (uploadedFiles.length + filesArray.length > MAX_UPLOAD_FILES) {
-      alert(`You can upload a maximum of ${MAX_UPLOAD_FILES} files. You currently have ${uploadedFiles.length} file(s) uploaded.`);
+  const filteredFiles = availableFiles
+    .filter((file) => file.originalName.toLowerCase().includes(fileSearchQuery.toLowerCase()))
+    .slice(0, 12);
+
+  const buildAssistantContext = () => {
+    const recentUploads = uploadedFiles
+      .filter((upload) => upload.uploaded)
+      .map((upload) => upload.uploaded?.originalName)
+      .filter(Boolean)
+      .join(', ');
+
+    return [
+      'Surface: File Box AI assistant page.',
+      'Role: local drive copilot with tool use for storage actions.',
+      selectedFile ? `Selected file: ${selectedFile.originalName}.` : 'Selected file: none.',
+      recentUploads ? `Recently uploaded files: ${recentUploads}.` : '',
+    ]
+      .filter(Boolean)
+      .join(' ');
+  };
+
+  const toHistoryPayload = (messageList: Message[]) =>
+    messageList
+      .filter((message) => message.type === 'user' || message.type === 'assistant')
+      .slice(-MAX_HISTORY_MESSAGES)
+      .map((message) => ({
+        role: message.type,
+        content: message.content,
+      }));
+
+  const appendAssistantError = (error: any) => {
+    const content =
+      error?.response?.data?.answer ||
+      error?.response?.data?.message ||
+      error?.message ||
+      'The assistant hit an unexpected error.';
+
+    const errorMessage: Message = {
+      id: `assistant-error-${Date.now()}`,
+      type: 'assistant',
+      content,
+      timestamp: new Date(),
+    };
+
+    setMessages((prev) => [...prev, errorMessage]);
+  };
+
+  const sendPrompt = async (prompt: string) => {
+    const trimmedPrompt = prompt.trim();
+    if (!trimmedPrompt || loading) {
       return;
     }
 
-    // Create upload file objects
-    const newUploads: UploadedFile[] = filesArray.map(file => ({
-      id: Date.now().toString() + Math.random().toString(),
-      file,
-      uploading: true
-    }));
-
-    setUploadedFiles(prev => [...prev, ...newUploads]);
-
-    // Upload files
-    for (let i = 0; i < newUploads.length; i++) {
-      const upload = newUploads[i];
-      try {
-        const uploadedFile = await filesAPI.uploadFile(upload.file);
-        
-        setUploadedFiles(prev => prev.map(u => 
-          u.id === upload.id 
-            ? { ...u, uploading: false, uploaded: uploadedFile }
-            : u
-        ));
-
-        // Reload available files first
-        await loadAvailableFiles();
-
-        // Add message showing file was uploaded
-        const uploadMessage: Message = {
-          id: `upload-${upload.id}`,
-          type: 'user',
-          content: `Uploaded: ${upload.file.name}`,
-          timestamp: new Date(),
-          uploadedFiles: [uploadedFile]
-        };
-        setMessages(prev => [...prev, uploadMessage]);
-        
-        // Add assistant confirmation message
-        const confirmMessage: Message = {
-          id: `confirm-${upload.id}`,
-          type: 'assistant',
-          content: `File "${upload.file.name}" has been uploaded successfully! You can now ask me to create relationships with it, summarize it, or perform other actions.`,
-          timestamp: new Date()
-        };
-        setTimeout(() => {
-          setMessages(prev => [...prev, confirmMessage]);
-        }, 500);
-      } catch (error: any) {
-        console.error('Error uploading file:', error);
-        setUploadedFiles(prev => prev.map(u => 
-          u.id === upload.id 
-            ? { ...u, uploading: false, error: error.message || 'Upload failed' }
-            : u
-        ));
-      }
-    }
-  };
-
-  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      handleFileUpload(files);
-    }
-    // Reset input so same file can be selected again
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const removeUploadedFile = (id: string) => {
-    setUploadedFiles(prev => prev.filter(u => u.id !== id));
-  };
-
-  const handleSend = async () => {
-    if (!input.trim() || loading) return;
-
     const userMessage: Message = {
-      id: Date.now().toString(),
+      id: `user-${Date.now()}`,
       type: 'user',
-      content: input,
+      content: trimmedPrompt,
       timestamp: new Date(),
-      fileId: selectedFileId || undefined
+      fileId: selectedFileId || undefined,
     };
 
-    setMessages(prev => [...prev, userMessage]);
+    const nextMessages = [...messages, userMessage];
+    setMessages(nextMessages);
     setInput('');
     setLoading(true);
 
     try {
       const response = await aiAssistantAPI.chat(
-        input,
+        trimmedPrompt,
         selectedFileId || undefined,
-        `User is asking about files. Previous context: ${messages.slice(-3).map(m => m.content).join(' ')}`
+        buildAssistantContext(),
+        toHistoryPayload(nextMessages)
       );
 
       const assistantMessage: Message = {
-        id: (Date.now() + 1).toString(),
+        id: `assistant-${Date.now()}`,
         type: 'assistant',
         content: response.answer,
-        timestamp: new Date(response.timestamp),
-        fileId: response.fileId || undefined,
-        action: response.action || undefined
+        timestamp: new Date(response.timestamp || Date.now()),
+        fileId: response.fileId ? String(response.fileId) : undefined,
+        action: response.action || undefined,
       };
 
-      setMessages(prev => [...prev, assistantMessage]);
-      
-      // If an action was performed successfully, refresh file list
-      if (response.action && response.action.success) {
-        // Reload available files to reflect changes
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      if (response.fileId) {
+        setSelectedFileId(String(response.fileId));
+      }
+
+      if (response.action?.success) {
         setTimeout(() => {
           loadAvailableFiles();
-        }, 500);
+        }, 400);
       }
     } catch (error: any) {
-      console.error('AI Assistant error:', error);
-      
-      // Handle different error formats - backend returns errors in 'answer' field
-      let errorContent = 'Sorry, I encountered an error. ';
-      
-      if (error.response?.data?.answer) {
-        // Backend returned formatted error message in answer field
-        errorContent = error.response.data.answer;
-      } else if (error.response?.data?.message) {
-        // Backend returned error message
-        errorContent = error.response.data.message;
-      } else if (error.message) {
-        // Network or other error
-        errorContent += error.message;
-      } else {
-        errorContent += 'Please try again or check your connection.';
-      }
-      
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: 'assistant',
-        content: errorContent,
-        timestamp: new Date(),
-        action: undefined
-      };
-      setMessages(prev => [...prev, errorMessage]);
+      console.error('AI assistant error:', error);
+      appendAssistantError(error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleSend = async () => {
+    await sendPrompt(input);
+  };
+
+  const handleQuickPrompt = async (prompt: string) => {
+    setInput(prompt);
+    await sendPrompt(prompt);
+  };
+
+  const handleComposerKeyDown = async (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      await handleSend();
     }
   };
 
-  const suggestedQuestions = [
-    "How do I create a relationship between two files?",
-    "How do I share a file with another user?",
-    "How do I create a study group?",
-    "How do I upload files?",
-    "What features does File Box have?",
-    "How do I use the relationship graph?"
-  ];
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) {
+      return;
+    }
 
-  const filteredFiles = availableFiles.filter(file =>
-    file.originalName.toLowerCase().includes(fileSearchQuery.toLowerCase())
-  ).slice(0, 10);
+    const filesArray = Array.from(files);
+
+    if (uploadedFiles.length + filesArray.length > MAX_UPLOAD_FILES) {
+      alert(`You can upload up to ${MAX_UPLOAD_FILES} files here.`);
+      return;
+    }
+
+    const pendingUploads: UploadedFile[] = filesArray.map((file) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      file,
+      uploading: true,
+    }));
+
+    setUploadedFiles((prev) => [...prev, ...pendingUploads]);
+
+    for (const pendingUpload of pendingUploads) {
+      try {
+        const uploadedFile = await filesAPI.uploadFile(pendingUpload.file);
+
+        setUploadedFiles((prev) =>
+          prev.map((upload) =>
+            upload.id === pendingUpload.id
+              ? { ...upload, uploading: false, uploaded: uploadedFile }
+              : upload
+          )
+        );
+
+        setSelectedFileId(uploadedFile._id);
+        await loadAvailableFiles();
+
+        const uploadMessage: Message = {
+          id: `upload-${pendingUpload.id}`,
+          type: 'assistant',
+          content: `Uploaded "${pendingUpload.file.name}" and selected it for context. You can ask me to summarize it, explain it, or do something with it now.`,
+          timestamp: new Date(),
+          uploadedFiles: [uploadedFile],
+          fileId: uploadedFile._id,
+        };
+
+        setMessages((prev) => [...prev, uploadMessage]);
+      } catch (error: any) {
+        console.error('Error uploading file:', error);
+        setUploadedFiles((prev) =>
+          prev.map((upload) =>
+            upload.id === pendingUpload.id
+              ? {
+                  ...upload,
+                  uploading: false,
+                  error: error?.response?.data?.message || error.message || 'Upload failed',
+                }
+              : upload
+          )
+        );
+      }
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    handleFileUpload(e.target.files);
+  };
+
+  const removeUploadedFile = (id: string) => {
+    const upload = uploadedFiles.find((item) => item.id === id);
+    if (upload?.uploaded?._id === selectedFileId) {
+      setSelectedFileId(null);
+    }
+
+    setUploadedFiles((prev) => prev.filter((item) => item.id !== id));
+  };
 
   return (
     <div className="ai-assistant-container">
-      <div className="ai-assistant-header">
-        <h2>AI Assistant</h2>
-        <p>Ask me anything or upload files to get started</p>
-        
-        {/* Simplified File Actions */}
-        <div className="file-actions">
-          <button 
-            className="action-btn upload-btn"
+      <div className="ai-assistant-hero">
+        <div className="ai-assistant-hero-copy">
+          <span className="ai-assistant-eyebrow">LOCAL COPILOT</span>
+          <h2>Chat with your drive</h2>
+          <p>
+            This assistant uses Ollama to act like your operator inside File Box:
+            answer questions, understand files, and perform the same website actions a
+            normal user can perform.
+          </p>
+          <div className="ai-capability-row">
+            <span>Grounded in your files</span>
+            <span>Tool actions</span>
+            <span>Ollama local models</span>
+          </div>
+        </div>
+
+        <div className={`ai-status-card ${status?.ready ? 'is-ready' : 'is-warning'}`}>
+          <div className="ai-status-head">
+            <span className="ai-status-dot" />
+            <strong>{status?.ready ? 'Ollama connected' : 'Ollama needs attention'}</strong>
+          </div>
+          <p>
+            {status?.ready
+              ? `${status?.assistantModel || 'model'} live with planner ${status?.plannerModel || 'model'}.`
+              : status?.error || 'Start Ollama locally and make sure the configured models are installed.'}
+          </p>
+          <div className="ai-status-meta">
+            <span>{status?.assistantMode || 'copilot'}</span>
+            {status?.version ? <span>v{status.version}</span> : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="ai-control-bar">
+        <div className="ai-control-left">
+          <button
+            className="ai-control-btn primary"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploadedFiles.length >= MAX_UPLOAD_FILES}
           >
-            <UploadIcon size={16} color="#ffffff" />
-            <span>Upload ({uploadedFiles.length}/{MAX_UPLOAD_FILES})</span>
+            <UploadIcon size={16} color="currentColor" />
+            <span>Upload context</span>
           </button>
-          <button 
-            className="action-btn select-btn"
-            onClick={() => setShowFileSelector(!showFileSelector)}
-          >
-            <DocumentIcon size={16} color="#ffffff" />
-            <span>Select File</span>
-          </button>
+
+          <div className="ai-file-picker">
+            <button
+              className="ai-control-btn"
+              onClick={() => setShowFileSelector((prev) => !prev)}
+            >
+              <DocumentIcon size={16} color="currentColor" />
+              <span>{selectedFile ? 'Change file' : 'Pick a file'}</span>
+            </button>
+
+            {showFileSelector && (
+              <div className="file-selector-dropdown">
+                <input
+                  type="text"
+                  placeholder="Search files..."
+                  value={fileSearchQuery}
+                  onChange={(e) => setFileSearchQuery(e.target.value)}
+                  className="file-search-input"
+                />
+                <div className="file-list">
+                  {filteredFiles.length > 0 ? (
+                    filteredFiles.map((file) => (
+                      <button
+                        key={file._id}
+                        type="button"
+                        className={`file-item ${selectedFileId === file._id ? 'selected' : ''}`}
+                        onClick={() => {
+                          setSelectedFileId(file._id);
+                          setShowFileSelector(false);
+                          setFileSearchQuery('');
+                        }}
+                      >
+                        <span className="file-name">{file.originalName}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="no-files">No supported files found</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <input
             ref={fileInputRef}
             type="file"
@@ -280,158 +419,144 @@ const AIAssistant: React.FC = () => {
           />
         </div>
 
-        {/* Uploaded Files - Simplified */}
-        {uploadedFiles.length > 0 && (
-          <div className="uploaded-files-mini">
-            {uploadedFiles.map(upload => (
-              <div key={upload.id} className="upload-mini-item">
-                {upload.uploading ? (
-                  <LoadingIcon size={16} color="currentColor" />
-                ) : upload.error ? (
-                  <CloseIcon size={16} color="#ef4444" />
-                ) : (
-                  <CheckIcon size={16} color="#10b981" />
-                )}
-                <span>{upload.file.name}</span>
-                {!upload.uploading && (
-                  <button onClick={() => removeUploadedFile(upload.id)}>
-                    <CloseIcon size={14} color="currentColor" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* File Selector Dropdown */}
-        {showFileSelector && (
-          <div className="file-selector-dropdown">
-            <input
-              type="text"
-              placeholder="Search files..."
-              value={fileSearchQuery}
-              onChange={(e) => setFileSearchQuery(e.target.value)}
-              className="file-search-input"
-            />
-            <div className="file-list">
-              {filteredFiles.length > 0 ? (
-                filteredFiles.map(file => (
-                  <div
-                    key={file._id}
-                    className={`file-item ${selectedFileId === file._id ? 'selected' : ''}`}
-                    onClick={() => {
-                      setSelectedFileId(file._id);
-                      setShowFileSelector(false);
-                      setFileSearchQuery('');
-                    }}
-                  >
-                    <span className="file-name">{file.originalName}</span>
-                  </div>
-                ))
-              ) : (
-                <div className="no-files">No files found</div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="ai-assistant-messages">
-        {messages.map((message) => (
-          <div key={message.id} className={`message message-${message.type}`}>
-            <div className="message-content">
-              {message.type === 'assistant' && (
-                <span className="message-avatar">
-                  <AIAssistantIcon size={24} color="#6b7280" />
-                </span>
-              )}
-              <div className="message-text">
-                <div 
-                  dangerouslySetInnerHTML={{ 
-                    __html: message.content.replace(/\n/g, '<br />').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                  }} 
-                />
-                {message.uploadedFiles && message.uploadedFiles.length > 0 && (
-                  <div className="uploaded-files-in-message">
-                    {message.uploadedFiles.map(file => (
-                      <div key={file._id} className="file-chip">
-                        <DocumentIcon size={16} color="currentColor" style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                        {file.originalName}
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {message.action && message.action.success && (
-                  <div className="action-success-badge">
-                    <CheckIcon size={14} color="#10b981" style={{ display: 'inline-block', marginRight: '0.25rem', verticalAlign: 'middle' }} />
-                    Action completed
-                  </div>
-                )}
-                <span className="message-time">
-                  {message.timestamp.toLocaleTimeString()}
-                </span>
-              </div>
-            </div>
-          </div>
-        ))}
-        {loading && (
-          <div className="message message-assistant">
-            <div className="message-content">
-              <span className="message-avatar">
-                <AIAssistantIcon size={24} color="#6b7280" />
-              </span>
-              <div className="message-text">
-                <div className="typing-indicator">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {messages.length === 1 && (
-        <div className="suggested-questions">
-          <div className="suggestions-grid">
-            {suggestedQuestions.slice(0, 4).map((q, i) => (
-              <button
-                key={i}
-                className="suggestion-btn"
-                onClick={() => {
-                  setInput(q);
-                  setTimeout(() => handleSend(), 100);
-                }}
-              >
-                {q}
+        <div className="ai-control-right">
+          {selectedFile ? (
+            <div className="selected-file-chip">
+              <DocumentIcon size={14} color="currentColor" />
+              <span>{selectedFile.originalName}</span>
+              <button type="button" onClick={() => setSelectedFileId(null)} aria-label="Clear selected file">
+                <CloseIcon size={14} color="currentColor" />
               </button>
-            ))}
-          </div>
+            </div>
+          ) : (
+            <div className="selected-file-empty">No file selected</div>
+          )}
+        </div>
+      </div>
+
+      {uploadedFiles.length > 0 && (
+        <div className="uploaded-files-mini">
+          {uploadedFiles.map((upload) => (
+            <div key={upload.id} className="upload-mini-item">
+              {upload.uploading ? (
+                <LoadingIcon size={14} color="currentColor" />
+              ) : upload.error ? (
+                <CloseIcon size={14} color="#dc2626" />
+              ) : (
+                <CheckIcon size={14} color="#059669" />
+              )}
+              <span>{upload.file.name}</span>
+              {!upload.uploading ? (
+                <button type="button" onClick={() => removeUploadedFile(upload.id)} aria-label="Remove uploaded file">
+                  <CloseIcon size={12} color="currentColor" />
+                </button>
+              ) : null}
+            </div>
+          ))}
         </div>
       )}
 
-      <div className="ai-assistant-input">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyPress={handleKeyPress}
-          placeholder="Ask me anything about your files..."
-          disabled={loading}
-        />
-        <button onClick={handleSend} disabled={loading || !input.trim()}>
+      <div className="ai-chat-shell">
+        <div className="ai-assistant-messages">
+          {messages.map((message) => (
+            <div key={message.id} className={`message message-${message.type}`}>
+              <div className="message-content">
+                {message.type === 'assistant' ? (
+                  <span className="message-avatar">
+                    <AIAssistantIcon size={20} color="#0f766e" />
+                  </span>
+                ) : null}
+
+                <div className="message-card">
+                  <div className="message-role">{message.type === 'assistant' ? 'Copilot' : 'You'}</div>
+                  <div className="message-body">{message.content}</div>
+
+                  {message.uploadedFiles?.length ? (
+                    <div className="uploaded-files-in-message">
+                      {message.uploadedFiles.map((file) => (
+                        <div key={file._id} className="file-chip">
+                          <DocumentIcon size={14} color="currentColor" />
+                          <span>{file.originalName}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {message.action ? (
+                    <div className={`action-result ${message.action.success ? 'success' : 'error'}`}>
+                      {message.action.success ? 'Action completed' : 'Action failed'}
+                      <span>{message.action.type.replace(/_/g, ' ')}</span>
+                    </div>
+                  ) : null}
+
+                  <span className="message-time">
+                    {message.timestamp.toLocaleTimeString([], {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ))}
+
           {loading ? (
-            <LoadingIcon size={16} color="currentColor" />
-          ) : (
-            <ArrowRightIcon size={16} color="currentColor" />
-          )}
-        </button>
+            <div className="message message-assistant">
+              <div className="message-content">
+                <span className="message-avatar">
+                  <AIAssistantIcon size={20} color="#0f766e" />
+                </span>
+                <div className="message-card">
+                  <div className="message-role">Copilot</div>
+                  <div className="typing-indicator">
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                  <span className="message-time">Thinking through your drive...</span>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          <div ref={messagesEndRef} />
+        </div>
+
+        {messages.length <= 1 ? (
+          <div className="suggested-questions">
+            {suggestedPrompts.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                className="suggestion-btn"
+                onClick={() => handleQuickPrompt(prompt)}
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <div className="ai-assistant-input">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleComposerKeyDown}
+            placeholder="Ask about your drive, a file, or an action you want done..."
+            disabled={loading}
+            rows={3}
+          />
+          <button onClick={handleSend} disabled={loading || !input.trim()} aria-label="Send message">
+            {loading ? (
+              <LoadingIcon size={18} color="currentColor" />
+            ) : (
+              <ArrowRightIcon size={18} color="currentColor" />
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
 };
 
 export default AIAssistant;
-

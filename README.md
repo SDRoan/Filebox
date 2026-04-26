@@ -1,160 +1,141 @@
-# File Box - AI-Powered Cloud Storage
+# File Box
 
-A comprehensive cloud storage and student management platform built with React and Node.js, featuring AI-powered smart organization, file analytics, advanced file management, and student-focused academic tools.
+File Box is a full-stack cloud storage platform built around fast file organization, document handling, and an Ollama-powered copilot that can take actions inside the app for the user.
 
-## Features
+## Highlights
 
-### Core File Management
-- 🔐 User Authentication (Register/Login)
-- 📁 File Upload & Download
-- 📂 Folder Management (Create, Navigate, Delete)
-- 👥 File Sharing (Share links & User sharing)
-- 💾 Storage Management (Track usage and limits)
-- 🔄 Real-time Updates (WebSocket integration)
-- 📱 Responsive UI
-- 🔍 Advanced File Search
-- 📊 File Analytics & Insights
-
-### Student Features
-- 📚 Course Management (Create, organize, delete courses)
-- 📝 Personal Notes (Organized by course with tags and topics)
-- 📅 Study Schedule & Planner (Plan study sessions with reminders)
-- 📈 Progress Tracking (Track grades, calculate GPA, view statistics)
-- 🧮 Grade Calculator (Calculate current grade and needed grades)
-- 🛠️ Study Tools (Quiz generator, Study guide generator)
-- 📊 Study Analytics (Track study time, productivity, insights)
-- 🎯 Quick Dashboard (Overview of assignments, files, notes, schedules)
-- 👥 Study Groups (Collaborate with classmates)
-- 📋 Assignment Tracker
-
-### Advanced Features
-- 🤖 AI Assistant (ChatGPT-like assistant for file management)
-- 🔗 File Connections (Link related files together)
-- 📄 Document Preview (PDF, Word, Images, Code files with syntax highlighting)
-- 🔒 Security Features (Secured links, audit logs)
-- ☁️ Cloud Backup Integration
-- 🔌 Integrations (Microsoft Teams, etc.)
-- 📑 Templates Library
-- 🌐 Web Shortcuts
-- 💬 Social Feed & Community
-- 📚 Learning Resources
+- Storage-first interface for files, folders, sharing, trash, backups, and secured links
+- AI assistant that can create, rename, move, share, delete, and organize content directly
+- PDF and DOCX preview, editing, extraction, and OCR-aware document processing
+- Templates, shortcuts, file requests, team folders, and backup utilities
+- Student-focused extras such as courses, assignments, study groups, and calendar events
 
 ## Tech Stack
 
-### Backend
-- Node.js & Express
-- MongoDB (Mongoose)
-- JWT Authentication
-- Socket.io for real-time updates
-- Multer for file uploads
+- Frontend: React, TypeScript, React Router, Axios
+- Backend: Node.js, Express, MongoDB, Mongoose
+- AI and documents: Ollama, PDF.js, Mammoth, Tesseract.js, pdf-lib, docx
+- Realtime and uploads: Socket.IO, Multer
 
-### Frontend
-- React with TypeScript
-- React Router
-- Axios for API calls
-- Socket.io Client
-
-## Installation
+## Local Development
 
 ### Prerequisites
-- Node.js (v14 or higher)
-- MongoDB (local or MongoDB Atlas)
 
-### Setup
+- Node.js
+- MongoDB
+- Ollama (optional, but recommended for the assistant and local document workflows)
 
-1. **Clone and install dependencies:**
+### Install
+
 ```bash
 npm run install-all
 ```
 
-2. **Set up environment variables:**
+### Configure
 
-Create a `.env` file in the `server` directory:
+Copy `server/env.example` to `server/.env` and set the values you need.
+
+Minimum local setup:
+
 ```env
 PORT=5000
 MONGODB_URI=mongodb://localhost:27017/dropbox-clone
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 CLIENT_URL=http://localhost:3000
+OLLAMA_ENABLED=true
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_ASSISTANT_MODEL=llama3.1:8b
+OLLAMA_ASSISTANT_PLANNER_MODEL=llama3.1:8b
+OLLAMA_SUMMARY_MODEL=llama3.1:8b
+OLLAMA_OCR_MODEL=glm-ocr
 ```
 
-3. **Start MongoDB:**
-Make sure MongoDB is running on your system. If using MongoDB Atlas, update the `MONGODB_URI` in `.env`.
+### Run
 
-4. **Run the application:**
+Start both apps from the repo root:
 
-Development mode (runs both server and client):
 ```bash
 npm run dev
 ```
 
-Or run separately:
-```bash
-# Terminal 1 - Backend
-cd server
-npm run dev
+Or run them separately:
 
-# Terminal 2 - Frontend
-cd client
-npm start
+```bash
+cd server && npm run dev
+cd client && npm start
 ```
 
-5. **Access the application:**
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:5000
+### Ollama Setup
 
-## Usage
+If you want the local assistant and OCR flows enabled:
 
-1. **Register/Login:** Create an account or sign in
-2. **Upload Files:** Click the "Upload" button to add files
-3. **Create Folders:** Click "New Folder" to organize your files
-4. **Navigate:** Click on folders to browse
-5. **Manage Files:** Use the action buttons to download, star, or delete files
-6. **Share Files:** Share files with other users or create shareable links
-7. **View Storage:** Check your storage usage in the sidebar
+```bash
+ollama serve
+ollama pull llama3.1:8b
+ollama pull glm-ocr
+```
+
+## Main Product Areas
+
+### Drive
+
+- All files, shared files, starred, trash, and team folders
+- Upload, download, move, rename, star, restore, and delete actions
+- Storage tracking and backup utilities
+
+### AI Copilot
+
+- Chat-style assistant embedded in the app
+- Executes in-app tasks instead of only explaining them
+- Uses Ollama for local-first action planning, responses, and document understanding
+
+### Documents
+
+- Preview and edit supported files inside the product
+- Extract text from PDF and DOCX files
+- Fall back to OCR for scanned PDFs when needed
+
+### Sharing and Utilities
+
+- Secured links
+- File requests
+- Templates
+- Web shortcuts
+- Integrations and team collaboration surfaces
 
 ## Project Structure
 
-```
-File Box/
-├── server/
-│   ├── models/          # MongoDB models (User, File, Course, etc.)
-│   ├── routes/          # API routes (auth, files, courses, etc.)
-│   ├── services/        # Business logic (AI, text extraction, etc.)
-│   ├── middleware/      # Auth middleware
-│   ├── config/          # Configuration files
-│   ├── uploads/         # Uploaded files storage
-│   └── index.js         # Server entry point
+```text
+Filebox/
 ├── client/
-│   ├── src/
-│   │   ├── components/  # React components (Dashboard, StudentDashboard, etc.)
-│   │   ├── context/     # React context (Auth, etc.)
-│   │   ├── services/    # API services
-│   │   └── types/       # TypeScript types
-│   └── public/
-└── package.json         # Root package.json
+│   ├── public/
+│   └── src/
+│       ├── components/
+│       ├── context/
+│       ├── services/
+│       ├── styles/
+│       └── utils/
+├── server/
+│   ├── config/
+│   ├── middleware/
+│   ├── models/
+│   ├── routes/
+│   ├── services/
+│   └── index.js
+├── package.json
+└── README.md
 ```
 
-## API Endpoints
+## Notes
 
-### Authentication
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login user
-- `GET /api/auth/me` - Get current user
+- Uploaded files are stored locally under `server/uploads/`
+- Local `.env` files and uploaded content are ignored from version control
+- Default storage allocation is 10 GB per user in the current app setup
 
-### Files
-- `GET /api/files` - Get files and folders
-- `POST /api/files/upload` - Upload file
-- `POST /api/files/folder` - Create folder
-- `GET /api/files/download/:id` - Download file
-- `DELETE /api/files/:id` - Delete file/folder
-- `POST /api/files/restore/:id` - Restore from trash
-- `POST /api/files/star/:id` - Star/unstar item
+## Contributor
 
-### Sharing
-- `POST /api/share/create` - Create share link
-- `GET /api/share/:shareId` - Get share info
-- `POST /api/share/user` - Share with user
-- `GET /api/share/shared/with-me` - Get shared files
+- SDRoan
 
+## License
 
-
+MIT

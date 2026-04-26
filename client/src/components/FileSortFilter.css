@@ -1,100 +1,103 @@
 .file-sort-filter {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 0;
-  background: transparent;
+  gap: 0.75rem;
   flex-wrap: wrap;
 }
 
-.filter-group {
+.file-filter-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.5rem;
+  padding: 0.34rem 0.42rem 0.34rem 0.72rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.76);
 }
 
-.filter-group label {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #374151;
-  letter-spacing: -0.01em;
+.file-filter-group label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
 }
 
-.filter-select {
-  padding: 0.5rem 0.875rem;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
+.file-filter-select {
+  padding: 0.42rem 0.72rem 0.42rem 0;
+  border: none;
+  border-radius: 0;
   font-size: 0.875rem;
-  background: #ffffff;
+  font-weight: 700;
+  background: transparent;
   cursor: pointer;
-  color: #111827;
-  transition: all 0.2s ease;
+  color: var(--text-primary);
 }
 
-.filter-select:hover {
-  border-color: #9ca3af;
-}
-
-.filter-select:focus {
+.file-filter-select:focus {
   outline: none;
-  border-color: #6b7280;
-  box-shadow: 0 0 0 3px rgba(107, 114, 128, 0.1);
 }
 
-.sort-order-btn {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  background: #ffffff;
+.file-sort-order-btn {
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--border-light);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
   cursor: pointer;
   font-size: 1rem;
-  transition: all 0.2s ease;
-  color: #374151;
+  transition: transform var(--transition-base), border-color var(--transition-base), box-shadow var(--transition-base), background var(--transition-base);
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.sort-order-btn:hover {
-  background: #f9fafb;
-  border-color: #9ca3af;
+.file-sort-order-btn:hover {
+  transform: translateY(-2px);
+  background: rgba(255, 255, 255, 1);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
 }
 
-.view-toggle {
+.file-view-toggle {
   display: flex;
-  gap: 5px;
+  gap: 0.3rem;
   margin-left: auto;
+  padding: 0.28rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.76);
 }
 
-.view-btn {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #d1d5db;
-  background: #ffffff;
+.file-view-btn {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0.45rem 0.7rem;
+  border: none;
+  background: transparent;
   cursor: pointer;
   font-size: 1rem;
-  border-radius: 8px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  color: #374151;
+  border-radius: var(--radius-full);
+  transition: background var(--transition-base), color var(--transition-base), transform var(--transition-base);
+  color: var(--text-secondary);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-.view-btn:hover {
-  background: #f9fafb;
-  border-color: #9ca3af;
+.file-view-btn:hover {
+  background: rgba(15, 118, 110, 0.08);
+  color: var(--text-primary);
 }
 
-.view-btn.active {
-  background: #4b5563;
-  color: #ffffff;
-  border-color: #4b5563;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+.file-view-btn.active {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  color: var(--text-inverse);
+  box-shadow: var(--shadow-sm);
 }
-
-
-
-
-
-
-
+@media (max-width: 640px) {
+  .file-view-toggle {
+    margin-left: 0;
+  }
+}

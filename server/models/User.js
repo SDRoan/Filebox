@@ -32,15 +32,6 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null
   },
-  savedPosts: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'SocialPost'
-  }],
-  bio: {
-    type: String,
-    maxlength: 200,
-    default: ''
-  },
   role: {
     type: String,
     enum: ['user', 'admin', 'security_officer', 'compliance_officer'],
@@ -71,20 +62,6 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
-  referralCode: {
-    type: String,
-    unique: true,
-    sparse: true
-  },
-  referredBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    default: null
-  },
-  referralCount: {
-    type: Number,
-    default: 0
-  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -93,6 +70,10 @@ const userSchema = new mongoose.Schema({
 
 userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
+  // Some auth flows already hand us a bcrypt hash. Avoid hashing a hash.
+  if (typeof this.password === 'string' && /^\$2[aby]\$\d{2}\$/.test(this.password)) {
+    return next();
+  }
   this.password = await bcrypt.hash(this.password, 10);
   next();
 });
@@ -102,4 +83,3 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
 };
 
 module.exports = mongoose.model('User', userSchema);
-

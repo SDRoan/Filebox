@@ -102,7 +102,7 @@ const TemplatesLibrary: React.FC = () => {
     <div className="templates-library">
       <div className="templates-header">
         <h2><TemplateIcon size={24} color="currentColor" /> Templates Library</h2>
-        <button className="btn-primary" onClick={() => setShowCreateModal(true)}>
+        <button className="templates-btn-primary templates-create-btn" onClick={() => setShowCreateModal(true)}>
           <PlusIcon size={16} color="currentColor" /> Create Template
         </button>
       </div>
@@ -207,8 +207,8 @@ const TemplatesLibrary: React.FC = () => {
               />
             </div>
             <div className="modal-actions">
-              <button className="btn-secondary" onClick={() => setShowUseModal(false)}>Cancel</button>
-              <button className="btn-primary" onClick={handleUseTemplate}>Create File</button>
+              <button className="templates-btn-secondary" onClick={() => setShowUseModal(false)}>Cancel</button>
+              <button className="templates-btn-primary" onClick={handleUseTemplate}>Create File</button>
             </div>
           </div>
         </div>
@@ -360,8 +360,8 @@ const CreateTemplateModal: React.FC<{ onClose: () => void; onSuccess: () => void
           </label>
         </div>
         <div className="modal-actions">
-          <button className="btn-secondary" onClick={onClose} disabled={creating}>Cancel</button>
-          <button className="btn-primary" onClick={handleCreate} disabled={creating}>
+          <button className="templates-btn-secondary" onClick={onClose} disabled={creating}>Cancel</button>
+          <button className="templates-btn-primary" onClick={handleCreate} disabled={creating}>
             {creating ? 'Creating...' : 'Create Template'}
           </button>
         </div>

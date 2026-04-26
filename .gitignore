@@ -1,0 +1,11 @@
+node_modules
+.DS_Store
+
+# Local environment files
+.env
+server/.env
+client/.env
+
+# Local runtime data
+server/uploads/
+client/build/

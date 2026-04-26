@@ -24,15 +24,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const initAuth = async () => {
       const storedToken = localStorage.getItem('token');
       if (storedToken) {
-        try {
-          const response = await authAPI.getCurrentUser();
-          setUser(response.user);
-          setToken(storedToken);
-        } catch (error) {
-          localStorage.removeItem('token');
-          setToken(null);
-        }
+        setToken(storedToken);
       }
+
+      try {
+        const response = await authAPI.getCurrentUser();
+        setUser(response.user);
+      } catch (error) {
+        localStorage.removeItem('token');
+        setToken(null);
+        setUser(null);
+      }
+
       setLoading(false);
     };
     initAuth();
@@ -77,7 +80,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = () => {
     localStorage.removeItem('token');
     setToken(null);
-    setUser(null);
+
+    authAPI.getCurrentUser()
+      .then((response) => {
+        setUser(response.user);
+      })
+      .catch(() => {
+        setUser(null);
+      });
   };
 
   return (
@@ -94,6 +104,4 @@ export const useAuth = () => {
   }
   return context;
 };
-
-
 

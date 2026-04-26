@@ -8,10 +8,9 @@ import FolderItem from './FolderItem';
 import UploadButton from './UploadButton';
 import CreateFolderModal from './CreateFolderModal';
 import FileSortFilter, { SortOption, SortOrder, FilterOption } from './FileSortFilter';
-import SmartOrganization from './SmartOrganization';
 import FolderPickerModal from './FolderPickerModal';
 import Breadcrumb from './Breadcrumb';
-import { FolderIcon, SmartOrganizeIcon, CheckIcon, TrashIcon } from './Icons';
+import { FolderIcon, CheckIcon, TrashIcon } from './Icons';
 import './FileBrowser.css';
 
 interface FileBrowserProps {
@@ -42,7 +41,6 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
   const [loading, setLoading] = useState(true);
   const [breadcrumbFolders, setBreadcrumbFolders] = useState<Folder[]>([]);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
-  const [showSmartOrg, setShowSmartOrg] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
@@ -50,7 +48,7 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
   const [sortBy, setSortBy] = useState<SortOption>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [filterBy, setFilterBy] = useState<FilterOption>('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('list');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { user } = useAuth();
   const socketRef = useRef<Socket | null>(null);
@@ -417,6 +415,45 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
     };
   }, [files, folders, filterBy, sortBy, sortOrder]);
 
+  const currentFolderName = breadcrumbFolders.length > 0
+    ? breadcrumbFolders[breadcrumbFolders.length - 1].name
+    : 'All Files';
+
+  const browserOverview = showTrash
+    ? {
+        eyebrow: 'Recovery',
+        title: 'Recovery Bin',
+        description: 'Deleted items stay here temporarily so you can restore them before they are gone.',
+      }
+    : showStarred
+      ? {
+          eyebrow: 'Drive',
+          title: 'Starred Files',
+          description: 'Your fastest path to the files and folders you return to most often.',
+        }
+      : isTeamFolder
+        ? {
+            eyebrow: 'Team Space',
+            title: currentFolderName,
+            description: 'A shared folder space for upload, review, movement, and handoff.',
+          }
+        : currentFolderId && currentFolderId !== 'root'
+          ? {
+              eyebrow: 'Folder View',
+              title: currentFolderName,
+              description: 'Everything in this folder, with sorting, bulk actions, and sharing close at hand.',
+            }
+          : {
+              eyebrow: 'Drive',
+              title: 'All Files',
+              description: 'Your main cloud-drive library for upload, organization, movement, and sharing.',
+            };
+
+  const visibleItemCount = filteredAndSorted.folders.length + filteredAndSorted.files.length;
+  const locationLabel = breadcrumbFolders.length > 0
+    ? `/${breadcrumbFolders.map(folder => folder.name).join(' / ')}`
+    : '/';
+
   if (loading) {
     return <div className="loading">Loading...</div>;
   }
@@ -462,93 +499,111 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
             }}
           />
         )}
-        <div className="file-browser-header">
-        <FileSortFilter
-          sortBy={sortBy}
-          sortOrder={sortOrder}
-          filterBy={filterBy}
-          viewMode={viewMode}
-          onSortChange={setSortBy}
-          onSortOrderChange={setSortOrder}
-          onFilterChange={setFilterBy}
-          onViewModeChange={setViewMode}
-        />
-        <div className="file-browser-actions">
-          {selectionMode ? (
-            <>
-              <span className="selection-count">{selectedItems.size} selected</span>
-              <button className="action-button" onClick={selectAll}>
-                Select All
-              </button>
-              <button className="action-button" onClick={clearSelection}>
-                Clear
-              </button>
-              {!showTrash && (
-                <button 
-                  className="action-button primary" 
-                  onClick={() => setShowFolderPicker(true)}
-                  title="Move selected items to a folder"
-                >
-                   Move to Folder
-                </button>
-              )}
-              {showTrash ? (
-                <button className="action-button danger" onClick={handleBulkDelete}>
-                  <TrashIcon size={18} color="currentColor" />
-                  <span>Permanently Delete Selected</span>
-                </button>
-              ) : (
-                <button className="action-button danger" onClick={handleBulkDelete}>
-                  <TrashIcon size={18} color="currentColor" />
-                  <span>Delete Selected</span>
-                </button>
-              )}
-              <button className="action-button" onClick={() => setSelectionMode(false)}>
-                Cancel
-              </button>
-            </>
-          ) : (
-            <>
-              {!showStarred && (
-                <>
-                  <UploadButton onFileSelect={handleFileUpload} />
-                  <button
-                    className="action-button"
-                    onClick={() => setShowCreateFolder(true)}
-                    style={{ background: '#1e40af', color: '#ffffff', border: 'none' }}
-                  >
-                    <FolderIcon size={16} color="#ffffff" />
-                    <span>New Folder</span>
-                  </button>
-                </>
-              )}
-              {!showTrash && !showStarred && (
-                <button
-                  className="action-button smart-org-btn"
-                  onClick={() => setShowSmartOrg(true)}
-                  title="AI-powered file organization"
-                >
-                  <SmartOrganizeIcon size={16} color="#ffffff" />
-                  <span>Smart Organize</span>
-                </button>
-              )}
-              <button
-                className="action-button"
-                onClick={() => setSelectionMode(true)}
-                style={{ background: '#4b5563', color: '#ffffff', border: 'none' }}
-              >
-                <CheckIcon size={16} color="#ffffff" />
-                <span>Select</span>
-              </button>
-            </>
-          )}
+        <div className="file-browser-hero">
+          <div className="file-browser-copy">
+            <span className="file-browser-eyebrow">{browserOverview.eyebrow}</span>
+            <div className="file-browser-title-row">
+              <h2>{browserOverview.title}</h2>
+              <span className="file-browser-location">{locationLabel}</span>
+            </div>
+            <p>{browserOverview.description}</p>
+            <span className="file-browser-note">
+              {showTrash
+                ? 'Recovery items are held for 30 days.'
+                : 'List view is the default here so the library behaves more like a real cloud drive.'}
+            </span>
+          </div>
+          <div className="file-browser-stats">
+            <div className="file-browser-stat">
+              <strong>{filteredAndSorted.folders.length}</strong>
+              <span>Folders</span>
+            </div>
+            <div className="file-browser-stat">
+              <strong>{filteredAndSorted.files.length}</strong>
+              <span>Files</span>
+            </div>
+            <div className="file-browser-stat">
+              <strong>{visibleItemCount}</strong>
+              <span>Shown</span>
+            </div>
+          </div>
         </div>
+        <div className={`file-browser-toolbar ${selectionMode ? 'selection-active' : ''}`}>
+          <FileSortFilter
+            sortBy={sortBy}
+            sortOrder={sortOrder}
+            filterBy={filterBy}
+            viewMode={viewMode}
+            onSortChange={setSortBy}
+            onSortOrderChange={setSortOrder}
+            onFilterChange={setFilterBy}
+            onViewModeChange={setViewMode}
+          />
+          <div className="file-browser-actions">
+            {selectionMode ? (
+              <>
+                <span className="selection-count">{selectedItems.size} selected</span>
+                <button className="action-button secondary" onClick={selectAll}>
+                  Select All
+                </button>
+                <button className="action-button secondary" onClick={clearSelection}>
+                  Clear
+                </button>
+                {!showTrash && (
+                  <button 
+                    className="action-button secondary"
+                    onClick={() => setShowFolderPicker(true)}
+                    title="Move selected items to a folder"
+                  >
+                    Move to Folder
+                  </button>
+                )}
+                {showTrash ? (
+                  <button className="action-button danger" onClick={handleBulkDelete}>
+                    <TrashIcon size={18} color="currentColor" />
+                    <span>Permanently Delete Selected</span>
+                  </button>
+                ) : (
+                  <button className="action-button danger" onClick={handleBulkDelete}>
+                    <TrashIcon size={18} color="currentColor" />
+                    <span>Delete Selected</span>
+                  </button>
+                )}
+                <button className="action-button secondary" onClick={() => setSelectionMode(false)}>
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                {!showStarred && (
+                  <>
+                    <UploadButton onFileSelect={handleFileUpload} />
+                    <button
+                      className="action-button accent"
+                      onClick={() => setShowCreateFolder(true)}
+                    >
+                      <FolderIcon size={16} color="currentColor" />
+                      <span>New Folder</span>
+                    </button>
+                  </>
+                )}
+                <button
+                  className="action-button secondary"
+                  onClick={() => setSelectionMode(true)}
+                >
+                  <CheckIcon size={16} color="currentColor" />
+                  <span>Select</span>
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {filteredAndSorted.folders.length === 0 && filteredAndSorted.files.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-content">
               <div className="empty-state-icon">
+                <FolderIcon size={42} color="currentColor" />
               </div>
               <h3 className="empty-state-title">
                 {showTrash 
@@ -568,11 +623,10 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
                 <div className="empty-state-actions">
                   <UploadButton onFileSelect={handleFileUpload} />
                   <button
-                    className="action-button"
+                    className="action-button accent"
                     onClick={() => setShowCreateFolder(true)}
-                    style={{ background: '#1e40af', color: '#ffffff', border: 'none' }}
                   >
-                    <FolderIcon size={16} color="#ffffff" />
+                    <FolderIcon size={16} color="currentColor" />
                     <span>New Folder</span>
                   </button>
                 </div>
@@ -630,13 +684,6 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
           teamFolderId={teamFolderId}
         />
       )}
-      {showSmartOrg && (
-        <SmartOrganization
-          folderId={currentFolderId === 'root' ? undefined : currentFolderId}
-          onClose={() => setShowSmartOrg(false)}
-          onOrganized={loadFiles}
-        />
-      )}
       {showFolderPicker && (
         <FolderPickerModal
           onSelect={(folderId: string | null) => {
@@ -652,4 +699,3 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
 };
 
 export default FileBrowser;
-

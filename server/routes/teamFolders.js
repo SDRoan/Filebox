@@ -8,6 +8,7 @@ const User = require('../models/User');
 const multer = require('multer');
 const fs = require('fs-extra');
 const path = require('path');
+const documentProcessingService = require('../services/documentProcessingService');
 const router = express.Router();
 
 const upload = multer({
@@ -698,6 +699,9 @@ router.post('/:id/upload', auth, upload.single('file'), async (req, res) => {
     io.to(`user-${teamFolder.owner}`).emit('file-uploaded', file);
 
     await file.populate('owner', 'name email');
+    await documentProcessingService.queueFileProcessing(file, {
+      force: true,
+    });
     res.status(201).json(file);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -807,6 +811,4 @@ router.delete('/:id', auth, async (req, res) => {
 });
 
 module.exports = router;
-
-
 

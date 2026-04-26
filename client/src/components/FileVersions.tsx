@@ -95,7 +95,7 @@ const FileVersions: React.FC<FileVersionsProps> = ({
 
         <div className="versions-actions">
           <button onClick={onUploadNewVersion} className="action-button">
-            ➜ Upload New Version
+            Upload New Version
           </button>
         </div>
 
@@ -131,7 +131,7 @@ const FileVersions: React.FC<FileVersionsProps> = ({
                     className="version-btn"
                     title="Download"
                   >
-                    
+                    Download
                   </button>
                   {version.versionNumber !== Math.max(...versions.map(v => v.versionNumber)) && (
                     <button
@@ -139,7 +139,7 @@ const FileVersions: React.FC<FileVersionsProps> = ({
                       className="version-btn restore-btn"
                       title="Restore"
                     >
-                      
+                      Restore
                     </button>
                   )}
                 </div>
@@ -153,5 +153,4 @@ const FileVersions: React.FC<FileVersionsProps> = ({
 };
 
 export default FileVersions;
-
 

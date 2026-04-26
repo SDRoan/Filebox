@@ -7,6 +7,7 @@ const FileRequest = require('../models/FileRequest');
 const File = require('../models/File');
 const Folder = require('../models/Folder');
 const User = require('../models/User');
+const documentProcessingService = require('../services/documentProcessingService');
 const router = express.Router();
 
 // Configure multer for file uploads
@@ -163,6 +164,10 @@ router.post('/:requestId/upload', upload.single('file'), async (req, res) => {
     await fileRequest.populate('uploadedFiles.file');
     await fileRequest.populate('uploadedFiles.uploadedBy', 'name email');
 
+    await documentProcessingService.queueFileProcessing(file, {
+      force: true,
+    });
+
     res.status(201).json(fileRequest);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -237,4 +242,3 @@ router.delete('/:requestId', auth, async (req, res) => {
 });
 
 module.exports = router;
-

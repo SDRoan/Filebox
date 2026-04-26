@@ -28,9 +28,9 @@ const FileSortFilter: React.FC<FileSortFilterProps> = ({
 }) => {
   return (
     <div className="file-sort-filter">
-      <div className="filter-group">
+      <div className="file-filter-group">
         <label>Filter:</label>
-        <select value={filterBy} onChange={(e) => onFilterChange(e.target.value as FilterOption)} className="filter-select">
+        <select value={filterBy} onChange={(e) => onFilterChange(e.target.value as FilterOption)} className="file-filter-select">
           <option value="all">All Files</option>
           <option value="folders">Folders Only</option>
           <option value="images">Images</option>
@@ -39,9 +39,9 @@ const FileSortFilter: React.FC<FileSortFilterProps> = ({
         </select>
       </div>
 
-      <div className="filter-group">
+      <div className="file-filter-group">
         <label>Sort by:</label>
-        <select value={sortBy} onChange={(e) => onSortChange(e.target.value as SortOption)} className="filter-select">
+        <select value={sortBy} onChange={(e) => onSortChange(e.target.value as SortOption)} className="file-filter-select">
           <option value="name">Name</option>
           <option value="date">Date</option>
           <option value="size">Size</option>
@@ -51,23 +51,23 @@ const FileSortFilter: React.FC<FileSortFilterProps> = ({
 
       <button
         onClick={() => onSortOrderChange(sortOrder === 'asc' ? 'desc' : 'asc')}
-        className="sort-order-btn"
+        className="file-sort-order-btn"
         title={`Sort ${sortOrder === 'asc' ? 'Descending' : 'Ascending'}`}
       >
         {sortOrder === 'asc' ? '↑' : '↓'}
       </button>
 
-      <div className="view-toggle">
+      <div className="file-view-toggle">
         <button
           onClick={() => onViewModeChange('grid')}
-          className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`}
+          className={`file-view-btn ${viewMode === 'grid' ? 'active' : ''}`}
           title="Grid View"
         >
           ⊞
         </button>
         <button
           onClick={() => onViewModeChange('list')}
-          className={`view-btn ${viewMode === 'list' ? 'active' : ''}`}
+          className={`file-view-btn ${viewMode === 'list' ? 'active' : ''}`}
           title="List View"
         >
           ☰
@@ -79,7 +79,6 @@ const FileSortFilter: React.FC<FileSortFilterProps> = ({
 
 export default FileSortFilter;
 export type { SortOption, SortOrder, FilterOption };
-
 
 
 

@@ -1,13 +1,12 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
-import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import FileRequestUpload from './components/FileRequestUpload';
 import './App.css';
 
 const App: React.FC = () => {
-  const { user, loading } = useAuth();
+  const { loading } = useAuth();
 
   if (loading) {
     return <div className="loading-screen">Loading...</div>;
@@ -18,7 +17,7 @@ const App: React.FC = () => {
       <Routes>
         <Route
           path="/login"
-          element={user ? <Navigate to="/" /> : <Login />}
+          element={<Navigate to="/" replace />}
         />
         <Route
           path="/file-request/:requestId"
@@ -26,7 +25,7 @@ const App: React.FC = () => {
         />
         <Route
           path="/*"
-          element={user ? <Dashboard /> : <Navigate to="/login" />}
+          element={<Dashboard />}
         />
       </Routes>
     </Router>

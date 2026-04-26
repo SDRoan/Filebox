@@ -5,6 +5,7 @@ const Folder = require('../models/Folder');
 const FileContent = require('../models/FileContent');
 const aiSearch = require('../services/aiSearch');
 const config = require('../config/aiConfig');
+const documentProcessingService = require('../services/documentProcessingService');
 const router = express.Router();
 
 /**
@@ -164,7 +165,7 @@ router.post('/extract-all', auth, async (req, res) => {
           await FileContent.deleteOne({ file: file._id });
         }
 
-        if (!textExtractor.isSupported(file.mimeType)) {
+        if (!textExtractor.isSupported(file.mimeType, file.originalName)) {
           console.log(`[Extract-All] ⏭️ Skipping ${file.originalName} - unsupported type: ${file.mimeType}`);
           skipReasons.push({ filename: file.originalName, reason: `Unsupported type: ${file.mimeType}` });
           skipped++;
@@ -181,40 +182,10 @@ router.post('/extract-all', auth, async (req, res) => {
         }
 
         console.log(`[Extract-All] 🔄 Extracting text from: ${file.originalName}`);
-        let extractedText;
-        try {
-          extractedText = await textExtractor.extractText(file.path, file.mimeType);
-          console.log(`[Extract-All] 📝 Extracted ${extractedText ? extractedText.length : 0} characters from: ${file.originalName}`);
-        } catch (extractError) {
-          console.error(`[Extract-All] ❌ Extraction error for ${file.originalName}:`, extractError.message);
-          errors++;
-          errorDetails.push({
-            filename: file.originalName,
-            error: `Extraction failed: ${extractError.message}`,
-            type: 'extraction_error'
-          });
-          continue;
-        }
-        
+        const extraction = await documentProcessingService.ensureExtraction(file, { force });
+        const extractedText = extraction.text || '';
+
         if (extractedText && extractedText.length > 0) {
-          console.log(`[Extract-All] ֎ Generating embedding for: ${file.originalName}`);
-          const embedding = await aiSearch.generateEmbedding(extractedText);
-          console.log(`[Extract-All] ✅ Generated embedding (${embedding.length} dimensions) for: ${file.originalName}`);
-          
-          if (existing) {
-            existing.extractedText = extractedText;
-            existing.embedding = embedding;
-            existing.extractionStatus = 'completed';
-            await existing.save();
-          } else {
-            const fileContent = new FileContent({
-              file: file._id,
-              extractedText,
-              embedding,
-              extractionStatus: 'completed'
-            });
-            await fileContent.save();
-          }
           extracted++;
           console.log(`[Extract-All] ✅ Successfully processed: ${file.originalName}`);
         } else {
@@ -228,16 +199,6 @@ router.post('/extract-all', auth, async (req, res) => {
           
           console.log(`[Extract-All] ⚠️ No text extracted from: ${file.originalName}`);
           skipReasons.push({ filename: file.originalName, reason });
-          // Still create a record so we know we tried
-          if (!existing) {
-            const fileContent = new FileContent({
-              file: file._id,
-              extractedText: '',
-              embedding: [],
-              extractionStatus: 'failed'
-            });
-            await fileContent.save();
-          }
           skipped++;
         }
       } catch (error) {
@@ -303,7 +264,7 @@ router.get('/test-extract/:fileId', auth, async (req, res) => {
 
     // Extract text with detailed logging
     console.log(`[Test Extract] Testing extraction for: ${file.originalName}`);
-    const extractedText = await textExtractor.extractText(file.path, file.mimeType);
+    const extractedText = await textExtractor.extractText(file.path, file.mimeType, file.originalName);
 
     res.json({
       filename: file.originalName,
@@ -340,54 +301,34 @@ router.post('/extract/:fileId', auth, async (req, res) => {
     const filePath = file.path;
 
     // Check if extraction is supported
-    if (!textExtractor.isSupported(file.mimeType)) {
+    if (!textExtractor.isSupported(file.mimeType, file.originalName)) {
       return res.json({ 
         message: 'File type not supported for text extraction',
         supported: false
       });
     }
 
-    // Extract text
     console.log(`[Extract] Extracting text from: ${file.originalName} (${file.mimeType})`);
     console.log(`[Extract] File path: ${filePath}`);
-    
-    const extractedText = await textExtractor.extractText(filePath, file.mimeType);
+
+    const extraction = await documentProcessingService.ensureExtraction(file, { force: true });
+    const extractedText = extraction.text || '';
     console.log(`[Extract] Extracted ${extractedText.length} characters`);
 
     if (!extractedText || extractedText.length === 0) {
       return res.status(400).json({ 
-        message: 'No text could be extracted from this file',
+        message: extraction.error || 'No text could be extracted from this file',
         textLength: 0,
         suggestion: 'The file may be image-based, empty, or in an unsupported format. Check server logs for details.'
       });
     }
 
-    // Generate embedding
-    const embedding = await aiSearch.generateEmbedding(extractedText);
-    console.log(`[Extract] Generated embedding (${embedding.length} dimensions)`);
-
-    // Save or update FileContent
-    let fileContent = await FileContent.findOne({ file: file._id });
-    if (fileContent) {
-      fileContent.extractedText = extractedText;
-      fileContent.embedding = embedding;
-      fileContent.extractionStatus = 'completed';
-      await fileContent.save();
-    } else {
-      fileContent = new FileContent({
-        file: file._id,
-        extractedText,
-        embedding,
-        extractionStatus: 'completed'
-      });
-      await fileContent.save();
-    }
-
     res.json({
       message: 'Text extracted successfully',
       textLength: extractedText.length,
-      hasEmbedding: embedding.length > 0,
-      preview: extractedText.substring(0, 200)
+      hasEmbedding: extraction.fileContent?.embedding?.length > 0,
+      preview: extractedText.substring(0, 200),
+      extractionMethod: extraction.extractionMethod || extraction.fileContent?.extractionMethod || '',
     });
   } catch (error) {
     console.error('Extraction error:', error);
@@ -396,4 +337,3 @@ router.post('/extract/:fileId', auth, async (req, res) => {
 });
 
 module.exports = router;
-

@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { FileItemType } from '../types';
-import { filesAPI, summariesAPI, searchAPI } from '../services/api';
+import { filesAPI } from '../services/api';
 import CodeViewer from './CodeViewer';
 import FileMemory from './FileMemory';
-import PredictiveOrganization from './PredictiveOrganization';
 import FileEditor from './FileEditor';
 import { MemoryIcon, DownloadIcon, CloseIcon, EditIcon } from './Icons';
 import './FilePreview.css';
@@ -19,7 +18,6 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
   const [error, setError] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [showMemory, setShowMemory] = useState(false);
-  const [showOrgSuggestions, setShowOrgSuggestions] = useState(true);
   const [showEditor, setShowEditor] = useState(false);
 
   useEffect(() => {
@@ -83,7 +81,6 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
             
             // STRICT validation: Check if the text looks like binary/XML data
             // DOCX files are ZIP archives, so they start with "PK" (ZIP signature)
-            const firstChars = text.substring(0, 10);
             const hasPK = text.includes('PK') && (text.includes('word/') || text.includes('word\\'));
             const hasXMLTags = (text.match(/<[^>]+>/g)?.length || 0) > 5;
             const hasControlChars = /[\x00-\x08\x0E-\x1F]/.test(text);
@@ -181,19 +178,6 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
     }
   };
 
-  const handleMove = async (fileId: string, destinationFolderId: string) => {
-    try {
-      await filesAPI.moveFile(fileId, destinationFolderId === 'root' ? undefined : destinationFolderId);
-      setShowOrgSuggestions(false);
-      alert('File moved successfully!');
-      // Optionally reload or close preview
-    } catch (error) {
-      console.error('Error moving file:', error);
-      alert('Failed to move file');
-    }
-  };
-
-
   const isCodeFile = (): boolean => {
     const mimeType = file.mimeType.toLowerCase();
     const extension = file.originalName.split('.').pop()?.toLowerCase() || '';
@@ -255,7 +239,6 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
     
     return false;
   };
-
 
   const getFileType = () => {
     const mimeType = file.mimeType.toLowerCase();
@@ -321,15 +304,6 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
         </div>
 
         <div className="file-preview-content">
-          {showOrgSuggestions && !loading && (
-            <PredictiveOrganization
-              fileId={file._id}
-              fileName={file.originalName}
-              fileType={file.mimeType}
-              onMove={handleMove}
-              onDismiss={() => setShowOrgSuggestions(false)}
-            />
-          )}
           {loading && (
             <div className="preview-loading">
               <div className="spinner"></div>
@@ -410,7 +384,6 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
           file={file} 
           onClose={() => setShowEditor(false)} 
           onSave={() => {
-            setShowEditor(false);
             loadPreview(); // Reload preview after save
           }}
         />
@@ -423,4 +396,3 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
 };
 
 export default FilePreview;
-

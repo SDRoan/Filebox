@@ -14,6 +14,21 @@ module.exports = {
     useFreeInference: process.env.USE_HUGGINGFACE_FREE === 'true' || !process.env.HUGGINGFACE_API_KEY,
   },
 
+  // Ollama Configuration (local-first)
+  ollama: {
+    enabled: process.env.OLLAMA_ENABLED !== 'false',
+    baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
+    ocrModel: process.env.OLLAMA_OCR_MODEL || 'glm-ocr',
+    summaryModel: process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
+    assistantModel: process.env.OLLAMA_ASSISTANT_MODEL || process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
+    plannerModel: process.env.OLLAMA_ASSISTANT_PLANNER_MODEL || process.env.OLLAMA_ASSISTANT_MODEL || process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
+    assistantTemperature: parseFloat(process.env.OLLAMA_ASSISTANT_TEMPERATURE || '0.25'),
+    assistantHistoryTurns: parseInt(process.env.OLLAMA_ASSISTANT_HISTORY_TURNS, 10) || 8,
+    assistantMaxFileContextChars: parseInt(process.env.OLLAMA_ASSISTANT_MAX_FILE_CONTEXT_CHARS, 10) || 12000,
+    timeoutMs: parseInt(process.env.OLLAMA_TIMEOUT_MS, 10) || 120000,
+    fallbackEnabled: process.env.OLLAMA_FALLBACK_ENABLED !== 'false',
+  },
+
   // Text Extraction Configuration
   extraction: {
     maxTextLength: parseInt(process.env.AI_MAX_TEXT_LENGTH) || 8000,
@@ -62,62 +77,6 @@ module.exports = {
     maxSummaryLength: parseInt(process.env.AI_SUMMARIZATION_MAX_LENGTH) || 150, // Max tokens for summary
     minLength: parseInt(process.env.AI_SUMMARIZATION_MIN_LENGTH) || 30, // Min tokens for summary
     useFreeInference: process.env.USE_HUGGINGFACE_FREE === 'true' || !process.env.HUGGINGFACE_API_KEY,
-    autoSummarize: process.env.AI_AUTO_SUMMARIZE === 'true', // Auto-generate summaries on upload
-  },
-
-  // Smart Organization Configuration
-  smartOrganization: {
-    enabled: process.env.AI_SMART_ORG_ENABLED !== 'false', // Default: enabled
-    model: process.env.AI_SMART_ORG_MODEL || 'mistralai/Mistral-7B-Instruct-v0.2', // Hugging Face model
-    useFreeInference: process.env.USE_HUGGINGFACE_FREE === 'true' || !process.env.HUGGINGFACE_API_KEY,
-  },
-
-  // Learning Resource Generation Configuration (AI-Generated, Updates Every 24 Hours)
-  learningResources: {
-    enabled: process.env.AI_LEARNING_RESOURCES_ENABLED !== 'false', // Default: enabled
-    count: parseInt(process.env.AI_LEARNING_RESOURCES_COUNT) || 7, // Number of resources to generate
-    updateInterval: process.env.AI_LEARNING_RESOURCES_INTERVAL || '0 0 * * *', // Cron schedule: every 24 hours at midnight
-    openRouterModel: process.env.AI_LEARNING_RESOURCES_MODEL || 'google/gemini-flash-1.5-8b:free',
-    huggingFaceModel: process.env.AI_LEARNING_RESOURCES_HF_MODEL || 'gpt2',
-    // Topics pool - randomly selected each generation for variety
-    topics: process.env.AI_LEARNING_RESOURCES_TOPICS 
-      ? process.env.AI_LEARNING_RESOURCES_TOPICS.split(',').map(t => t.trim())
-      : [
-          'File Organization Strategies',
-          'Advanced Search Techniques',
-          'Collaborative Workflows',
-          'Data Security Essentials',
-          'Automation Features',
-          'Mobile App Usage',
-          'Integration Setup',
-          'Backup and Recovery',
-          'Performance Optimization',
-          'Customization Options',
-          'Team Management',
-          'Version Control',
-          'Access Control',
-          'API Integration',
-          'Troubleshooting Common Issues',
-          'Smart Folder Organization',
-          'File Sharing Best Practices',
-          'Team Collaboration Tools',
-          'Security Settings Configuration',
-          'Advanced Search Features'
-        ],
-    categories: process.env.AI_LEARNING_RESOURCES_CATEGORIES
-      ? process.env.AI_LEARNING_RESOURCES_CATEGORIES.split(',').map(c => c.trim())
-      : ['getting-started', 'file-management', 'sharing', 'collaboration', 'security', 'advanced', 'api'],
-    types: process.env.AI_LEARNING_RESOURCES_TYPES
-      ? process.env.AI_LEARNING_RESOURCES_TYPES.split(',').map(t => t.trim())
-      : ['tutorial', 'guide', 'article', 'faq'],
-    difficulties: process.env.AI_LEARNING_RESOURCES_DIFFICULTIES
-      ? process.env.AI_LEARNING_RESOURCES_DIFFICULTIES.split(',').map(d => d.trim())
-      : ['beginner', 'intermediate', 'advanced'],
-    minDuration: parseInt(process.env.AI_LEARNING_RESOURCES_MIN_DURATION) || 5,
-    maxDuration: parseInt(process.env.AI_LEARNING_RESOURCES_MAX_DURATION) || 30,
-    // AI generation settings
-    minContentLength: parseInt(process.env.AI_LEARNING_RESOURCES_MIN_CONTENT_LENGTH) || 1000, // Minimum characters for AI content
-    maxRetries: parseInt(process.env.AI_LEARNING_RESOURCES_MAX_RETRIES) || 3, // Max retry attempts for AI generation
+    autoSummarize: process.env.AI_AUTO_SUMMARIZE !== 'false', // Auto-generate summaries on upload
   }
 };
-

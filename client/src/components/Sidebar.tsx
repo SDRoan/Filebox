@@ -2,6 +2,7 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import Logo from './Logo';
 import {
+  HomeIcon,
   FilesIcon,
   SharedIcon,
   StarredIcon,
@@ -9,17 +10,15 @@ import {
   TeamFoldersIcon,
   FileRequestsIcon,
   RelationshipsIcon,
-  SocialFeedIcon,
   AnalyticsIcon,
   SecurityIcon,
   AIAssistantIcon,
   StudentIcon,
   BackIcon,
+  CloseIcon,
   TemplateIcon,
   ShortcutIcon,
   IntegrationIcon,
-  ForumIcon,
-  LearningIcon,
   CloudBackupIcon,
 } from './Icons';
 import './Sidebar.css';
@@ -29,6 +28,8 @@ interface SidebarProps {
   onViewChange: (view: string) => void;
   onNavigateUp: () => void;
   currentFolderId?: string;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -36,6 +37,8 @@ const Sidebar: React.FC<SidebarProps> = ({
   onViewChange,
   onNavigateUp,
   currentFolderId,
+  isOpen = false,
+  onClose,
 }) => {
   const { user, logout } = useAuth();
 
@@ -47,39 +50,80 @@ const Sidebar: React.FC<SidebarProps> = ({
   const storagePercent = user
     ? (user.storageUsed / user.storageLimit) * 100
     : 0;
+  const storageFillWidth = Math.min(Math.max(storagePercent, 0), 100);
+  const userInitials = user?.name
+    ? user.name
+        .split(' ')
+        .map(part => part[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase()
+    : 'FB';
+
+  const handleNavigation = (view: string) => {
+    onViewChange(view);
+    if (window.innerWidth <= 1024) {
+      onClose?.();
+    }
+  };
+
+  const handleNavigateUp = () => {
+    onNavigateUp();
+    if (window.innerWidth <= 1024) {
+      onClose?.();
+    }
+  };
 
   return (
-    <div className="sidebar">
+    <aside className={`sidebar ${isOpen ? 'is-open' : ''}`}>
       <div className="sidebar-header">
-        <Logo size="small" showText={true} text="File Box" />
+        <div className="sidebar-brand">
+          <span className="sidebar-kicker">Cloud storage</span>
+          <Logo size="small" showText={true} text="File Box" />
+        </div>
+        <button
+          type="button"
+          className="sidebar-close-button"
+          onClick={onClose}
+          aria-label="Close navigation"
+        >
+          <CloseIcon size={18} color="currentColor" />
+        </button>
       </div>
       <nav className="sidebar-nav">
         <div className="nav-section">
-          <div className="nav-section-title">Main</div>
+          <div className="nav-section-title">Drive</div>
+          <button
+            className={`nav-item ${currentView === 'home' ? 'active' : ''}`}
+            onClick={() => handleNavigation('home')}
+          >
+            <HomeIcon size={18} color="currentColor" />
+            <span>Home</span>
+          </button>
           <button
             className={`nav-item ${currentView === 'files' ? 'active' : ''}`}
-            onClick={() => onViewChange('files')}
+            onClick={() => handleNavigation('files')}
           >
             <FilesIcon size={18} color="currentColor" />
-            <span>Files</span>
+            <span>All Files</span>
           </button>
           <button
             className={`nav-item ${currentView === 'shared' ? 'active' : ''}`}
-            onClick={() => onViewChange('shared')}
+            onClick={() => handleNavigation('shared')}
           >
             <SharedIcon size={18} color="currentColor" />
             <span>Shared</span>
           </button>
           <button
             className={`nav-item ${currentView === 'starred' ? 'active' : ''}`}
-            onClick={() => onViewChange('starred')}
+            onClick={() => handleNavigation('starred')}
           >
             <StarredIcon size={18} color="currentColor" />
             <span>Starred</span>
           </button>
           <button
             className={`nav-item ${currentView === 'trash' ? 'active' : ''}`}
-            onClick={() => onViewChange('trash')}
+            onClick={() => handleNavigation('trash')}
           >
             <TrashIcon size={18} color="currentColor" />
             <span>Trash</span>
@@ -87,113 +131,95 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         <div className="nav-section">
-          <div className="nav-section-title">Collaboration</div>
+          <div className="nav-section-title">Sharing</div>
           <button
             className={`nav-item ${currentView === 'teams' ? 'active' : ''}`}
-            onClick={() => onViewChange('teams')}
+            onClick={() => handleNavigation('teams')}
           >
             <TeamFoldersIcon size={18} color="currentColor" />
-            <span>Team Folders</span>
+            <span>Team Spaces</span>
           </button>
           <button
             className={`nav-item ${currentView === 'requests' ? 'active' : ''}`}
-            onClick={() => onViewChange('requests')}
+            onClick={() => handleNavigation('requests')}
           >
             <FileRequestsIcon size={18} color="currentColor" />
             <span>File Requests</span>
           </button>
-          <button
-            className={`nav-item ${currentView === 'relationships' ? 'active' : ''}`}
-            onClick={() => onViewChange('relationships')}
-          >
-            <RelationshipsIcon size={18} color="currentColor" />
-            <span>Connections</span>
-          </button>
         </div>
 
         <div className="nav-section">
+          <div className="nav-section-title">Protect</div>
+          <button
+            className={`nav-item ${currentView === 'cloud-backup' ? 'active' : ''}`}
+            onClick={() => handleNavigation('cloud-backup')}
+          >
+            <CloudBackupIcon size={18} color="currentColor" />
+            <span>Cloud Backup</span>
+          </button>
+          <button
+            className={`nav-item ${currentView === 'secured-links' ? 'active' : ''}`}
+            onClick={() => handleNavigation('secured-links')}
+          >
+            <SecurityIcon size={18} color="currentColor" />
+            <span>Secured Links</span>
+          </button>
+          <button
+            className={`nav-item ${currentView === 'security' ? 'active' : ''}`}
+            onClick={() => handleNavigation('security')}
+          >
+            <SecurityIcon size={18} color="currentColor" />
+            <span>Security</span>
+          </button>
+        </div>
+
+        <div className="nav-section secondary">
           <div className="nav-section-title">Tools</div>
           <button
+            className={`nav-item ${currentView === 'analytics' ? 'active' : ''}`}
+            onClick={() => handleNavigation('analytics')}
+          >
+            <AnalyticsIcon size={18} color="currentColor" />
+            <span>Analytics</span>
+          </button>
+          <button
+            className={`nav-item ${currentView === 'ai-assistant' ? 'active' : ''}`}
+            onClick={() => handleNavigation('ai-assistant')}
+          >
+            <AIAssistantIcon size={18} color="currentColor" />
+            <span>AI Assistant</span>
+          </button>
+          <button
             className={`nav-item ${currentView === 'templates' ? 'active' : ''}`}
-            onClick={() => onViewChange('templates')}
+            onClick={() => handleNavigation('templates')}
           >
             <TemplateIcon size={18} color="currentColor" />
             <span>Templates</span>
           </button>
           <button
             className={`nav-item ${currentView === 'shortcuts' ? 'active' : ''}`}
-            onClick={() => onViewChange('shortcuts')}
+            onClick={() => handleNavigation('shortcuts')}
           >
             <ShortcutIcon size={18} color="currentColor" />
             <span>Shortcuts</span>
           </button>
           <button
-            className={`nav-item ${currentView === 'secured-links' ? 'active' : ''}`}
-            onClick={() => onViewChange('secured-links')}
+            className={`nav-item ${currentView === 'relationships' ? 'active' : ''}`}
+            onClick={() => handleNavigation('relationships')}
           >
-            <SecurityIcon size={18} color="currentColor" />
-            <span>Secured Links</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'cloud-backup' ? 'active' : ''}`}
-            onClick={() => onViewChange('cloud-backup')}
-          >
-            <CloudBackupIcon size={18} color="currentColor" />
-            <span>Cloud Backup</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'analytics' ? 'active' : ''}`}
-            onClick={() => onViewChange('analytics')}
-          >
-            <AnalyticsIcon size={18} color="currentColor" />
-            <span>Analytics</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'security' ? 'active' : ''}`}
-            onClick={() => onViewChange('security')}
-          >
-            <SecurityIcon size={18} color="currentColor" />
-            <span>Security</span>
+            <RelationshipsIcon size={18} color="currentColor" />
+            <span>Connections</span>
           </button>
           <button
             className={`nav-item ${currentView === 'integrations' ? 'active' : ''}`}
-            onClick={() => onViewChange('integrations')}
+            onClick={() => handleNavigation('integrations')}
           >
             <IntegrationIcon size={18} color="currentColor" />
             <span>Integrations</span>
           </button>
           <button
-            className={`nav-item ${currentView === 'ai-assistant' ? 'active' : ''}`}
-            onClick={() => onViewChange('ai-assistant')}
-          >
-            <AIAssistantIcon size={18} color="currentColor" />
-            <span>AI Assistant</span>
-          </button>
-        </div>
-
-        <div className="nav-section">
-          <div className="nav-section-title">Community</div>
-          <button
-            className={`nav-item ${currentView === 'social' ? 'active' : ''}`}
-            onClick={() => onViewChange('social')}
-          >
-            <SocialFeedIcon size={18} color="currentColor" />
-            <span>Community Feed</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'learning' ? 'active' : ''}`}
-            onClick={() => onViewChange('learning')}
-          >
-            <LearningIcon size={18} color="currentColor" />
-            <span>Learning</span>
-          </button>
-        </div>
-
-        <div className="nav-section">
-          <div className="nav-section-title">Student</div>
-          <button
             className={`nav-item ${currentView === 'student' ? 'active' : ''}`}
-            onClick={() => onViewChange('student')}
+            onClick={() => handleNavigation('student')}
           >
             <StudentIcon size={18} color="currentColor" />
             <span>Student</span>
@@ -201,34 +227,43 @@ const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </nav>
       {currentFolderId && currentFolderId !== 'root' && (
-        <button className="nav-item" onClick={onNavigateUp}>
+        <button className="nav-item sidebar-back-button" onClick={handleNavigateUp}>
           <BackIcon size={18} color="currentColor" />
           <span>Back</span>
         </button>
       )}
       <div className="sidebar-footer">
         <div className="storage-info">
+          <div className="storage-meta">
+            <span>Drive usage</span>
+            <strong>{Math.round(storageFillWidth)}%</strong>
+          </div>
           <div className="storage-label">
-            Storage: {formatStorage(user?.storageUsed || 0)} /{' '}
+            {formatStorage(user?.storageUsed || 0)} used of{' '}
             {formatStorage(user?.storageLimit || 0)}
           </div>
           <div className="storage-bar">
             <div
               className="storage-bar-fill"
-              style={{ width: `${storagePercent}%` }}
+              style={{ width: `${storageFillWidth}%` }}
             />
           </div>
         </div>
         <div className="user-info">
-          <div className="user-name" style={{ color: '#ffffff' }}>{user?.name}</div>
+          <div className="user-meta">
+            <div className="user-avatar">{userInitials}</div>
+            <div className="user-copy">
+              <div className="user-name">{user?.name || 'Workspace owner'}</div>
+              <div className="user-role">Cloud drive workspace</div>
+            </div>
+          </div>
           <button onClick={logout} className="logout-button">
             Logout
           </button>
         </div>
       </div>
-    </div>
+    </aside>
   );
 };
 
 export default Sidebar;
-

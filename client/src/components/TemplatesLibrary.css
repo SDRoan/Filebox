@@ -9,6 +9,7 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 2rem;
+  gap: 1rem;
 }
 
 .templates-header h2 {
@@ -217,30 +218,34 @@
   color: #333;
 }
 
-.btn-primary {
+.templates-btn-primary {
   background: #4b5563;
   color: white;
   border: none;
   padding: 0.75rem 1.5rem;
   border-radius: 8px;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
   font-weight: 500;
   transition: background 0.2s;
+  flex: 0 0 auto;
+  width: auto;
+  white-space: nowrap;
 }
 
-.btn-primary:hover:not(:disabled) {
+.templates-btn-primary:hover:not(:disabled) {
   background: #374151;
 }
 
-.btn-primary:disabled {
+.templates-btn-primary:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.btn-secondary {
+.templates-btn-secondary {
   background: #f3f4f6;
   color: #374151;
   border: none;
@@ -249,10 +254,20 @@
   cursor: pointer;
   font-weight: 500;
   transition: background 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
 }
 
-.btn-secondary:hover:not(:disabled) {
+.templates-btn-secondary:hover:not(:disabled) {
   background: #e5e7eb;
+}
+
+.templates-create-btn {
+  align-self: flex-start;
+  box-shadow: 0 10px 24px rgba(31, 41, 55, 0.14);
 }
 
 .modal-overlay {
@@ -327,3 +342,13 @@
   margin-top: 2rem;
 }
 
+@media (max-width: 900px) {
+  .templates-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .templates-create-btn {
+    width: auto;
+  }
+}
