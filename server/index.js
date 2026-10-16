@@ -19,12 +19,12 @@ const fileRequestRoutes = require('./routes/fileRequests');
 const searchRoutes = require('./routes/search');
 const debugRoutes = require('./routes/debug');
 const relationshipRoutes = require('./routes/relationships');
-const summarizationRoutes = require('./routes/summarization');
 const smartOrganizationRoutes = require('./routes/smartOrganization');
 const analyticsRoutes = require('./routes/analytics');
 
-// Import learning resource scheduler
-const learningResourceScheduler = require('./services/learningResourceScheduler');
+// Student-product surfaces (courses, assignments, study tools, forums, learning library)
+// are not part of File Box. Their code stays in the repo, but routes are off by default.
+const STUDENT_FEATURES_ENABLED = process.env.FILEBOX_ENABLE_STUDENT_FEATURES === 'true';
 
 const app = express();
 const server = http.createServer(app);
@@ -72,16 +72,10 @@ app.use('/api/file-requests', fileRequestRoutes);
 app.use('/api/search', searchRoutes);
 app.use('/api/debug', debugRoutes);
 app.use('/api/relationships', relationshipRoutes);
-app.use('/api/summarization', summarizationRoutes);
 app.use('/api/smart-org', smartOrganizationRoutes);
 app.use('/api/analytics', analyticsRoutes);
-app.use('/api/groups', require('./routes/groups'));
 app.use('/api/security', require('./routes/security'));
-app.use('/api/assignments', require('./routes/assignments'));
-app.use('/api/courses', require('./routes/courses'));
-app.use('/api/study-groups', require('./routes/studyGroups'));
 app.use('/api/annotations', require('./routes/annotations'));
-app.use('/api/calendar', require('./routes/calendar'));
 app.use('/api/collections', require('./routes/collections'));
 app.use('/api/summaries', require('./routes/summaries'));
 app.use('/api/signatures', require('./routes/signatures'));
@@ -93,13 +87,21 @@ app.use('/api/templates', optionalRoute(path.join(__dirname, 'routes/templates.j
 app.use('/api/web-shortcuts', optionalRoute(path.join(__dirname, 'routes/webShortcuts.js'), [path.join(__dirname, 'models/WebShortcut.js')]));
 app.use('/api/secured-links', require('./routes/securedLinks'));
 app.use('/api/integrations', require('./routes/integrations'));
-app.use('/api/referrals', require('./routes/referrals'));
-app.use('/api/forums', require('./routes/forums'));
-app.use('/api/learning', require('./routes/learning'));
-app.use('/api/course-notes', require('./routes/courseNotes'));
-app.use('/api/study-schedule', require('./routes/studySchedule'));
-app.use('/api/progress-tracking', require('./routes/progressTracking'));
-app.use('/api/study-sessions', require('./routes/studySessions'));
+
+if (STUDENT_FEATURES_ENABLED) {
+  app.use('/api/groups', require('./routes/groups'));
+  app.use('/api/assignments', require('./routes/assignments'));
+  app.use('/api/courses', require('./routes/courses'));
+  app.use('/api/study-groups', require('./routes/studyGroups'));
+  app.use('/api/calendar', require('./routes/calendar'));
+  app.use('/api/referrals', require('./routes/referrals'));
+  app.use('/api/forums', require('./routes/forums'));
+  app.use('/api/learning', require('./routes/learning'));
+  app.use('/api/course-notes', require('./routes/courseNotes'));
+  app.use('/api/study-schedule', require('./routes/studySchedule'));
+  app.use('/api/progress-tracking', require('./routes/progressTracking'));
+  app.use('/api/study-sessions', require('./routes/studySessions'));
+}
 
 // Socket.io for real-time updates
 io.on('connection', (socket) => {
@@ -255,11 +257,13 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`🌐 Frontend App: http://localhost:${CLIENT_PORT}`);
   console.log('═'.repeat(70));
   
-  // Start learning resource scheduler (updates resources every 24 hours)
-  try {
-    learningResourceScheduler.start();
-  } catch (error) {
-    console.error('Failed to start learning resource scheduler:', error);
+  // The learning library is a student feature; only refresh it when those features are enabled.
+  if (STUDENT_FEATURES_ENABLED) {
+    try {
+      require('./services/learningResourceScheduler').start();
+    } catch (error) {
+      console.error('Failed to start learning resource scheduler:', error);
+    }
   }
   console.log(`\n✨  👉  OPEN YOUR BROWSER: http://localhost:${CLIENT_PORT}  👈  ✨\n`);
   console.log('═'.repeat(70) + '\n');

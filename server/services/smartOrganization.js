@@ -1,14 +1,8 @@
-const { HfInference } = require('@huggingface/inference');
 const File = require('../models/File');
 const FileContent = require('../models/FileContent');
 const Folder = require('../models/Folder');
 const textExtractor = require('./textExtractor');
 const config = require('../config/aiConfig');
-
-// Initialize Hugging Face (free tier)
-const hf = config.huggingface.apiKey 
-  ? new HfInference(config.huggingface.apiKey)
-  : new HfInference(); // Works without API key for free inference
 
 class SmartOrganizationService {
   /**
@@ -82,8 +76,7 @@ class SmartOrganizationService {
   }
 
   /**
-   * AI-powered content analysis using Hugging Face
-   * Falls back to rule-based if AI fails
+   * Placeholder for local (Ollama) content analysis; returns null so rule-based analysis is used.
    */
   async aiAnalyze(text, filename, mimeType) {
     // For now, use rule-based analysis as it's more reliable

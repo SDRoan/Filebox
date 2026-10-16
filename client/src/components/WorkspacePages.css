@@ -74,3 +74,12 @@
 .dashboard .social-feed-container .forums-header { padding: 0; margin: 0 0 30px; }
 .dashboard .shared-files-controls .search-box { position: relative; }
 .dashboard .shared-files-controls .search-icon { position: absolute; right: 12px; width: 18px; height: 18px; display: grid; place-items: center; }
+
+/* Signatures page: the signature manager rendered inline instead of as a modal */
+.dashboard .signature-manager-page { width: 100%; padding: 44px 42px 30px; background: #fdfdfb; }
+.dashboard .signature-manager-page .signature-manager-container { width: 100%; max-width: 860px; max-height: none; padding: 0; margin: 0; background: transparent; box-shadow: none; border-radius: 0; overflow: visible; }
+.dashboard .signature-manager-page .signature-manager-header { padding: 0; margin: 0 0 30px; border: 0; }
+.dashboard .signature-manager-page .signature-manager-header h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 36px; font-weight: 400; letter-spacing: -1px; color: #2c402c; }
+.dashboard .signature-manager-page .signature-manager-content { padding: 0; }
+@media (max-width: 1100px) { .dashboard .signature-manager-page { padding: 35px 28px 24px; } }
+@media (max-width: 600px) { .dashboard .signature-manager-page { padding: 28px 16px 20px; } }

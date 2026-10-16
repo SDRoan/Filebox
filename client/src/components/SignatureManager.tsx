@@ -15,9 +15,11 @@ interface SignatureManagerProps {
   onSelectSignature?: (signature: Signature) => void;
   onClose?: () => void;
   selectedFieldId?: string | null;
+  // Render as a full page (the Signatures section) instead of a modal
+  embedded?: boolean;
 }
 
-const SignatureManager: React.FC<SignatureManagerProps> = ({ onSelectSignature, onClose, selectedFieldId }) => {
+const SignatureManager: React.FC<SignatureManagerProps> = ({ onSelectSignature, onClose, selectedFieldId, embedded = false }) => {
   const [signatures, setSignatures] = useState<Signature[]>([]);
   const [loading, setLoading] = useState(true);
   const [showSignaturePad, setShowSignaturePad] = useState(false);
@@ -103,21 +105,21 @@ const SignatureManager: React.FC<SignatureManagerProps> = ({ onSelectSignature, 
   }
 
   return (
-    <div className="signature-manager-overlay" onClick={(e) => {
+    <div className={embedded ? 'signature-manager-page' : 'signature-manager-overlay'} onClick={(e) => {
       // Only close if clicking directly on the overlay, not on child elements
-      if (e.target === e.currentTarget && onClose) {
+      if (!embedded && e.target === e.currentTarget && onClose) {
         onClose();
       }
     }}>
       <div className="signature-manager-container" onClick={(e) => e.stopPropagation()}>
         <div className="signature-manager-header">
-          <h2>My Signatures</h2>
+          <h2>{embedded ? 'Signatures' : 'My Signatures'}</h2>
           {selectedFieldId && (
             <div style={{ fontSize: '0.875rem', color: '#666', marginRight: '1rem' }}>
               Select a signature to apply
             </div>
           )}
-          <button className="close-btn" onClick={onClose}>×</button>
+          {!embedded && <button className="close-btn" onClick={onClose}>×</button>}
         </div>
 
         <div className="signature-manager-content">

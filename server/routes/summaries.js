@@ -5,12 +5,8 @@ const FileSummary = require('../models/FileSummary');
 const File = require('../models/File');
 const FileContent = require('../models/FileContent');
 const textExtractor = require('../services/textExtractor');
-const { HfInference } = require('@huggingface/inference');
+const ollamaClient = require('../services/ollamaClient');
 const config = require('../config/aiConfig');
-
-const hf = config.huggingface.apiKey 
-  ? new HfInference(config.huggingface.apiKey)
-  : new HfInference();
 
 // Get summary for file
 router.get('/file/:fileId', auth, async (req, res) => {
@@ -88,9 +84,17 @@ router.post('/file/:fileId', auth, async (req, res) => {
       });
     }
     
-    // Generate summary using AI
+    // Generate summary with local AI. Without Ollama, report that instead of saving a fake summary.
+    const health = await ollamaClient.health();
+    if (!health.reachable) {
+      return res.status(503).json({
+        code: 'AI_OFFLINE',
+        message: 'File Box AI is offline. Start Ollama on your computer to generate summaries.'
+      });
+    }
+
     try {
-      const summaryText = await generateSummary(extractedText);
+      const summaryText = await generateSummary(file, extractedText);
       const keyPoints = extractKeyPoints(extractedText);
       const extractedData = extractData(extractedText);
       
@@ -104,7 +108,8 @@ router.post('/file/:fileId', auth, async (req, res) => {
         extractedData: extractedData,
         wordCount: wordCount,
         readingTime: readingTime,
-        language: detectLanguage(extractedText)
+        language: detectLanguage(extractedText),
+        model: config.ollama.summaryModel
       });
       
       await summary.save();
@@ -118,27 +123,19 @@ router.post('/file/:fileId', auth, async (req, res) => {
   }
 });
 
-// Helper function to generate summary
-async function generateSummary(text) {
-  try {
-    // Use Hugging Face for summarization
-    const maxLength = Math.min(500, Math.floor(text.length / 2));
-    
-    const response = await hf.summarization({
-      model: 'facebook/bart-large-cnn',
-      inputs: text.substring(0, 5000), // Limit input
-      parameters: {
-        max_length: maxLength,
-        min_length: 50
-      }
-    });
-    
-    return response.summary_text || text.substring(0, 500) + '...';
-  } catch (error) {
-    // Fallback to simple extraction
-    const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 20);
-    return sentences.slice(0, 3).join('. ') + '.';
+// Summarize with the local Ollama summary model
+async function generateSummary(file, text) {
+  const summary = await ollamaClient.chatText({
+    model: config.ollama.summaryModel,
+    system: 'You summarize files for a cloud storage product. Write a short plain-English summary: what the document is, its main points, and why it matters. Stay grounded in the text.',
+    content: `File name: ${file.originalName}\n\nDocument text:\n${text.substring(0, 6500)}`,
+    options: { temperature: 0.2 },
+  });
+
+  if (!summary.trim()) {
+    throw new Error('Ollama returned an empty summary.');
   }
+  return summary.trim();
 }
 
 // Extract key points
@@ -185,11 +182,3 @@ function detectLanguage(text) {
 }
 
 module.exports = router;
-
-
-
-
-
-
-
-

@@ -1,168 +1,82 @@
-# File Box - AI-Powered Cloud Storage
+# File Box
 
-A comprehensive cloud storage and student management platform built with React and Node.js, featuring AI-powered smart organization, file analytics, advanced file management, and student-focused academic tools.
+File Box is an intelligent cloud drive: store, organize, share, protect, search and understand your files.
+Its AI assistant, File Box AI, runs locally through [Ollama](https://ollama.com), so no file content is ever sent to a hosted AI service and nothing requires a paid account.
 
-## Features
+> **Dropbox stores your files. File Box understands and works with your files.**
 
-### Core File Management
-- 🔐 User Authentication (Register/Login)
-- 📁 File Upload & Download
-- 📂 Folder Management (Create, Navigate, Delete)
-- 👥 File Sharing (Share links & User sharing)
-- 💾 Storage Management (Track usage and limits)
-- 🔄 Real-time Updates (WebSocket integration)
-- 📱 Responsive UI
-- 🔍 Advanced File Search
-- 📊 File Analytics & Insights
+The current version runs on localhost as a private, local-AI build of the product.
 
-### Student Features
-- 📚 Course Management (Create, organize, delete courses)
-- 📝 Personal Notes (Organized by course with tags and topics)
-- 📅 Study Schedule & Planner (Plan study sessions with reminders)
-- 📈 Progress Tracking (Track grades, calculate GPA, view statistics)
-- 🧮 Grade Calculator (Calculate current grade and needed grades)
-- 🛠️ Study Tools (Quiz generator, Study guide generator)
-- 📊 Study Analytics (Track study time, productivity, insights)
-- 🎯 Quick Dashboard (Overview of assignments, files, notes, schedules)
-- 👥 Study Groups (Collaborate with classmates)
-- 📋 Assignment Tracker
+## What's in the product
 
-### Advanced Features
-- 🤖 AI Assistant (ChatGPT-like assistant for file management)
-- 🔗 File Connections (Link related files together)
-- 📄 Document Preview (PDF, Word, Images, Code files with syntax highlighting)
-- 🔒 Security Features (Secured links, audit logs)
-- ☁️ Cloud Backup Integration
-- 🔌 Integrations (Microsoft Teams, etc.)
-- 📑 Templates Library
-- 🌐 Web Shortcuts
-- 📚 Learning Resources
+- **Home** – search, starred files, recent files, files shared with you, recent activity and a File Box AI entry point
+- **My Files** – folders, upload, download, rename, move, copy, star, trash, version history, previews
+- **Shared / Recent / Starred / Trash** – real data from file timestamps, access logs and activity
+- **File Box AI** – ask about your files or tell File Box what to do (create folders, rename, move, star, share, trash, file requests, team spaces, backups, summaries)
+- **Team Spaces and File Requests** – shared folders, team chat, collecting files from others
+- **Signatures and Backup** – e-signatures for documents, scheduled local backups
+- **Settings** – account, storage and secondary tools (secured links, file connections, templates, web shortcuts, storage analytics, security, integrations)
 
-## Tech Stack
+## Stack
 
-### Backend
-- Node.js & Express
-- MongoDB (Mongoose)
-- JWT Authentication
-- Socket.io for real-time updates
-- Multer for file uploads
+| Layer | Technology |
+| --- | --- |
+| Frontend | React, TypeScript, React Router |
+| Backend | Node.js, Express, Socket.IO, Multer |
+| Database | MongoDB (Mongoose) |
+| AI | Ollama, local only |
+| Documents | pdf-parse, PDF.js, Mammoth, Tesseract.js, pdf-lib, docx |
 
-### Frontend
-- React with TypeScript
-- React Router
-- Axios for API calls
-- Socket.io Client
+Every dependency is free and open source. No API keys or credit cards are needed.
 
-## Installation
+## Run it locally
 
-### Prerequisites
-- Node.js (v14 or higher)
-- MongoDB (local or MongoDB Atlas)
+Prerequisites: Node.js, MongoDB, and (optionally) Ollama.
 
-### Setup
-
-1. **Clone and install dependencies:**
 ```bash
 npm run install-all
+cp server/env.example server/.env   # then adjust values
+npm run dev                         # server on :5001, client on :3000
 ```
 
-2. **Set up environment variables:**
+For File Box AI:
 
-Create a `.env` file in the `server` directory:
-```env
-PORT=5000
-MONGODB_URI=mongodb://localhost:27017/dropbox-clone
-JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
-CLIENT_URL=http://localhost:3000
-```
-
-3. **Start MongoDB:**
-Make sure MongoDB is running on your system. If using MongoDB Atlas, update the `MONGODB_URI` in `.env`.
-
-4. **Run the application:**
-
-Development mode (runs both server and client):
 ```bash
-npm run dev
+ollama serve
+ollama pull llama3.1:8b   # assistant, planner and summaries
+ollama pull glm-ocr       # optional: better OCR for scanned PDFs
 ```
 
-Or run separately:
-```bash
-# Terminal 1 - Backend
-cd server
-npm run dev
+### Without Ollama
 
-# Terminal 2 - Frontend
-cd client
-npm start
+File Box keeps working when Ollama is stopped: uploads, downloads, folders, sharing, search and backups don't depend on it.
+The File Box AI page shows **"File Box AI is offline"** with a *Check again* button and reconnects automatically once Ollama is running; no restart needed.
+
+## How File Box AI stays safe
+
+- Every file action is scoped to files the signed-in user owns; the assistant can only read files the user owns or that were shared with them.
+- Moving files to Trash and sharing them always require an explicit confirmation in the UI before anything happens.
+- The assistant can't permanently delete files, and can only set up Desktop or Documents backups (custom folders go through the Backup page).
+- "Find…" questions are answered from a real local search, so the assistant only mentions files that exist.
+
+## Project layout
+
+```text
+client/src
+  components/   pages and UI (Dashboard, Sidebar, HomeView, RecentView, AIAssistant, FileBrowser, …)
+  config/       navigation and local-preview settings
+  services/     API client
+  utils/        display helpers
+server
+  config/       app and AI (Ollama) configuration
+  models/       Mongoose models
+  routes/       REST API
+  services/     Ollama client, assistant, action executor, search, text extraction, backups
+  uploads/      file contents (local disk, git-ignored)
 ```
 
-5. **Access the application:**
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:5000
-
-## Usage
-
-1. **Register/Login:** Create an account or sign in
-2. **Upload Files:** Click the "Upload" button to add files
-3. **Create Folders:** Click "New Folder" to organize your files
-4. **Navigate:** Click on folders to browse
-5. **Manage Files:** Use the action buttons to download, star, or delete files
-6. **Share Files:** Share files with other users or create shareable links
-7. **View Storage:** Check your storage usage in the sidebar
-
-## Project Structure
-
-```
-File Box/
-├── server/
-│   ├── models/          # MongoDB models (User, File, Course, etc.)
-│   ├── routes/          # API routes (auth, files, courses, etc.)
-│   ├── services/        # Business logic (AI, text extraction, etc.)
-│   ├── middleware/      # Auth middleware
-│   ├── config/          # Configuration files
-│   ├── uploads/         # Uploaded files storage
-│   └── index.js         # Server entry point
-├── client/
-│   ├── src/
-│   │   ├── components/  # React components (Dashboard, StudentDashboard, etc.)
-│   │   ├── context/     # React context (Auth, etc.)
-│   │   ├── services/    # API services
-│   │   └── types/       # TypeScript types
-│   └── public/
-└── package.json         # Root package.json
-```
-
-## API Endpoints
-
-### Authentication
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login user
-- `GET /api/auth/me` - Get current user
-
-### Files
-- `GET /api/files` - Get files and folders
-- `POST /api/files/upload` - Upload file
-- `POST /api/files/folder` - Create folder
-- `GET /api/files/download/:id` - Download file
-- `DELETE /api/files/:id` - Delete file/folder
-- `POST /api/files/restore/:id` - Restore from trash
-- `POST /api/files/star/:id` - Star/unstar item
-
-### Sharing
-- `POST /api/share/create` - Create share link
-- `GET /api/share/:shareId` - Get share info
-- `POST /api/share/user` - Share with user
-- `GET /api/share/shared/with-me` - Get shared files
-
-## Notes
-
-- Files are stored locally in `server/uploads/` directory
-- Default storage limit is 10GB per user
-- JWT tokens expire after 7 days
-- Make sure to change `JWT_SECRET` in production
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how storage, AI and search fit together, what is disabled, and what is planned.
 
 ## License
 
 MIT
-

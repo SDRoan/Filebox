@@ -1,22 +1,46 @@
-export const workspacePages = [
-  { id: 'files', path: '/', label: 'Files' },
-  { id: 'shared', path: '/shared-files', label: 'Shared with me' },
+export interface WorkspacePage {
+  id: string;
+  path: string;
+  label: string;
+  // Secondary pages are reachable from Settings instead of the sidebar.
+  secondary?: boolean;
+}
+
+export const workspacePages: WorkspacePage[] = [
+  { id: 'home', path: '/', label: 'Home' },
+  { id: 'files', path: '/files', label: 'My Files' },
+  { id: 'shared', path: '/shared', label: 'Shared' },
+  { id: 'recent', path: '/recent', label: 'Recent' },
   { id: 'starred', path: '/starred', label: 'Starred' },
+  { id: 'ai-assistant', path: '/ai', label: 'File Box AI' },
+  { id: 'teams', path: '/team-spaces', label: 'Team Spaces' },
+  { id: 'requests', path: '/file-requests', label: 'File Requests' },
+  { id: 'signatures', path: '/signatures', label: 'Signatures' },
+  { id: 'cloud-backup', path: '/backup', label: 'Backup' },
   { id: 'trash', path: '/trash', label: 'Trash' },
-  { id: 'teams', path: '/team-folders', label: 'Team folders' },
-  { id: 'student', path: '/student', label: 'Study space' },
-  { id: 'learning', path: '/learning', label: 'Learning library' },
-  { id: 'requests', path: '/file-requests', label: 'File requests' },
-  { id: 'relationships', path: '/relationships', label: 'Connections' },
-  { id: 'templates', path: '/templates', label: 'Templates' },
-  { id: 'shortcuts', path: '/web-shortcuts', label: 'Web shortcuts' },
-  { id: 'secured-links', path: '/secured-links', label: 'Secured links' },
-  { id: 'cloud-backup', path: '/cloud-backup', label: 'Cloud backup' },
-  { id: 'analytics', path: '/analytics', label: 'Analytics' },
-  { id: 'security', path: '/security', label: 'Security' },
-  { id: 'integrations', path: '/integrations', label: 'Integrations' },
-  { id: 'ai-assistant', path: '/ai-assistant', label: 'Assistant' },
+  { id: 'settings', path: '/settings', label: 'Settings' },
+  { id: 'secured-links', path: '/secured-links', label: 'Secured links', secondary: true },
+  { id: 'relationships', path: '/connections', label: 'File connections', secondary: true },
+  { id: 'templates', path: '/templates', label: 'Templates', secondary: true },
+  { id: 'shortcuts', path: '/web-shortcuts', label: 'Web shortcuts', secondary: true },
+  { id: 'analytics', path: '/analytics', label: 'Storage analytics', secondary: true },
+  { id: 'security', path: '/security', label: 'Security', secondary: true },
+  { id: 'integrations', path: '/integrations', label: 'Integrations', secondary: true },
 ];
+
+// Old URLs from before the restructure, so bookmarks keep working.
+export const legacyPaths: Record<string, string> = {
+  '/shared-files': '/shared',
+  '/team-folders': '/team-spaces',
+  '/cloud-backup': '/backup',
+  '/ai-assistant': '/ai',
+  '/relationships': '/connections',
+};
+
+// Student-product pages that are no longer part of File Box.
+export const removedPaths = ['/student', '/learning', '/social'];
+
+export const pagePath = (id: string) => workspacePages.find(page => page.id === id)?.path || '/';
 
 export const getWorkspacePage = (pathname: string) =>
   workspacePages.find(page => pathname === page.path || (page.path !== '/' && pathname.startsWith(`${page.path}/`))) || workspacePages[0];

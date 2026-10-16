@@ -1,15 +1,17 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import FileBrowser from './FileBrowser';
 import SearchBar from './SearchBar';
+import HomeView from './HomeView';
+import RecentView from './RecentView';
+import SettingsView from './SettingsView';
 import TeamFolders from './TeamFolders';
 import FileRequests from './FileRequests';
 import RelationshipGraph from './RelationshipGraph';
 import AnalyticsDashboard from './AnalyticsDashboard';
 import RelationshipsList from './RelationshipsList';
 import SecurityDashboard from './SecurityDashboard';
-import StudentDashboard from './StudentDashboard';
 import AIAssistant from './AIAssistant';
 import SharedFiles from './SharedFiles';
 import TemplatesLibrary from './TemplatesLibrary';
@@ -17,41 +19,53 @@ import WebShortcuts from './WebShortcuts';
 import SecuredLinks from './SecuredLinks';
 import CloudBackup from './CloudBackup';
 import Integrations from './Integrations';
-import Learning from './Learning';
+import SignatureManager from './SignatureManager';
+import { FileRowItem } from './FileRowList';
+import { useAuth } from '../context/AuthContext';
 import { FileItemType } from '../types';
-import { getWorkspacePage, workspacePages } from '../config/workspaceNavigation';
+import { getWorkspacePage, pagePath } from '../config/workspaceNavigation';
 import './Dashboard.css';
 import './WorkspacePages.css';
+
+const ownerId = (file: FileItemType) => (typeof file.owner === 'object' && file.owner ? (file.owner as any)._id || file.owner.id : file.owner);
 
 const Dashboard: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const page = getWorkspacePage(location.pathname);
   const currentView = page.id;
-  const setCurrentView = (view: string) => navigate(workspacePages.find(item => item.id === view)?.path || '/');
+  const setCurrentView = useCallback((view: string, state?: unknown) => navigate(pagePath(view), state ? { state } : undefined), [navigate]);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
   const [folderStack, setFolderStack] = useState<string[]>(['root']);
   const [showGraph, setShowGraph] = useState(false);
   const [selectedTeamFolder, setSelectedTeamFolder] = useState<string | null>(null);
   const [relationshipsRefreshKey, setRelationshipsRefreshKey] = useState(0);
+  const [newFolderRequest, setNewFolderRequest] = useState(0);
+  const [pendingUploads, setPendingUploads] = useState<{ id: number; files: File[] } | null>(null);
 
   const currentFolderId = folderStack[folderStack.length - 1];
 
+  // Other pages (Home, Recent, File Box AI) can open a folder in My Files via navigation state.
+  useEffect(() => {
+    const state = location.state as { openFolderId?: string | null } | null;
+    if (currentView !== 'files' || !state || !('openFolderId' in state)) return;
+    setFolderStack(state.openFolderId ? ['root', state.openFolderId] : ['root']);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, currentView, navigate]);
+
   const handleFolderClick = (folderId: string) => {
-    setFolderStack([...folderStack, folderId]);
-    setCurrentView('files');
+    setFolderStack(currentView === 'files' || currentView === 'teams' ? [...folderStack, folderId] : ['root', folderId]);
+    if (currentView !== 'files') setCurrentView('files');
   };
 
-  const handleSearchFileClick = (file: FileItemType) => {
-    // Navigate to the file's folder if it's in a folder
-    if (file.parentFolder) {
-      // We'd need to build the path, but for now just show the file
-      setCurrentView('files');
-    } else {
-      setFolderStack(['root']);
-      setCurrentView('files');
+  const openFile = (file: FileItemType | FileRowItem) => {
+    if (user && ownerId(file) && ownerId(file) !== user.id) {
+      setCurrentView('shared');
+      return;
     }
+    setCurrentView('files', { openFolderId: file.parentFolder || null });
   };
 
   const handleNavigateUp = () => {
@@ -76,6 +90,23 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  // "+ New" goes to the open folder (or team space); from anywhere else it targets My Files.
+  const targetsCurrentBrowser = currentView === 'files' || (currentView === 'teams' && Boolean(selectedTeamFolder));
+  const handleUploadFiles = (files: File[]) => {
+    if (!targetsCurrentBrowser) handleViewChange('files');
+    setPendingUploads({ id: Date.now(), files });
+  };
+  const handleNewFolder = () => {
+    if (!targetsCurrentBrowser) handleViewChange('files');
+    setNewFolderRequest(Date.now());
+  };
+  const newProps = {
+    newFolderRequest,
+    pendingUploads,
+    onPendingUploadsHandled: () => setPendingUploads(null),
+    onNewFolderHandled: () => setNewFolderRequest(0),
+  };
+
   return (
     <div className="dashboard">
       <a className="skip-link" href="#main-content">Skip to content</a>
@@ -83,6 +114,8 @@ const Dashboard: React.FC = () => {
         currentView={currentView}
         onViewChange={handleViewChange}
         onNavigateUp={handleNavigateUp}
+        onUploadFiles={handleUploadFiles}
+        onNewFolder={handleNewFolder}
         currentFolderId={currentFolderId}
         mobileOpen={mobileNavOpen}
         onClose={closeMobileNav}
@@ -92,10 +125,13 @@ const Dashboard: React.FC = () => {
           <button className="mobile-nav-toggle" onClick={() => setMobileNavOpen(!mobileNavOpen)} aria-label="Open navigation" aria-expanded={mobileNavOpen} aria-controls="workspace-navigation">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
-          <div className="workspace-breadcrumb"><span>Workspace</span><span aria-hidden="true">/</span><strong>{page.label}</strong></div>
-          <SearchBar onFileClick={handleSearchFileClick} onFolderClick={handleFolderClick} />
+          <div className="workspace-breadcrumb"><span>File Box</span><span aria-hidden="true">/</span><strong>{page.label}</strong></div>
+          {currentView !== 'home' && <SearchBar onFileClick={openFile} onFolderClick={handleFolderClick} />}
         </header>
         <div className={`workspace-view workspace-view-${currentView}`}>
+        {currentView === 'home' && (
+          <HomeView onOpenFile={openFile} onOpenFolder={handleFolderClick} />
+        )}
         {currentView === 'files' && (
           <FileBrowser
             currentFolderId={currentFolderId}
@@ -103,7 +139,11 @@ const Dashboard: React.FC = () => {
             onNavigateUp={handleNavigateUp}
             showTrash={false}
             folderStack={folderStack}
+            {...newProps}
           />
+        )}
+        {currentView === 'recent' && (
+          <RecentView onOpenFile={openFile} />
         )}
         {currentView === 'trash' && (
           <FileBrowser
@@ -147,7 +187,7 @@ const Dashboard: React.FC = () => {
                 }}
                 style={{ padding: '0.5rem 1rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}
               >
-                ← Back to Team Folders
+                ← Back to Team Spaces
               </button>
             </div>
             <FileBrowser
@@ -164,6 +204,7 @@ const Dashboard: React.FC = () => {
               showTrash={false}
               isTeamFolder={true}
               teamFolderId={selectedTeamFolder}
+              {...newProps}
             />
           </>
         )}
@@ -173,17 +214,23 @@ const Dashboard: React.FC = () => {
             onClose={() => setCurrentView('files')}
           />
         )}
+        {currentView === 'ai-assistant' && (
+          <AIAssistant />
+        )}
+        {currentView === 'signatures' && (
+          <SignatureManager embedded />
+        )}
+        {currentView === 'cloud-backup' && (
+          <CloudBackup />
+        )}
+        {currentView === 'settings' && (
+          <SettingsView onOpenPage={handleViewChange} />
+        )}
         {currentView === 'relationships' && (
           <RelationshipsList key={relationshipsRefreshKey} />
         )}
         {currentView === 'security' && (
           <SecurityDashboard />
-        )}
-        {currentView === 'student' && (
-          <StudentDashboard />
-        )}
-        {currentView === 'ai-assistant' && (
-          <AIAssistant />
         )}
         {currentView === 'templates' && (
           <TemplatesLibrary />
@@ -194,14 +241,8 @@ const Dashboard: React.FC = () => {
         {currentView === 'secured-links' && (
           <SecuredLinks />
         )}
-        {currentView === 'cloud-backup' && (
-          <CloudBackup />
-        )}
         {currentView === 'integrations' && (
           <Integrations />
-        )}
-        {currentView === 'learning' && (
-          <Learning />
         )}
         </div>
       </main>
@@ -209,13 +250,10 @@ const Dashboard: React.FC = () => {
         <RelationshipGraph onClose={() => setShowGraph(false)} />
       )}
       {currentView === 'analytics' && (
-        <AnalyticsDashboard onClose={() => {
-          setCurrentView('files');
-        }} />
+        <AnalyticsDashboard onClose={() => setCurrentView('settings')} />
       )}
     </div>
   );
 };
 
 export default Dashboard;
-

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FileItemType, Folder } from '../types';
+import { useNavigate } from 'react-router-dom';
 import { searchAPI } from '../services/api';
+import { pagePath } from '../config/workspaceNavigation';
 import './SearchBar.css';
 
 interface SearchBarProps {
@@ -14,6 +16,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onFileClick, onFolderClick }) => 
   const [loading, setLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
   // Keyboard shortcut: Ctrl+K or Cmd+K to focus search
   useEffect(() => {
@@ -82,8 +85,8 @@ const SearchBar: React.FC<SearchBarProps> = ({ onFileClick, onFolderClick }) => 
         <input
           ref={inputRef}
           type="text"
-          placeholder="Search your workspace"
-          aria-label="Search your workspace"
+          placeholder="Search your files"
+          aria-label="Search your files"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => query.trim().length > 0 && setShowResults(true)}
@@ -144,6 +147,19 @@ const SearchBar: React.FC<SearchBarProps> = ({ onFileClick, onFolderClick }) => 
 
           {!loading && results.files.length === 0 && results.folders.length === 0 && query.trim().length > 0 && (
             <div className="workspace-search-no-results">No results found</div>
+          )}
+
+          {!loading && query.trim().length > 0 && (
+            <button
+              className="workspace-search-ask-ai"
+              onClick={() => {
+                navigate(`${pagePath('ai-assistant')}?q=${encodeURIComponent(query.trim())}`);
+                setQuery('');
+                setShowResults(false);
+              }}
+            >
+              Ask File Box AI about “{query.trim()}”
+            </button>
           )}
         </div>
       )}

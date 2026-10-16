@@ -19,12 +19,36 @@ const FileContentSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
+  extractionMethod: {
+    type: String,
+    default: ''
+  },
+  editorHtml: {
+    type: String,
+    default: ''
+  },
+  editorUpdatedAt: {
+    type: Date
+  },
   extractionStatus: {
     type: String,
     enum: ['pending', 'completed', 'failed', 'not_supported'],
     default: 'pending'
   },
   summary: {
+    type: String,
+    default: ''
+  },
+  summaryStatus: {
+    type: String,
+    enum: ['not_started', 'pending', 'completed', 'failed'],
+    default: 'not_started'
+  },
+  summaryError: {
+    type: String,
+    default: ''
+  },
+  summaryProvider: {
     type: String,
     default: ''
   },
@@ -40,4 +64,3 @@ const FileContentSchema = new mongoose.Schema({
 });
 
 module.exports = mongoose.model('FileContent', FileContentSchema);
-

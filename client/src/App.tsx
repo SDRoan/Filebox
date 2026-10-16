@@ -4,6 +4,7 @@ import { useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import FileRequestUpload from './components/FileRequestUpload';
+import { legacyPaths, removedPaths } from './config/workspaceNavigation';
 import './App.css';
 
 const App: React.FC = () => {
@@ -16,7 +17,12 @@ const App: React.FC = () => {
   return (
     <Router>
       <Routes>
-        <Route path="/social/*" element={<Navigate to="/" replace />} />
+        {removedPaths.map(path => (
+          <Route key={path} path={`${path}/*`} element={<Navigate to="/" replace />} />
+        ))}
+        {Object.entries(legacyPaths).map(([from, to]) => (
+          <Route key={from} path={from} element={<Navigate to={to} replace />} />
+        ))}
         <Route
           path="/login"
           element={user ? <Navigate to="/" /> : <Login />}

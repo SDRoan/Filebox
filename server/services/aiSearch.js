@@ -1,104 +1,73 @@
-const OpenAI = require('openai');
-const { HfInference } = require('@huggingface/inference');
 const config = require('../config/aiConfig');
 
-// Initialize OpenAI (optional - paid)
-const openai = config.openai.apiKey ? new OpenAI({
-  apiKey: config.openai.apiKey
-}) : null;
+// Search runs entirely on this machine. Embeddings are hashed bag-of-words
+// vectors, so search works offline, without Ollama and without any hosted API.
+const EMBEDDING_DIMENSIONS = 512;
+const STOP_WORDS = new Set(['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'any', 'can', 'had', 'her', 'was', 'one', 'our', 'out', 'has', 'his', 'how', 'its', 'may', 'who', 'did', 'get', 'him', 'with', 'this', 'that', 'from', 'they', 'will', 'have', 'what', 'when', 'your', 'about', 'which', 'their', 'there', 'would', 'into', 'than', 'then', 'them', 'these', 'some', 'could', 'other', 'were', 'been', 'also']);
 
-// Initialize Hugging Face (free tier)
-const hf = config.huggingface.apiKey 
-  ? new HfInference(config.huggingface.apiKey)
-  : new HfInference(); // Works without API key for free inference
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const hashToken = (token) => {
+  let hash = 2166136261;
+  for (let i = 0; i < token.length; i += 1) {
+    hash ^= token.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+};
 
 class AISearch {
   /**
-   * Generate embedding for text using free services (Hugging Face) or paid (OpenAI)
+   * Generate a local embedding for text. Async to keep the existing call sites unchanged.
    */
   async generateEmbedding(text) {
     if (!text || text.trim().length === 0) {
       return [];
     }
 
-    // Limit text length to avoid token limits
     const maxLength = config.extraction.maxTextLength;
-    const truncatedText = text.length > maxLength ? text.substring(0, maxLength) : text;
+    return this.hashedEmbedding(text.length > maxLength ? text.substring(0, maxLength) : text);
+  }
 
-    try {
-      // Priority 1: Try Hugging Face (FREE)
-      if (config.huggingface.useFreeInference || config.huggingface.apiKey) {
-        try {
-          const response = await hf.featureExtraction({
-            model: config.huggingface.embeddingModel,
-            inputs: truncatedText,
-          });
-          
-          // Hugging Face returns array or nested array
-          let embedding = response;
-          if (Array.isArray(response) && response.length > 0 && Array.isArray(response[0])) {
-            // If nested array, take first element
-            embedding = response[0];
-          }
-          
-          // Ensure it's a proper array
-          if (Array.isArray(embedding) && embedding.length > 0) {
-            return embedding;
-          }
-        } catch (hfError) {
-          console.log('Hugging Face embedding failed, trying fallback:', hfError.message);
-          // Continue to next option
-        }
-      }
+  tokenize(text = '') {
+    return text
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(token => token.length > 2 && !STOP_WORDS.has(token));
+  }
 
-      // Priority 2: Try OpenAI (if API key provided - paid)
-      if (openai && config.openai.apiKey) {
-        try {
-          const response = await openai.embeddings.create({
-            model: config.openai.embeddingModel,
-            input: truncatedText
-          });
-          return response.data[0].embedding;
-        } catch (openaiError) {
-          console.log('OpenAI embedding failed, using fallback:', openaiError.message);
-        }
-      }
-
-      // Priority 3: Fallback to simple keyword-based search (FREE)
-      return this.simpleEmbedding(truncatedText);
-    } catch (error) {
-      console.error('Error generating embedding:', error);
-      // Fallback to simple embedding
-      return this.simpleEmbedding(truncatedText);
-    }
+  hashedEmbedding(text) {
+    const vector = new Array(EMBEDDING_DIMENSIONS).fill(0);
+    const tokens = this.tokenize(text);
+    tokens.forEach((token) => {
+      const hash = hashToken(token);
+      // The sign bit spreads collisions so they cancel out instead of piling up.
+      vector[hash % EMBEDDING_DIMENSIONS] += (hash & 0x80000000) ? -1 : 1;
+    });
+    return tokens.length ? vector : [];
   }
 
   /**
-   * Simple keyword-based embedding fallback
+   * Embeddings saved before File Box went local-only have other dimensions; re-derive those from text.
    */
-  simpleEmbedding(text) {
-    // Simple TF-IDF like vector (for demonstration)
-    const words = text.toLowerCase().split(/\s+/);
-    const wordFreq = {};
-    words.forEach(word => {
-      wordFreq[word] = (wordFreq[word] || 0) + 1;
-    });
-    // Return a simple hash-based vector
-    return Object.keys(wordFreq).slice(0, config.search.simpleEmbeddingMaxWords).map(word => wordFreq[word] / words.length);
+  embeddingFor(fileContent) {
+    if (fileContent.embedding?.length === EMBEDDING_DIMENSIONS) {
+      return fileContent.embedding;
+    }
+    return this.hashedEmbedding(fileContent.extractedText || '');
   }
 
   /**
    * Calculate cosine similarity between two vectors
    */
   cosineSimilarity(vecA, vecB) {
-    if (vecA.length === 0 || vecB.length === 0) return 0;
-    
+    if (vecA.length === 0 || vecA.length !== vecB.length) return 0;
+
     let dotProduct = 0;
     let normA = 0;
     let normB = 0;
 
-    const minLength = Math.min(vecA.length, vecB.length);
-    for (let i = 0; i < minLength; i++) {
+    for (let i = 0; i < vecA.length; i++) {
       dotProduct += vecA[i] * vecB[i];
       normA += vecA[i] * vecA[i];
       normB += vecB[i] * vecB[i];
@@ -122,11 +91,7 @@ class AISearch {
 
       // Calculate similarity scores
       const results = fileContents.map(fileContent => {
-        if (!fileContent.embedding || fileContent.embedding.length === 0) {
-          return { fileContent, score: 0 };
-        }
-
-        const similarity = this.cosineSimilarity(queryEmbedding, fileContent.embedding);
+        const similarity = this.cosineSimilarity(queryEmbedding, this.embeddingFor(fileContent));
         return { fileContent, score: similarity };
       });
 
@@ -145,7 +110,7 @@ class AISearch {
    */
   keywordSearch(query, fileContents) {
     const queryLower = query.toLowerCase();
-    const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2); // Ignore very short words
+    const queryWords = queryLower.split(/\s+/).filter(w => w.length > 2).map(escapeRegex); // Ignore very short words
 
     return fileContents
       .map(fileContent => {
@@ -188,7 +153,7 @@ class AISearch {
           
           // Word matches in filename
           queryWords.forEach(word => {
-            if (fileName.includes(word)) {
+            if (fileName.includes(word.replace(/\\/g, ''))) {
               score += config.scoring.partialFilenameMatch;
             }
           });

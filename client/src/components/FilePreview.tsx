@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FileItemType } from '../types';
-import { filesAPI, summariesAPI, searchAPI } from '../services/api';
+import { filesAPI } from '../services/api';
 import CodeViewer from './CodeViewer';
 import FileMemory from './FileMemory';
 import PredictiveOrganization from './PredictiveOrganization';

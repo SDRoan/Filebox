@@ -123,6 +123,10 @@ export const filesAPI = {
     const response = await api.get('/files', { params });
     return response.data;
   },
+  getRecent: async (limit = 30) => {
+    const response = await api.get('/files/recent', { params: { limit } });
+    return response.data;
+  },
   getFileById: async (fileId: string) => {
     const response = await api.get(`/files/file/${fileId}`);
     return response.data;
@@ -474,22 +478,6 @@ export const searchAPI = {
   },
   extractAll: async (force: boolean = true) => {
     const response = await api.post('/search/extract-all', { force });
-    return response.data;
-  },
-};
-
-// Summarization API
-export const summarizationAPI = {
-  generateSummary: async (fileId: string, force: boolean = false) => {
-    const response = await api.post(`/summarization/${fileId}`, { force });
-    return response.data;
-  },
-  getSummary: async (fileId: string) => {
-    const response = await api.get(`/summarization/${fileId}`);
-    return response.data;
-  },
-  getConfig: async () => {
-    const response = await api.get('/summarization/config');
     return response.data;
   },
 };
@@ -1061,14 +1049,20 @@ export const signaturesAPI = {
   },
 };
 
-// AI Assistant API
+// AI Assistant API (local Ollama)
+export type AssistantHistoryMessage = { role: 'user' | 'assistant'; content: string };
+
 export const aiAssistantAPI = {
-  chat: async (question: string, fileId?: string, context?: string) => {
-    const response = await api.post('/ai-assistant/chat', {
-      question,
-      fileId,
-      context
-    });
+  chat: async (question: string, fileId?: string, context?: string, history?: AssistantHistoryMessage[]) => {
+    const response = await api.post('/ai-assistant/chat', { question, fileId, context, history });
+    return response.data;
+  },
+  confirmAction: async (action: { type: string; question: string; fileId?: string | null }) => {
+    const response = await api.post('/ai-assistant/confirm', { ...action, fileId: action.fileId || undefined });
+    return response.data;
+  },
+  getStatus: async () => {
+    const response = await api.get('/ai-assistant/status');
     return response.data;
   },
   getFileInsights: async (fileId: string) => {

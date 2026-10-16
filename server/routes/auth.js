@@ -15,6 +15,9 @@ const router = express.Router();
 router.post('/local-session', async (req, res) => {
   const loopback = ['127.0.0.1', '::1', '::ffff:127.0.0.1'];
   const origins = ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://[::1]:3000'];
+  if (/^http:\/\/(localhost|127\.0\.0\.1|\[::1\]):\d+$/.test(appConfig.server.clientUrl)) {
+    origins.push(appConfig.server.clientUrl);
+  }
   if (process.env.NODE_ENV !== 'development' ||
       !loopback.includes(req.socket.remoteAddress) ||
       !origins.includes(req.get('Origin')) ||

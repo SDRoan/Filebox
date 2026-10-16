@@ -24,6 +24,11 @@ interface FileBrowserProps {
   teamFolderId?: string;
   folderStack?: string[];
   folderPath?: Folder[];
+  // Requests from the sidebar's "+ New" menu
+  newFolderRequest?: number;
+  pendingUploads?: { id: number; files: File[] } | null;
+  onPendingUploadsHandled?: () => void;
+  onNewFolderHandled?: () => void;
 }
 
 const EMPTY_FOLDER_STACK: string[] = [];
@@ -39,6 +44,10 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
   teamFolderId,
   folderStack = EMPTY_FOLDER_STACK,
   folderPath = EMPTY_FOLDER_PATH,
+  newFolderRequest = 0,
+  pendingUploads = null,
+  onPendingUploadsHandled,
+  onNewFolderHandled,
 }) => {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -203,6 +212,26 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
       alert(errorMessage);
     }
   };
+
+  useEffect(() => {
+    if (newFolderRequest > 0) {
+      setShowCreateFolder(true);
+      onNewFolderHandled?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [newFolderRequest]);
+
+  useEffect(() => {
+    if (!pendingUploads) return;
+    (async () => {
+      for (const file of pendingUploads.files) {
+        await handleFileUpload(file);
+      }
+      onPendingUploadsHandled?.();
+    })();
+    // Each batch is handled once, keyed by its id.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingUploads?.id]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();

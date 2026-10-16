@@ -29,24 +29,22 @@ DEFAULT_STORAGE_LIMIT_BYTES=10737418240    # Default user storage limit (10GB)
 MAX_FILE_SIZE_BYTES=107374182400           # Max file upload size (100GB)
 ```
 
-### AI Search Configuration (FREE Options Available!)
+### File Box AI (local Ollama only)
 
-**Option 1: Hugging Face (FREE - Recommended)**
+File Box AI never calls a hosted AI service. Everything runs through Ollama on your machine.
+Storage, sharing and search keep working when Ollama is stopped; only AI features pause.
+
 ```bash
-# No API key needed for free tier! Works out of the box.
-# Optional: Get free API key from https://huggingface.co/settings/tokens for higher limits
-HUGGINGFACE_API_KEY=                          # Optional - free tier works without it
-HUGGINGFACE_EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-USE_HUGGINGFACE_FREE=true                     # Use free inference (default)
+OLLAMA_ENABLED=true
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_ASSISTANT_MODEL=llama3.1:8b          # Chat and answers
+OLLAMA_ASSISTANT_PLANNER_MODEL=llama3.1:8b  # Picks which File Box action to run
+OLLAMA_SUMMARY_MODEL=llama3.1:8b            # Document summaries
+OLLAMA_OCR_MODEL=glm-ocr                    # Scanned PDFs (falls back to Tesseract)
+OLLAMA_TIMEOUT_MS=120000
 ```
 
-**Option 2: OpenAI (Paid - Optional)**
-```bash
-OPENAI_API_KEY=                              # Your OpenAI API key (optional - paid)
-OPENAI_EMBEDDING_MODEL=text-embedding-ada-002 # Embedding model to use
-```
-
-**Note:** The app uses Hugging Face (FREE) by default. No API keys needed!
+Search does not need Ollama: embeddings are computed locally (hashed bag-of-words vectors).
 
 ### AI Search Configuration
 ```bash
@@ -55,7 +53,6 @@ AI_MIN_SIMILARITY_THRESHOLD=0.1      # Minimum similarity score (0-1)
 AI_MAX_SEARCH_RESULTS=20             # Max results returned
 AI_FOLDER_SEARCH_LIMIT=10            # Max folders in search results
 AI_FILENAME_SEARCH_LIMIT=5           # Max filename matches
-AI_SIMPLE_EMBEDDING_MAX_WORDS=100    # Max words for fallback embedding
 ```
 
 ### Search Scoring Weights
@@ -81,31 +78,15 @@ SUPPORTED_MIME_TYPES=
 ALLOWED_MIME_TYPES=
 ```
 
-### AI Summarization Configuration (FREE!)
+### Summaries
 ```bash
-# Enable/disable summarization (default: enabled)
-AI_SUMMARIZATION_ENABLED=true
-
-# Hugging Face summarization model (free)
-AI_SUMMARIZATION_MODEL=facebook/bart-large-cnn
-
-# Max input length in tokens (default: 1024)
-AI_SUMMARIZATION_MAX_INPUT_LENGTH=1024
-
-# Max summary length in tokens (default: 150)
-AI_SUMMARIZATION_MAX_LENGTH=150
-
-# Min summary length in tokens (default: 30)
-AI_SUMMARIZATION_MIN_LENGTH=30
-
-# Auto-generate summaries on file upload (default: false)
-AI_AUTO_SUMMARIZE=false
-
-# Use free Hugging Face inference (default: true)
-USE_HUGGINGFACE_FREE=true
+AI_SUMMARIZATION_ENABLED=true   # Summaries are generated on demand with OLLAMA_SUMMARY_MODEL
 ```
 
-**Note:** Summarization uses Hugging Face's free inference API. No API key needed!
+### Student features
+```bash
+FILEBOX_ENABLE_STUDENT_FEATURES=false   # Courses, assignments, study groups, forums, learning library
+```
 
 ## Configuration Files
 
@@ -129,6 +110,6 @@ REACT_APP_API_URL=http://localhost:5001/api
 1. Set a strong `JWT_SECRET`
 2. Set `CLIENT_URL` to your production frontend URL
 3. Set `MONGODB_URI` to your production database
-4. Set `OPENAI_API_KEY` if using AI search features
+4. Run Ollama wherever the server runs if you want File Box AI
 5. Review and adjust all limits and thresholds as needed
 

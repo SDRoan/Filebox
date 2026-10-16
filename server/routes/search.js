@@ -1,10 +1,9 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const File = require('../models/File');
-const Folder = require('../models/Folder');
 const FileContent = require('../models/FileContent');
 const aiSearch = require('../services/aiSearch');
-const config = require('../config/aiConfig');
+const { searchWorkspace } = require('../services/workspaceSearch');
 const router = express.Router();
 
 /**
@@ -20,96 +19,14 @@ router.get('/ai', auth, async (req, res) => {
     }
 
     const query = q.trim();
-    const userId = req.user._id;
-    
-    console.log(`[AI Search] Query: "${query}" from user ${userId}`);
-
-    // Get all user's files
-    const files = await File.find({
-      owner: userId,
-      isTrashed: { $ne: true }
-    }).populate('parentFolder');
-
-    // Get file contents with embeddings
-    const fileIds = files.map(f => f._id);
-    const fileContents = await FileContent.find({
-      file: { $in: fileIds }
-    }).populate({
-      path: 'file',
-      populate: { path: 'parentFolder' }
-    });
-
-    // Perform semantic search on files with embeddings (content-based)
-    const semanticResults = await aiSearch.semanticSearch(query, fileContents);
-    
-    // Also do keyword search on extracted text content (even without embeddings)
-    // This searches through the actual text content, not just filenames
-    const keywordResults = aiSearch.keywordSearch(query, fileContents);
-    
-    // Also search files without any content extraction (filename only)
-    const filesWithoutContent = files.filter(
-      f => !fileContents.some(fc => {
-        const fileContentFileId = fc.file && fc.file._id ? fc.file._id.toString() : null;
-        return fileContentFileId === f._id.toString();
-      })
-    );
-    
-    const filenameOnlyResults = aiSearch.keywordSearch(query, 
-      filesWithoutContent.map(f => ({
-        file: f,
-        extractedText: '',
-        embedding: []
-      }))
-    );
-
-    // Combine results - prioritize semantic > content keyword > filename only
-    const allResults = [
-      ...semanticResults.map(r => ({ file: r.fileContent.file, score: r.score * 1.5, type: 'semantic' })), // Boost semantic results
-      ...keywordResults.map(r => ({ file: r.fileContent.file, score: r.score, type: 'content-keyword' })),
-      ...filenameOnlyResults.map(r => ({ file: r.fileContent.file, score: r.score * 0.3, type: 'filename-only' })) // Lower priority for filename-only
-    ];
-
-    // Remove duplicates and sort by score
-    const uniqueResults = [];
-    const seenIds = new Set();
-    
-    allResults
-      .sort((a, b) => b.score - a.score)
-      .forEach(result => {
-        const fileId = result.file._id.toString();
-        if (!seenIds.has(fileId)) {
-          seenIds.add(fileId);
-          uniqueResults.push(result.file);
-        }
-      });
-
-    // Also search folders by name
-    const folders = await Folder.find({
-      owner: userId,
-      isTrashed: { $ne: true },
-      name: { $regex: query, $options: 'i' }
-    }).limit(config.search.folderSearchLimit);
-
-    // Log search stats for debugging
-    console.log(`[AI Search] Results: ${semanticResults.length} semantic, ${keywordResults.length} content-keyword, ${filenameOnlyResults.length} filename-only`);
-    console.log(`[AI Search] Total unique results: ${uniqueResults.length}`);
-    console.log(`[AI Search] Files with content extracted: ${fileContents.length}/${files.length}`);
-
-    // Return results (already sorted by relevance score)
-    const allFiles = uniqueResults.slice(0, config.search.maxResults);
+    const { files, folders, stats } = await searchWorkspace(req.user._id, query);
 
     res.json({
-      files: allFiles,
-      folders: folders,
-      query: query,
+      files,
+      folders,
+      query,
       searchType: 'ai',
-      debug: {
-        semanticResults: semanticResults.length,
-        contentKeywordResults: keywordResults.length,
-        filenameOnlyResults: filenameOnlyResults.length,
-        filesWithContent: fileContents.length,
-        totalFiles: files.length
-      }
+      debug: stats
     });
   } catch (error) {
     console.error('AI search error:', error);

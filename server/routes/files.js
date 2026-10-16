@@ -33,6 +33,14 @@ const logActivity = async (user, action, fileId = null, folderId = null, details
   }
 };
 
+// A personal file or folder may only be placed inside a folder the user owns.
+// Team spaces have their own routes and permission checks.
+const resolveOwnedParentFolder = async (parentFolder, userId) => {
+  if (!parentFolder || parentFolder === 'root') return { id: null };
+  const folder = await Folder.findOne({ _id: parentFolder, owner: userId, isTrashed: { $ne: true } }).select('_id').catch(() => null);
+  return folder ? { id: folder._id } : { error: 'Folder not found' };
+};
+
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
@@ -92,6 +100,74 @@ router.get('/folder/:id', auth, async (req, res) => {
   }
 });
 
+const ACCESS_LOG_ACTIONS = { view: 'viewed', download: 'downloaded', edit: 'edited', delete: 'deleted' };
+
+// Recently used files: uploads, edits, views, downloads and other file activity by this user.
+// Built from real timestamps; files the user can no longer access are left out.
+router.get('/recent', auth, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 30, 100);
+
+    const [activities, ownedFiles, viewedFiles] = await Promise.all([
+      Activity.find({ user: userId, file: { $ne: null } })
+        .sort({ createdAt: -1 })
+        .limit(300)
+        .select('file action createdAt')
+        .lean(),
+      File.find({ owner: userId, isTrashed: { $ne: true } })
+        .sort({ updatedAt: -1 })
+        .limit(limit)
+        .select('_id updatedAt createdAt')
+        .lean(),
+      File.find({ 'accessLog.userId': userId, isTrashed: { $ne: true } })
+        .select('_id accessLog')
+        .lean(),
+    ]);
+
+    // fileId -> most recent { at, action }
+    const lastTouched = new Map();
+    const touch = (fileId, at, action) => {
+      if (!fileId || !at) return;
+      const key = fileId.toString();
+      const current = lastTouched.get(key);
+      if (!current || new Date(at) > new Date(current.at)) {
+        lastTouched.set(key, { at, action });
+      }
+    };
+
+    activities.forEach(activity => touch(activity.file, activity.createdAt, activity.action));
+    ownedFiles.forEach(file => {
+      const edited = file.updatedAt && file.createdAt && new Date(file.updatedAt) - new Date(file.createdAt) > 1000;
+      touch(file._id, file.updatedAt || file.createdAt, edited ? 'edited' : 'uploaded');
+    });
+    viewedFiles.forEach(file => {
+      (file.accessLog || [])
+        .filter(entry => entry.userId?.toString() === userId.toString())
+        .forEach(entry => touch(file._id, entry.timestamp, ACCESS_LOG_ACTIONS[entry.action] || 'viewed'));
+    });
+
+    const files = await File.find({
+      _id: { $in: [...lastTouched.keys()] },
+      isTrashed: { $ne: true },
+      $or: [{ owner: userId }, { 'sharedWith.user': userId }],
+    }).populate('owner', 'name email');
+
+    const recent = files
+      .map(file => ({
+        ...file.toObject(),
+        lastInteractionAt: lastTouched.get(file._id.toString()).at,
+        lastInteraction: lastTouched.get(file._id.toString()).action,
+      }))
+      .sort((a, b) => new Date(b.lastInteractionAt) - new Date(a.lastInteractionAt))
+      .slice(0, limit);
+
+    res.json({ files: recent });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Get all files and folders
 router.get('/', auth, async (req, res) => {
   try {
@@ -105,7 +181,8 @@ router.get('/', auth, async (req, res) => {
 
     if (folderId) {
       query.parentFolder = folderId === 'root' ? null : folderId;
-    } else {
+    } else if (trashed !== 'true' && starred !== 'true') {
+      // Trash and Starred list items from every folder, not just the root.
       query.parentFolder = null;
     }
 
@@ -172,6 +249,12 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
     }
 
     const { parentFolder } = req.body;
+    const parent = await resolveOwnedParentFolder(parentFolder, req.user._id);
+    if (parent.error) {
+      await fs.remove(req.file.path);
+      return res.status(404).json({ message: parent.error });
+    }
+
     const file = new File({
       name: req.file.filename,
       originalName: req.file.originalname,
@@ -179,12 +262,13 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
       size: fileSize,
       mimeType: req.file.mimetype,
       owner: req.user._id,
-      parentFolder: parentFolder && parentFolder !== 'root' ? parentFolder : null
+      parentFolder: parent.id
     });
 
     await file.save();
     user.storageUsed += fileSize;
     await user.save();
+    await logActivity(req.user._id, 'uploaded', file._id, null, file.originalName);
 
     // Create file memory context
     try {
@@ -226,8 +310,6 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
         const textExtractor = require('../services/textExtractor');
         const FileContent = require('../models/FileContent');
         const aiSearch = require('../services/aiSearch');
-        const summarizationService = require('../services/summarization');
-        const aiConfig = require('../config/aiConfig');
 
         if (textExtractor.isSupported(file.mimeType)) {
           console.log(`[Extraction] Starting extraction for: ${file.originalName}`);
@@ -246,23 +328,7 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
               extractionStatus: 'completed'
             });
 
-            // Auto-generate summary if enabled
-            if (aiConfig.summarization.autoSummarize && summarizationService.isAvailable()) {
-              try {
-                console.log(`[Summarization] Auto-generating summary for: ${file.originalName}`);
-                const summary = await summarizationService.generateSummary(extractedText);
-                if (summary && summary.length > 0) {
-                  fileContent.summary = summary;
-                  fileContent.summaryGeneratedAt = new Date();
-                  fileContent.summaryModel = summarizationService.getConfig().model;
-                  console.log(`[Summarization] ✅ Auto-generated summary (${summary.length} chars)`);
-                }
-              } catch (summaryError) {
-                console.error(`[Summarization] ⚠️ Auto-summarization failed:`, summaryError.message);
-                // Don't fail extraction if summarization fails
-              }
-            }
-
+            // Summaries are generated on demand by File Box AI (Ollama), not on upload.
             await fileContent.save();
             console.log(`[Extraction] ✅ Completed: ${file.originalName}`);
           } else {
@@ -299,13 +365,19 @@ router.post('/folder', auth, async (req, res) => {
       return res.status(400).json({ message: 'Folder name is required' });
     }
 
+    const parent = await resolveOwnedParentFolder(parentFolder, req.user._id);
+    if (parent.error) {
+      return res.status(404).json({ message: parent.error });
+    }
+
     const folder = new Folder({
       name,
       owner: req.user._id,
-      parentFolder: parentFolder && parentFolder !== 'root' ? parentFolder : null
+      parentFolder: parent.id
     });
 
     await folder.save();
+    await logActivity(req.user._id, 'created', null, folder._id, `Folder: ${folder.name}`);
 
     // Emit real-time update
     const io = req.app.get('io');
@@ -330,33 +402,12 @@ router.get('/download/:id', auth, async (req, res) => {
 
     console.log(`[Download] File found: ${file.originalName}, owner: ${file.owner}, path: ${file.path}`);
 
-    // Check permissions - allow if:
-    // 1. User owns the file
-    // 2. File is shared with user
-    // 3. File is in a public social post
+    // Only the owner and people the file is shared with may download it.
+    // (Public links go through /api/share/:shareId/download.)
     const isOwner = file.owner.toString() === req.user._id.toString();
     const isSharedWith = file.sharedWith && file.sharedWith.some(s => s.user.toString() === req.user._id.toString());
 
-    console.log(`[Download] Permission check - isOwner: ${isOwner}, isSharedWith: ${isSharedWith}`);
-
-    // Check if file is in a public social post
-    let isInPublicPost = false;
     if (!isOwner && !isSharedWith) {
-      try {
-        const SocialPost = require('../models/SocialPost');
-        const publicPost = await SocialPost.findOne({
-          file: file._id,
-          isPublic: true
-        });
-        isInPublicPost = !!publicPost;
-        console.log(`[Download] Public post check - isInPublicPost: ${isInPublicPost}`);
-      } catch (error) {
-        console.error('[Download] Error checking public post:', error);
-        // Continue with other permission checks
-      }
-    }
-
-    if (!isOwner && !isSharedWith && !isInPublicPost) {
       console.log(`[Download] Access denied for user ${req.user._id} to file ${file._id}`);
       return res.status(403).json({ message: 'Access denied. You do not have permission to access this file.' });
     }

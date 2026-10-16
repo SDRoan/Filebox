@@ -3,9 +3,9 @@ import { useAuth } from '../context/AuthContext';
 import { workspacePages } from '../config/workspaceNavigation';
 import Logo from './Logo';
 import {
-  FilesIcon, SharedIcon, StarredIcon, TrashIcon, TeamFoldersIcon, FileRequestsIcon,
-  RelationshipsIcon, AnalyticsIcon, SecurityIcon, AIAssistantIcon,
-  StudentIcon, BackIcon, TemplateIcon, ShortcutIcon, IntegrationIcon, LearningIcon, CloudBackupIcon,
+  HomeIcon, FilesIcon, SharedIcon, RecentIcon, StarredIcon, AIAssistantIcon, TeamFoldersIcon,
+  FileRequestsIcon, SignatureIcon, CloudBackupIcon, TrashIcon, SettingsIcon, BackIcon, PlusIcon,
+  UploadIcon, FolderIcon,
 } from './Icons';
 import './Sidebar.css';
 
@@ -13,31 +13,37 @@ interface SidebarProps {
   currentView: string;
   onViewChange: (view: string) => void;
   onNavigateUp: () => void;
+  onUploadFiles: (files: File[]) => void;
+  onNewFolder: () => void;
   currentFolderId?: string;
   mobileOpen: boolean;
   onClose: () => void;
 }
 
-const primaryItems = [
-  { id: 'files', Icon: FilesIcon }, { id: 'shared', Icon: SharedIcon },
-  { id: 'starred', Icon: StarredIcon }, { id: 'trash', Icon: TrashIcon },
-];
-const workspaceItems = [
-  { id: 'teams', Icon: TeamFoldersIcon }, { id: 'student', Icon: StudentIcon },
-  { id: 'learning', Icon: LearningIcon },
-];
-const toolItems = [
-  { id: 'requests', Icon: FileRequestsIcon }, { id: 'relationships', Icon: RelationshipsIcon },
-  { id: 'templates', Icon: TemplateIcon }, { id: 'shortcuts', Icon: ShortcutIcon },
-  { id: 'secured-links', Icon: SecurityIcon }, { id: 'cloud-backup', Icon: CloudBackupIcon },
-  { id: 'analytics', Icon: AnalyticsIcon }, { id: 'security', Icon: SecurityIcon },
-  { id: 'integrations', Icon: IntegrationIcon }, { id: 'ai-assistant', Icon: AIAssistantIcon },
+type NavItem = { id: string; Icon: React.FC<{ size?: number }> };
+
+const sections: { title?: string; items: NavItem[] }[] = [
+  {
+    items: [
+      { id: 'home', Icon: HomeIcon }, { id: 'files', Icon: FilesIcon }, { id: 'shared', Icon: SharedIcon },
+      { id: 'recent', Icon: RecentIcon }, { id: 'starred', Icon: StarredIcon },
+    ],
+  },
+  { title: 'AI', items: [{ id: 'ai-assistant', Icon: AIAssistantIcon }] },
+  { title: 'Collaboration', items: [{ id: 'teams', Icon: TeamFoldersIcon }, { id: 'requests', Icon: FileRequestsIcon }] },
+  { title: 'Tools', items: [{ id: 'signatures', Icon: SignatureIcon }, { id: 'cloud-backup', Icon: CloudBackupIcon }] },
+  { items: [{ id: 'trash', Icon: TrashIcon }] },
 ];
 
-const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onNavigateUp, currentFolderId, mobileOpen, onClose }) => {
+const Sidebar: React.FC<SidebarProps> = ({
+  currentView, onViewChange, onNavigateUp, onUploadFiles, onNewFolder, currentFolderId, mobileOpen, onClose,
+}) => {
   const { user, logout, isLocalPreview } = useAuth();
-  const [toolsOpen, setToolsOpen] = useState(false);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
+  const newMenuRef = useRef<HTMLDivElement>(null);
+  const uploadInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (!mobileOpen) return;
     const opener = document.activeElement as HTMLElement | null;
@@ -54,45 +60,88 @@ const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onNavigate
     document.addEventListener('keydown', handleKey);
     return () => { document.removeEventListener('keydown', handleKey); opener?.focus(); };
   }, [mobileOpen, onClose]);
+
   useEffect(() => {
-    if (toolItems.some(item => item.id === currentView)) setToolsOpen(true);
-  }, [currentView]);
+    if (!newMenuOpen) return;
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!newMenuRef.current?.contains(event.target as Node)) setNewMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setNewMenuOpen(false); };
+    document.addEventListener('mousedown', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => { document.removeEventListener('mousedown', closeOnOutside); document.removeEventListener('keydown', closeOnEscape); };
+  }, [newMenuOpen]);
+
   const formatStorage = (bytes: number) => bytes === 0 ? '0 GB' : `${(bytes / (1024 ** 3)).toFixed(1)} GB`;
   const storagePercent = user?.storageLimit ? Math.min(100, (user.storageUsed / user.storageLimit) * 100) : 0;
   const initials = (user?.name || 'Workspace').split(' ').map(part => part[0]).slice(0, 2).join('');
-  const renderItem = ({ id, Icon }: typeof primaryItems[number]) => (
+
+  const go = (id: string) => { onViewChange(id); onClose(); };
+  const renderItem = ({ id, Icon }: NavItem) => (
     <button key={id} className={`nav-item ${currentView === id ? 'active' : ''}`}
-      aria-current={currentView === id ? 'page' : undefined} onClick={() => { onViewChange(id); onClose(); }}>
+      aria-current={currentView === id ? 'page' : undefined} onClick={() => go(id)}>
       <Icon size={18} /><span>{workspacePages.find(page => page.id === id)?.label}</span>
       {currentView === id && <span className="nav-active-dot" aria-hidden="true" />}
     </button>
   );
+
   return (
     <>
       {mobileOpen && <button className="sidebar-backdrop" onClick={onClose} aria-label="Close navigation" />}
       <aside ref={sidebarRef} role={mobileOpen ? 'dialog' : undefined} aria-modal={mobileOpen ? true : undefined} aria-label={mobileOpen ? 'Workspace navigation' : undefined} id="workspace-navigation" className={`sidebar ${mobileOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-header">
-          <button className="brand-home" onClick={() => { onViewChange('files'); onClose(); }} aria-label="File Box home"><Logo size="small" /></button>
+          <button className="brand-home" onClick={() => go('home')} aria-label="File Box home"><Logo size="small" /></button>
           <button className="sidebar-close" onClick={onClose} aria-label="Close navigation">×</button>
         </div>
-        <div className="workspace-label"><span className="workspace-mark">W</span><div>Personal workspace<span>Just for you</span></div></div>
+
+        <div className="sidebar-new" ref={newMenuRef}>
+          <button className="sidebar-new-button" aria-haspopup="menu" aria-expanded={newMenuOpen} onClick={() => setNewMenuOpen(!newMenuOpen)}>
+            <PlusIcon size={16} /><span>New</span>
+          </button>
+          {newMenuOpen && (
+            <div className="sidebar-new-menu" role="menu">
+              <button role="menuitem" onClick={() => { setNewMenuOpen(false); uploadInputRef.current?.click(); }}>
+                <UploadIcon size={16} /><span>Upload files</span>
+              </button>
+              <button role="menuitem" onClick={() => { setNewMenuOpen(false); onNewFolder(); onClose(); }}>
+                <FolderIcon size={16} /><span>New folder</span>
+              </button>
+            </div>
+          )}
+          <input
+            ref={uploadInputRef}
+            type="file"
+            multiple
+            hidden
+            onChange={(event) => {
+              const files = Array.from(event.target.files || []);
+              event.target.value = '';
+              if (files.length) { onUploadFiles(files); onClose(); }
+            }}
+          />
+        </div>
+
         <nav className="sidebar-nav" aria-label="Workspace">
-          <div className="nav-section"><div className="nav-section-title">Library</div>{primaryItems.map(renderItem)}</div>
-          <div className="nav-section"><div className="nav-section-title">Work & study</div>{workspaceItems.map(renderItem)}</div>
-          <div className="nav-section tools-section">
-            <button className="tools-toggle" aria-expanded={toolsOpen} aria-controls="workspace-tools" onClick={() => setToolsOpen(!toolsOpen)}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 17.5h7m-3.5-3.5v7"/></svg>
-              <span>More tools</span><span className={`tools-chevron ${toolsOpen ? 'open' : ''}`} aria-hidden="true">⌄</span>
-            </button>
-            <div id="workspace-tools" hidden={!toolsOpen}>{toolItems.map(renderItem)}</div>
-          </div>
+          {sections.map((section, index) => (
+            <div className="nav-section" key={section.title || index}>
+              {section.title && <div className="nav-section-title">{section.title}</div>}
+              {section.items.map(renderItem)}
+            </div>
+          ))}
         </nav>
-        {currentFolderId && currentFolderId !== 'root' && <button className="nav-item" onClick={onNavigateUp}><BackIcon size={18} /><span>Parent folder</span></button>}
+
+        {currentView === 'files' && currentFolderId && currentFolderId !== 'root' && (
+          <button className="nav-item sidebar-parent" onClick={onNavigateUp}><BackIcon size={18} /><span>Parent folder</span></button>
+        )}
+
         <div className="sidebar-footer">
-          <div className="sidebar-storage-info"><div className="sidebar-storage-label"><span>Storage</span><span>{Math.round(storagePercent)}%</span></div>
-            <div className="sidebar-storage-bar"><div className="sidebar-storage-bar-fill" style={{ width: `${storagePercent}%` }} /></div>
-            <p>{formatStorage(user?.storageUsed || 0)} of {formatStorage(user?.storageLimit || 0)} used</p>
+          <div className="sidebar-storage-info" aria-label="Storage usage">
+            <p><span>Storage</span>{formatStorage(user?.storageUsed || 0)} of {formatStorage(user?.storageLimit || 0)}</p>
+            <div className="sidebar-storage-bar" role="progressbar" aria-valuenow={Math.round(storagePercent)} aria-valuemin={0} aria-valuemax={100} aria-label="Storage used"><div className="sidebar-storage-bar-fill" style={{ width: `${storagePercent}%` }} /></div>
           </div>
+          <button className={`nav-item sidebar-settings ${currentView === 'settings' ? 'active' : ''}`} aria-current={currentView === 'settings' ? 'page' : undefined} onClick={() => go('settings')}>
+            <SettingsIcon size={18} /><span>Settings</span>
+          </button>
           <div className="sidebar-user-info"><span className="sidebar-user-avatar" aria-hidden="true">{initials}</span><div className="sidebar-user-details"><div className="sidebar-user-name">{user?.name}</div><span>{isLocalPreview ? 'Personal account' : user?.email}</span></div>
             {!isLocalPreview && <button onClick={logout} className="sidebar-logout-button" title="Sign out" aria-label="Sign out">↪</button>}
           </div>

@@ -20,6 +20,8 @@ const activitySchema = new mongoose.Schema({
     type: String,
     enum: [
       'uploaded',
+      'created',
+      'edited',
       'downloaded',
       'deleted',
       'restored',
@@ -50,13 +52,3 @@ activitySchema.index({ folder: 1, createdAt: -1 });
 activitySchema.index({ user: 1, createdAt: -1 });
 
 module.exports = mongoose.model('Activity', activitySchema);
-
-
-
-
-
-
-
-
-
-
