@@ -10,6 +10,7 @@ const ollamaClient = require('./ollamaClient');
 const config = require('../config/aiConfig');
 const { chunkText } = require('../utils/chunkText');
 const { searchWorkspace } = require('./workspaceSearch');
+const { readableFileFilter } = require('./permissions');
 
 const ACTION_TYPES = [
   'create_relationship',
@@ -170,14 +171,9 @@ class OllamaWorkspaceAssistant {
     }
   }
 
+  // Files the assistant may read: the shared permission rules (owned, shared with the user, Team Spaces).
   getAccessibleFileQuery(userId) {
-    return {
-      $or: [
-        { owner: userId },
-        { 'sharedWith.user': userId },
-      ],
-      isTrashed: { $ne: true },
-    };
+    return readableFileFilter(userId);
   }
 
   questionIsSearch(question = '') {
@@ -455,7 +451,7 @@ class OllamaWorkspaceAssistant {
     if (fileId) {
       return File.findOne({
         _id: fileId,
-        ...this.getAccessibleFileQuery(userId),
+        ...(await this.getAccessibleFileQuery(userId)),
       }).lean();
     }
 
@@ -467,7 +463,7 @@ class OllamaWorkspaceAssistant {
     for (const fileName of referencedFiles) {
       const escaped = fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const file = await File.findOne({
-        ...this.getAccessibleFileQuery(userId),
+        ...(await this.getAccessibleFileQuery(userId)),
         originalName: { $regex: escaped, $options: 'i' },
       }).lean();
 

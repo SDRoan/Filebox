@@ -1,39 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
-const File = require('../models/File');
 const FileContent = require('../models/FileContent');
 const FileSummary = require('../models/FileSummary');
 const ollamaWorkspaceAssistant = require('../services/ollamaWorkspaceAssistant');
 const config = require('../config/aiConfig');
-
-const normalizeSharedUserId = (entry) => {
-  if (!entry) {
-    return '';
-  }
-
-  if (typeof entry.user === 'string') {
-    return entry.user;
-  }
-
-  if (entry.user && typeof entry.user.toString === 'function') {
-    return entry.user.toString();
-  }
-
-  return '';
-};
-
-const canAccessFile = (file, userId) => {
-  if (!file || !userId) {
-    return false;
-  }
-
-  if (file.owner?.toString() === userId.toString()) {
-    return true;
-  }
-
-  return (file.sharedWith || []).some((entry) => normalizeSharedUserId(entry) === userId.toString());
-};
+const { authorizeFile, sendDenied } = require('../services/permissions');
 
 const sanitizeHistory = (history = []) =>
   (Array.isArray(history) ? history : [])
@@ -136,15 +108,9 @@ router.post('/confirm', auth, async (req, res) => {
 // Lightweight file insights for the assistant and preview surfaces
 router.get('/insights/:fileId', auth, async (req, res) => {
   try {
-    const file = await File.findById(req.params.fileId).lean();
-
-    if (!file) {
-      return res.status(404).json({ message: 'File not found' });
-    }
-
-    if (!canAccessFile(file, req.user._id)) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
+    const access = await authorizeFile(req.params.fileId, req.user._id, 'viewer');
+    if (sendDenied(res, access)) return;
+    const file = access.file.toObject();
 
     const [fileContent, legacySummary] = await Promise.all([
       FileContent.findOne({ file: file._id }).lean(),

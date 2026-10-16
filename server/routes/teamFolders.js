@@ -9,9 +9,20 @@ const multer = require('multer');
 const fs = require('fs-extra');
 const path = require('path');
 const router = express.Router();
+const { getTeamRole, authorizeFile, sendDenied } = require('../services/permissions');
 
+const TEAM_ROLES = ['admin', 'editor', 'viewer'];
+
+// Team uploads are stored like personal ones: an absolute path in the uploader's folder.
 const upload = multer({
-  dest: 'uploads/',
+  storage: multer.diskStorage({
+    destination: async (req, file, cb) => {
+      const uploadPath = path.join(__dirname, '..', 'uploads', req.user._id.toString());
+      await fs.ensureDir(uploadPath);
+      cb(null, uploadPath);
+    },
+    filename: (req, file, cb) => cb(null, `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(file.originalname)}`),
+  }),
   limits: { fileSize: 100 * 1024 * 1024 } // 100MB limit
 });
 
@@ -77,8 +88,7 @@ router.get('/:id/messages', auth, async (req, res) => {
     }
 
     // Check access
-    const hasAccess = teamFolder.owner.toString() === req.user._id.toString() ||
-      teamFolder.members.some(m => m.user.toString() === req.user._id.toString());
+    const hasAccess = Boolean(getTeamRole(teamFolder, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
@@ -119,23 +129,7 @@ router.post('/:id/messages', auth, async (req, res) => {
       return res.status(404).json({ message: 'Team folder not found' });
     }
 
-    // Check access - owner always has access
-    const isOwner = teamFolder.owner.toString() === req.user._id.toString();
-    // Check if user is a member (handle both populated and unpopulated cases)
-    const isMember = teamFolder.members.some(m => {
-      if (!m.user) return false;
-      const userId = m.user._id ? m.user._id.toString() : m.user.toString();
-      return userId === req.user._id.toString();
-    });
-    const hasAccess = isOwner || isMember;
-
-    console.log('Message access check:', {
-      userId: req.user._id.toString(),
-      isOwner,
-      isMember,
-      hasAccess,
-      membersCount: teamFolder.members.length
-    });
+    const hasAccess = Boolean(getTeamRole(teamFolder, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied. You must be a member of this team folder.' });
@@ -143,6 +137,12 @@ router.post('/:id/messages', auth, async (req, res) => {
 
     if (!message && !fileId) {
       return res.status(400).json({ message: 'Message or file is required' });
+    }
+
+    // Only files the sender can open may be attached.
+    if (fileId) {
+      const fileAccess = await authorizeFile(fileId, req.user._id, 'viewer');
+      if (sendDenied(res, fileAccess)) return;
     }
 
     // Extract @mentions
@@ -210,8 +210,7 @@ router.get('/:id/messages/:messageId/thread', auth, async (req, res) => {
     }
 
     // Check access
-    const hasAccess = teamFolder.owner.toString() === req.user._id.toString() ||
-      teamFolder.members.some(m => m.user.toString() === req.user._id.toString());
+    const hasAccess = Boolean(getTeamRole(teamFolder, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
@@ -241,8 +240,7 @@ router.patch('/:id/messages/:messageId', auth, async (req, res) => {
     }
 
     // Check access
-    const hasAccess = teamFolder.owner.toString() === req.user._id.toString() ||
-      teamFolder.members.some(m => m.user.toString() === req.user._id.toString());
+    const hasAccess = Boolean(getTeamRole(teamFolder, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
@@ -289,8 +287,7 @@ router.delete('/:id/messages/:messageId', auth, async (req, res) => {
     }
 
     // Check access
-    const hasAccess = teamFolder.owner.toString() === req.user._id.toString() ||
-      teamFolder.members.some(m => m.user.toString() === req.user._id.toString());
+    const hasAccess = Boolean(getTeamRole(teamFolder, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
@@ -304,12 +301,9 @@ router.delete('/:id/messages/:messageId', auth, async (req, res) => {
 
     // Only sender or admin/owner can delete messages
     const isSender = teamMessage.sender.toString() === req.user._id.toString();
-    const isOwner = teamFolder.owner.toString() === req.user._id.toString();
-    const isAdmin = teamFolder.members.some(m => 
-      m.user.toString() === req.user._id.toString() && m.role === 'admin'
-    );
+    const isAdmin = ['owner', 'admin'].includes(getTeamRole(teamFolder, req.user._id));
 
-    if (!isSender && !isOwner && !isAdmin) {
+    if (!isSender && !isAdmin) {
       return res.status(403).json({ message: 'You can only delete your own messages or you must be an admin' });
     }
 
@@ -344,8 +338,7 @@ router.post('/:id/messages/:messageId/reactions', auth, async (req, res) => {
     }
 
     // Check access
-    const hasAccess = teamFolder.owner.toString() === req.user._id.toString() ||
-      teamFolder.members.some(m => m.user.toString() === req.user._id.toString());
+    const hasAccess = Boolean(getTeamRole(teamFolder, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
@@ -412,8 +405,7 @@ router.delete('/:id/messages/:messageId/reactions/:emoji', auth, async (req, res
     }
 
     // Check access
-    const hasAccess = teamFolder.owner.toString() === req.user._id.toString() ||
-      teamFolder.members.some(m => m.user.toString() === req.user._id.toString());
+    const hasAccess = Boolean(getTeamRole(teamFolder, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
@@ -465,8 +457,7 @@ router.post('/:id/messages/:messageId/pin', auth, async (req, res) => {
     }
 
     // Check access
-    const hasAccess = teamFolder.owner.toString() === req.user._id.toString() ||
-      teamFolder.members.some(m => m.user.toString() === req.user._id.toString());
+    const hasAccess = Boolean(getTeamRole(teamFolder, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
@@ -507,8 +498,7 @@ router.get('/:id', auth, async (req, res) => {
     }
 
     // Check access
-    const hasAccess = teamFolder.owner.toString() === req.user._id.toString() ||
-      teamFolder.members.some(m => m.user._id.toString() === req.user._id.toString());
+    const hasAccess = Boolean(getTeamRole(teamFolder, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
@@ -523,7 +513,10 @@ router.get('/:id', auth, async (req, res) => {
 // Add member to team folder
 router.post('/:id/members', auth, async (req, res) => {
   try {
-    const { userId, role } = req.body;
+    const { userId, email, role = 'viewer' } = req.body;
+    if (!TEAM_ROLES.includes(role)) {
+      return res.status(400).json({ message: 'Role must be admin, editor or viewer' });
+    }
     const teamFolder = await TeamFolder.findById(req.params.id);
 
     if (!teamFolder) {
@@ -531,33 +524,27 @@ router.post('/:id/members', auth, async (req, res) => {
     }
 
     // Check if user is admin or owner
-    const isAdmin = teamFolder.owner.toString() === req.user._id.toString() ||
-      teamFolder.members.some(m => 
-        m.user.toString() === req.user._id.toString() && m.role === 'admin'
-      );
+    const isAdmin = ['owner', 'admin'].includes(getTeamRole(teamFolder, req.user._id));
 
     if (!isAdmin) {
       return res.status(403).json({ message: 'Only admins can add members' });
     }
 
-    // Check if user exists
-    const userToAdd = await User.findById(userId);
+    const userToAdd = email
+      ? await User.findOne({ email: String(email).trim().toLowerCase() })
+      : await User.findById(userId).catch(() => null);
     if (!userToAdd) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: 'No File Box account uses that email' });
+    }
+    if (teamFolder.owner.toString() === userToAdd._id.toString()) {
+      return res.status(400).json({ message: 'The owner is already part of this Team Space' });
     }
 
-    // Check if already a member
-    const existingMember = teamFolder.members.find(
-      m => m.user.toString() === userId
-    );
-
+    const existingMember = teamFolder.members.find(m => m.user.toString() === userToAdd._id.toString());
     if (existingMember) {
-      existingMember.role = role || 'viewer';
+      existingMember.role = role;
     } else {
-      teamFolder.members.push({
-        user: userId,
-        role: role || 'viewer'
-      });
+      teamFolder.members.push({ user: userToAdd._id, role });
     }
 
     await teamFolder.save();
@@ -579,10 +566,7 @@ router.delete('/:id/members/:userId', auth, async (req, res) => {
     }
 
     // Check if user is admin or owner
-    const isAdmin = teamFolder.owner.toString() === req.user._id.toString() ||
-      teamFolder.members.some(m => 
-        m.user.toString() === req.user._id.toString() && m.role === 'admin'
-      );
+    const isAdmin = ['owner', 'admin'].includes(getTeamRole(teamFolder, req.user._id));
 
     if (!isAdmin) {
       return res.status(403).json({ message: 'Only admins can remove members' });
@@ -610,8 +594,7 @@ router.get('/:id/files', auth, async (req, res) => {
     }
 
     // Check access
-    const hasAccess = teamFolder.owner.toString() === req.user._id.toString() ||
-      teamFolder.members.some(m => m.user._id.toString() === req.user._id.toString());
+    const hasAccess = Boolean(getTeamRole(teamFolder, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
@@ -632,7 +615,15 @@ router.get('/:id/files', auth, async (req, res) => {
       .populate('owner', 'name email')
       .sort({ createdAt: -1 });
 
-    res.json({ files, folders });
+    // Each file says what the viewer may do: owners manage their own files; others follow their team role.
+    const teamRole = getTeamRole(teamFolder, req.user._id);
+    const memberAccess = teamRole === 'viewer' ? 'viewer' : 'editor';
+    const withAccess = files.map(file => ({
+      ...file.toObject(),
+      access: file.owner?._id?.toString() === req.user._id.toString() ? 'owner' : memberAccess,
+    }));
+
+    res.json({ files: withAccess, folders, teamRole });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -652,12 +643,10 @@ router.post('/:id/upload', auth, upload.single('file'), async (req, res) => {
     }
 
     // Check access and permissions
-    const member = teamFolder.members.find(m => m.user.toString() === req.user._id.toString());
-    const isOwner = teamFolder.owner.toString() === req.user._id.toString();
-    const isAdmin = isOwner || (member && member.role === 'admin');
-    const isEditor = isAdmin || (member && member.role === 'editor');
+    const teamRole = getTeamRole(teamFolder, req.user._id);
+    const isEditor = ['owner', 'admin', 'editor'].includes(teamRole);
 
-    if (!isOwner && !member) {
+    if (!teamRole) {
       await fs.remove(req.file.path);
       return res.status(403).json({ message: 'Access denied' });
     }
@@ -718,12 +707,10 @@ router.post('/:id/folders', auth, async (req, res) => {
     }
 
     // Check access and permissions
-    const member = teamFolder.members.find(m => m.user.toString() === req.user._id.toString());
-    const isOwner = teamFolder.owner.toString() === req.user._id.toString();
-    const isAdmin = isOwner || (member && member.role === 'admin');
-    const isEditor = isAdmin || (member && member.role === 'editor');
+    const teamRole = getTeamRole(teamFolder, req.user._id);
+    const isEditor = ['owner', 'admin', 'editor'].includes(teamRole);
 
-    if (!isOwner && !member) {
+    if (!teamRole) {
       return res.status(403).json({ message: 'Access denied' });
     }
 

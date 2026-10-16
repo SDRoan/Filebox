@@ -4,6 +4,7 @@ const Comment = require('../models/Comment');
 const File = require('../models/File');
 const Activity = require('../models/Activity');
 const router = express.Router();
+const { getFileRole } = require('../services/permissions');
 
 // Helper function to log activity
 const logActivity = async (user, action, fileId = null, folderId = null, details = '') => {
@@ -30,8 +31,7 @@ router.get('/file/:fileId', auth, async (req, res) => {
     }
 
     // Check if user has access (owner or shared with)
-    const hasAccess = file.owner.toString() === req.user._id.toString() ||
-      file.sharedWith.some(s => s.user.toString() === req.user._id.toString());
+    const hasAccess = Boolean(await getFileRole(file, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
@@ -63,8 +63,7 @@ router.post('/file/:fileId', auth, async (req, res) => {
     }
 
     // Check if user has access
-    const hasAccess = file.owner.toString() === req.user._id.toString() ||
-      file.sharedWith.some(s => s.user.toString() === req.user._id.toString());
+    const hasAccess = Boolean(await getFileRole(file, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });
@@ -144,8 +143,7 @@ router.post('/:commentId/reply', auth, async (req, res) => {
 
     // Check if user has access to the file
     const file = await File.findById(comment.file);
-    const hasAccess = file.owner.toString() === req.user._id.toString() ||
-      file.sharedWith.some(s => s.user.toString() === req.user._id.toString());
+    const hasAccess = Boolean(await getFileRole(file, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'Access denied' });

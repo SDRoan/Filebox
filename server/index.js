@@ -134,70 +134,13 @@ mongoose.connect(appConfig.database.uri)
 .then(() => console.log('MongoDB connected'))
 .catch(err => console.error('MongoDB connection error:', err));
 
-// Cleanup job: Permanently delete files/folders after recovery period (30 days)
+// Cleanup job: permanently delete Trash items after the recovery period (30 days)
 const cleanupTrash = async () => {
   try {
-    const File = require('./models/File');
-    const Folder = require('./models/Folder');
-    const User = require('./models/User');
-    const fs = require('fs-extra');
-    
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    // Find files deleted more than 30 days ago
-    const expiredFiles = await File.find({
-      isTrashed: true,
-      deletedAt: { $lte: thirtyDaysAgo }
-    });
-    
-    // Find folders deleted more than 30 days ago
-    const expiredFolders = await Folder.find({
-      isTrashed: true,
-      deletedAt: { $lte: thirtyDaysAgo }
-    });
-    
-    let deletedFilesCount = 0;
-    let deletedFoldersCount = 0;
-    
-    // Permanently delete expired files
-    for (const file of expiredFiles) {
-      try {
-        // Delete physical file
-        if (await fs.pathExists(file.path)) {
-          await fs.remove(file.path);
-        }
-        
-        // Update user storage
-        const user = await User.findById(file.owner);
-        if (user) {
-          user.storageUsed = Math.max(0, user.storageUsed - file.size);
-          await user.save();
-        }
-        
-        await file.deleteOne();
-        deletedFilesCount++;
-      } catch (error) {
-        console.error(`Error permanently deleting file ${file._id}:`, error.message);
-      }
-    }
-    
-    // Permanently delete expired folders
-    for (const folder of expiredFolders) {
-      try {
-        // Delete all files and subfolders in this folder
-        await File.deleteMany({ parentFolder: folder._id });
-        await Folder.deleteMany({ parentFolder: folder._id });
-        
-        await folder.deleteOne();
-        deletedFoldersCount++;
-      } catch (error) {
-        console.error(`Error permanently deleting folder ${folder._id}:`, error.message);
-      }
-    }
-    
-    if (deletedFilesCount > 0 || deletedFoldersCount > 0) {
-      console.log(`[Cleanup] Permanently deleted ${deletedFilesCount} files and ${deletedFoldersCount} folders after 30-day recovery period`);
+    const { purgeTrash, RECOVERY_DAYS } = require('./services/trash');
+    const { files, folders } = await purgeTrash({ olderThanDays: RECOVERY_DAYS });
+    if (files || folders) {
+      console.log(`[Cleanup] Permanently deleted ${files} files and ${folders} folders after the ${RECOVERY_DAYS}-day recovery period`);
     }
   } catch (error) {
     console.error('[Cleanup] Error in trash cleanup job:', error);

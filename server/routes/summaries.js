@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { getFileRole } = require('../services/permissions');
 const auth = require('../middleware/auth');
 const FileSummary = require('../models/FileSummary');
 const File = require('../models/File');
@@ -18,8 +19,7 @@ router.get('/file/:fileId', auth, async (req, res) => {
     }
     
     // Check permissions
-    if (file.owner.toString() !== req.user._id.toString() &&
-        !file.sharedWith.some(s => s.user.toString() === req.user._id.toString())) {
+    if (!(await getFileRole(file, req.user._id))) {
       return res.status(403).json({ message: 'Access denied' });
     }
     
@@ -49,8 +49,7 @@ router.post('/file/:fileId', auth, async (req, res) => {
     }
     
     // Check permissions
-    if (file.owner.toString() !== req.user._id.toString() &&
-        !file.sharedWith.some(s => s.user.toString() === req.user._id.toString())) {
+    if (!(await getFileRole(file, req.user._id))) {
       return res.status(403).json({ message: 'Access denied' });
     }
     

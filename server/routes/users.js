@@ -41,38 +41,16 @@ router.patch('/profile', auth, async (req, res) => {
   }
 });
 
-// Search users
+// Find a user by exact email (used to share and to add Team Space members).
+// There is deliberately no partial search or user list, so accounts can't be enumerated.
 router.get('/search', auth, async (req, res) => {
   try {
-    const { q } = req.query;
-    if (!q) {
+    const email = String(req.query.q || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.json([]);
     }
 
-    const users = await User.find({
-      $or: [
-        { name: { $regex: q, $options: 'i' } },
-        { email: { $regex: q, $options: 'i' } }
-      ],
-      _id: { $ne: req.user._id }
-    }).select('name email').limit(10);
-
-    res.json(users);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-});
-
-// Get all users (for sharing)
-router.get('/all', auth, async (req, res) => {
-  try {
-    const users = await User.find({
-      _id: { $ne: req.user._id }
-    })
-    .select('name email')
-    .sort({ name: 1 })
-    .limit(100);
-
+    const users = await User.find({ email, _id: { $ne: req.user._id } }).select('name email').limit(1);
     res.json(users);
   } catch (error) {
     res.status(500).json({ message: error.message });

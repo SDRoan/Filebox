@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { getFileRole } = require('../services/permissions');
 const auth = require('../middleware/auth');
 const Signature = require('../models/Signature');
 const DocumentSignature = require('../models/DocumentSignature');
@@ -155,8 +156,7 @@ router.post('/apply/:fileId', auth, async (req, res) => {
       return res.status(404).json({ message: 'File not found' });
     }
     
-    if (file.owner.toString() !== req.user._id.toString() &&
-        !file.sharedWith.some(s => s.user.toString() === req.user._id.toString())) {
+    if (!(await getFileRole(file, req.user._id))) {
       return res.status(403).json({ message: 'Access denied' });
     }
     
@@ -232,8 +232,7 @@ router.get('/document/:fileId', auth, async (req, res) => {
       return res.status(404).json({ message: 'File not found' });
     }
     
-    if (file.owner.toString() !== req.user._id.toString() &&
-        !file.sharedWith.some(s => s.user.toString() === req.user._id.toString())) {
+    if (!(await getFileRole(file, req.user._id))) {
       return res.status(403).json({ message: 'Access denied' });
     }
     

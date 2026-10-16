@@ -3,6 +3,7 @@ const auth = require('../middleware/auth');
 const Annotation = require('../models/Annotation');
 const File = require('../models/File');
 const router = express.Router();
+const { getFileRole } = require('../services/permissions');
 
 // Get annotations for a file
 router.get('/file/:fileId', auth, async (req, res) => {
@@ -13,8 +14,7 @@ router.get('/file/:fileId', auth, async (req, res) => {
     }
 
     // Check if user has access
-    const hasAccess = file.owner.toString() === req.user._id.toString() ||
-      file.sharedWith.some(s => s.user.toString() === req.user._id.toString());
+    const hasAccess = Boolean(await getFileRole(file, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'No access to this file' });
@@ -55,8 +55,7 @@ router.post('/', auth, async (req, res) => {
     }
 
     // Check if user has access
-    const hasAccess = fileDoc.owner.toString() === req.user._id.toString() ||
-      fileDoc.sharedWith.some(s => s.user.toString() === req.user._id.toString());
+    const hasAccess = Boolean(await getFileRole(fileDoc, req.user._id));
 
     if (!hasAccess) {
       return res.status(403).json({ message: 'No access to this file' });

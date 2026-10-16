@@ -4,6 +4,7 @@ const FileMemory = require('../models/FileMemory');
 const File = require('../models/File');
 const Folder = require('../models/Folder');
 const router = express.Router();
+const { getFileRole } = require('../services/permissions');
 
 // Get memory for a specific file
 router.get('/file/:fileId', auth, async (req, res) => {
@@ -15,8 +16,7 @@ router.get('/file/:fileId', auth, async (req, res) => {
     }
 
     // Check permissions
-    if (file.owner.toString() !== req.user._id.toString() &&
-        !file.sharedWith.some(s => s.user.toString() === req.user._id.toString())) {
+    if (!(await getFileRole(file, req.user._id))) {
       return res.status(403).json({ message: 'Access denied' });
     }
 

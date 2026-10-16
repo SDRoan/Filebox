@@ -15,6 +15,10 @@ const appConfig = require('../config/appConfig');
 const StudyGroup = require('../models/StudyGroup');
 const FileMemory = require('../models/FileMemory');
 const { assertAvailable } = require('../utils/optionalModule');
+const { authorizeFile, authorizeFolder, sendDenied, capabilitiesFor, getFileRole, readableFileFilter } = require('../services/permissions');
+const { snapshotCurrentVersion, replaceFileContents, newLivePath } = require('../services/fileVersions');
+const { purgeFile, purgeFolderTree, purgeTrash, trashSize, RECOVERY_DAYS } = require('../services/trash');
+const { buildStorageSummary, recalculateStorage } = require('../services/storageSummary');
 const router = express.Router();
 
 // Helper function to log activity
@@ -65,17 +69,12 @@ const upload = multer({
 // Get file by ID (must be before other routes to avoid conflicts)
 router.get('/file/:id', auth, async (req, res) => {
   try {
-    const file = await File.findOne({
-      _id: req.params.id,
-      owner: req.user._id,
-      isTrashed: { $ne: true }
-    }).populate('owner', 'name email');
+    const access = await authorizeFile(req.params.id, req.user._id, 'viewer');
+    if (sendDenied(res, access)) return;
+    if (access.file.isTrashed) return res.status(404).json({ message: 'File not found' });
+    await access.file.populate('owner', 'name email');
 
-    if (!file) {
-      return res.status(404).json({ message: 'File not found' });
-    }
-
-    res.json({ file });
+    res.json({ file: access.file, access: capabilitiesFor(access.role) });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -84,15 +83,10 @@ router.get('/file/:id', auth, async (req, res) => {
 // Get folder by ID
 router.get('/folder/:id', auth, async (req, res) => {
   try {
-    const folder = await Folder.findOne({
-      _id: req.params.id,
-      owner: req.user._id,
-      isTrashed: { $ne: true }
-    }).populate('owner', 'name email');
-
-    if (!folder) {
-      return res.status(404).json({ message: 'Folder not found' });
-    }
+    const access = await authorizeFolder(req.params.id, req.user._id, 'viewer');
+    if (sendDenied(res, access)) return;
+    if (access.folder.isTrashed) return res.status(404).json({ message: 'Folder not found' });
+    const folder = await access.folder.populate('owner', 'name email');
 
     res.json({ folder });
   } catch (error) {
@@ -141,6 +135,18 @@ router.get('/recent', auth, async (req, res) => {
       const edited = file.updatedAt && file.createdAt && new Date(file.updatedAt) - new Date(file.createdAt) > 1000;
       touch(file._id, file.updatedAt || file.createdAt, edited ? 'edited' : 'uploaded');
     });
+    // Sharing: when you shared a file, or when it was shared with you (share entry ids carry the time).
+    const sharingFiles = await File.find({
+      isTrashed: { $ne: true },
+      $or: [{ owner: userId, 'sharedWith.0': { $exists: true } }, { 'sharedWith.user': userId }],
+    }).select('owner sharedWith').lean();
+    sharingFiles.forEach(file => {
+      const mine = file.owner.toString() === userId.toString();
+      (file.sharedWith || [])
+        .filter(entry => mine || entry.user?.toString() === userId.toString())
+        .forEach(entry => touch(file._id, entry._id.getTimestamp(), mine ? 'shared' : 'shared_with_you'));
+    });
+
     viewedFiles.forEach(file => {
       (file.accessLog || [])
         .filter(entry => entry.userId?.toString() === userId.toString())
@@ -148,14 +154,25 @@ router.get('/recent', auth, async (req, res) => {
     });
 
     const files = await File.find({
+      ...(await readableFileFilter(userId)),
       _id: { $in: [...lastTouched.keys()] },
-      isTrashed: { $ne: true },
-      $or: [{ owner: userId }, { 'sharedWith.user': userId }],
     }).populate('owner', 'name email');
 
-    const recent = files
+    const withAccess = await Promise.all(files.map(async (file) => {
+      const role = await getFileRole(file, userId);
+      const item = file.toObject();
+      // Don't expose other recipients or server paths on files someone else owns.
+      if (role !== 'owner') {
+        delete item.path;
+        delete item.sharedWith;
+        delete item.accessLog;
+      }
+      return { ...item, access: role };
+    }));
+
+    const recent = withAccess
       .map(file => ({
-        ...file.toObject(),
+        ...file,
         lastInteractionAt: lastTouched.get(file._id.toString()).at,
         lastInteraction: lastTouched.get(file._id.toString()).action,
       }))
@@ -167,6 +184,50 @@ router.get('/recent', auth, async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
+// Trash summary: size, item counts and how long items are kept
+router.get('/trash/summary', auth, async (req, res) => {
+  try {
+    const { folderIds, ...summary } = await trashSize(req.user._id);
+    res.json({ ...summary, recoveryDays: RECOVERY_DAYS });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Storage overview: usage, categories, large files, duplicates, Trash
+router.get('/storage/summary', auth, async (req, res) => {
+  try {
+    res.json(await buildStorageSummary(req.user._id));
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Reset the account's storage counter to the measured total of its files
+router.post('/storage/recalculate', auth, async (req, res) => {
+  try {
+    const storageUsed = await recalculateStorage(req.user._id);
+    res.json({ storageUsed });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Empty Trash. The client must send { confirm: true } after asking the user.
+router.delete('/trash', auth, async (req, res) => {
+  try {
+    if (req.body?.confirm !== true) {
+      return res.status(400).json({ message: 'Emptying Trash requires confirmation' });
+    }
+    const counts = await purgeTrash({ userId: req.user._id });
+    req.app.get('io').to(`user-${req.user._id}`).emit('trash-emptied', counts);
+    res.json({ message: 'Trash emptied', ...counts });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 
 // Get all files and folders
 router.get('/', auth, async (req, res) => {
@@ -220,6 +281,18 @@ router.get('/', auth, async (req, res) => {
     }
 
     const folders = await Folder.find(folderQuery).populate('owner', 'name email').sort({ createdAt: -1 });
+
+    // Trash shows where each item used to live.
+    if (trashed === 'true') {
+      const parentIds = [...new Set([...files, ...folders].map(item => item.parentFolder?.toString()).filter(Boolean))];
+      const parents = await Folder.find({ _id: { $in: parentIds } }).select('name').lean();
+      const names = new Map(parents.map(folder => [folder._id.toString(), folder.name]));
+      const withLocation = (item) => ({
+        ...item.toObject(),
+        originalLocation: item.parentFolder ? (names.get(item.parentFolder.toString()) || 'Deleted folder') : 'My Files',
+      });
+      return res.json({ files: files.map(withLocation), folders: folders.map(withLocation), recoveryDays: RECOVERY_DAYS });
+    }
 
     res.json({ files, folders });
   } catch (error) {
@@ -393,24 +466,11 @@ router.post('/folder', auth, async (req, res) => {
 router.get('/download/:id', auth, async (req, res) => {
   try {
     console.log(`[Download] Request for file ${req.params.id} by user ${req.user._id}`);
-    const file = await File.findById(req.params.id);
-
-    if (!file) {
-      console.log(`[Download] File ${req.params.id} not found in database`);
-      return res.status(404).json({ message: 'File not found' });
-    }
+    const access = await authorizeFile(req.params.id, req.user._id, 'viewer');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
 
     console.log(`[Download] File found: ${file.originalName}, owner: ${file.owner}, path: ${file.path}`);
-
-    // Only the owner and people the file is shared with may download it.
-    // (Public links go through /api/share/:shareId/download.)
-    const isOwner = file.owner.toString() === req.user._id.toString();
-    const isSharedWith = file.sharedWith && file.sharedWith.some(s => s.user.toString() === req.user._id.toString());
-
-    if (!isOwner && !isSharedWith) {
-      console.log(`[Download] Access denied for user ${req.user._id} to file ${file._id}`);
-      return res.status(403).json({ message: 'Access denied. You do not have permission to access this file.' });
-    }
 
     const pathExists = await fs.pathExists(file.path);
     console.log(`[Download] File path exists: ${pathExists}, path: ${file.path}`);
@@ -497,17 +557,9 @@ router.get('/download/:id', auth, async (req, res) => {
 // Track file view
 router.post('/view/:id', auth, async (req, res) => {
   try {
-    const file = await File.findById(req.params.id);
-
-    if (!file) {
-      return res.status(404).json({ message: 'File not found' });
-    }
-
-    // Check permissions
-    if (file.owner.toString() !== req.user._id.toString() &&
-        !file.sharedWith.some(s => s.user.toString() === req.user._id.toString())) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
+    const access = await authorizeFile(req.params.id, req.user._id, 'viewer');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
 
     // Track activity - notify owner if this is a shared file
     const isSharedFile = file.owner.toString() !== req.user._id.toString();
@@ -574,10 +626,9 @@ router.delete('/:id', auth, async (req, res) => {
     const { type } = req.query; // 'file' or 'folder'
 
     if (type === 'folder') {
-      const folder = await Folder.findById(req.params.id);
-      if (!folder || folder.owner.toString() !== req.user._id.toString()) {
-        return res.status(404).json({ message: 'Folder not found' });
-      }
+      const access = await authorizeFolder(req.params.id, req.user._id, 'owner');
+      if (sendDenied(res, access)) return;
+      const { folder } = access;
       folder.isTrashed = true;
       folder.deletedAt = new Date();
       await folder.save();
@@ -587,10 +638,9 @@ router.delete('/:id', auth, async (req, res) => {
 
       res.json({ message: 'Folder moved to trash' });
     } else {
-      const file = await File.findById(req.params.id);
-      if (!file || file.owner.toString() !== req.user._id.toString()) {
-        return res.status(404).json({ message: 'File not found' });
-      }
+      const access = await authorizeFile(req.params.id, req.user._id, 'owner');
+      if (sendDenied(res, access)) return;
+      const { file } = access;
 
       file.isTrashed = true;
       file.deletedAt = new Date();
@@ -613,39 +663,29 @@ router.delete('/:id', auth, async (req, res) => {
 router.delete('/permanent/:id', auth, async (req, res) => {
   try {
     const { type } = req.query;
+    const io = req.app.get('io');
 
     if (type === 'folder') {
-      const folder = await Folder.findById(req.params.id);
-      if (!folder || folder.owner.toString() !== req.user._id.toString()) {
-        return res.status(404).json({ message: 'Folder not found' });
+      const access = await authorizeFolder(req.params.id, req.user._id, 'owner');
+      if (sendDenied(res, access)) return;
+      const { folder } = access;
+      if (!folder.isTrashed) {
+        return res.status(400).json({ message: 'Move the folder to Trash before deleting it permanently' });
       }
-      await folder.deleteOne();
 
-      const io = req.app.get('io');
+      const counts = await purgeFolderTree(folder);
       io.to(`user-${req.user._id}`).emit('folder-permanently-deleted', folder);
-
-      res.json({ message: 'Folder permanently deleted' });
+      res.json({ message: 'Folder permanently deleted', ...counts });
     } else {
-      const file = await File.findById(req.params.id);
-      if (!file || file.owner.toString() !== req.user._id.toString()) {
-        return res.status(404).json({ message: 'File not found' });
+      const access = await authorizeFile(req.params.id, req.user._id, 'owner');
+      if (sendDenied(res, access)) return;
+      const { file } = access;
+      if (!file.isTrashed) {
+        return res.status(400).json({ message: 'Move the file to Trash before deleting it permanently' });
       }
 
-      // Delete physical file
-      if (await fs.pathExists(file.path)) {
-        await fs.remove(file.path);
-      }
-
-      // Update user storage
-      const user = await User.findById(req.user._id);
-      user.storageUsed -= file.size;
-      await user.save();
-
-      await file.deleteOne();
-
-      const io = req.app.get('io');
+      await purgeFile(file);
       io.to(`user-${req.user._id}`).emit('file-permanently-deleted', file);
-
       res.json({ message: 'File permanently deleted' });
     }
   } catch (error) {
@@ -653,16 +693,14 @@ router.delete('/permanent/:id', auth, async (req, res) => {
   }
 });
 
-// Restore from trash
 router.post('/restore/:id', auth, async (req, res) => {
   try {
     const { type } = req.query;
 
     if (type === 'folder') {
-      const folder = await Folder.findById(req.params.id);
-      if (!folder || folder.owner.toString() !== req.user._id.toString()) {
-        return res.status(404).json({ message: 'Folder not found' });
-      }
+      const access = await authorizeFolder(req.params.id, req.user._id, 'owner');
+      if (sendDenied(res, access)) return;
+      const { folder } = access;
       folder.isTrashed = false;
       folder.deletedAt = null;
       await folder.save();
@@ -675,10 +713,9 @@ router.post('/restore/:id', auth, async (req, res) => {
 
       res.json(folder);
     } else {
-      const file = await File.findById(req.params.id);
-      if (!file || file.owner.toString() !== req.user._id.toString()) {
-        return res.status(404).json({ message: 'File not found' });
-      }
+      const access = await authorizeFile(req.params.id, req.user._id, 'owner');
+      if (sendDenied(res, access)) return;
+      const { file } = access;
       file.isTrashed = false;
       file.deletedAt = null;
       await file.save();
@@ -703,10 +740,9 @@ router.post('/star/:id', auth, async (req, res) => {
     const { type } = req.query;
 
     if (type === 'folder') {
-      const folder = await Folder.findById(req.params.id);
-      if (!folder || folder.owner.toString() !== req.user._id.toString()) {
-        return res.status(404).json({ message: 'Folder not found' });
-      }
+      const access = await authorizeFolder(req.params.id, req.user._id, 'owner');
+      if (sendDenied(res, access)) return;
+      const { folder } = access;
       folder.isStarred = !folder.isStarred;
       await folder.save();
 
@@ -720,10 +756,9 @@ router.post('/star/:id', auth, async (req, res) => {
 
       res.json(folder);
     } else {
-      const file = await File.findById(req.params.id);
-      if (!file || file.owner.toString() !== req.user._id.toString()) {
-        return res.status(404).json({ message: 'File not found' });
-      }
+      const access = await authorizeFile(req.params.id, req.user._id, 'owner');
+      if (sendDenied(res, access)) return;
+      const { file } = access;
       file.isStarred = !file.isStarred;
       await file.save();
 
@@ -754,10 +789,9 @@ router.patch('/rename/:id', auth, async (req, res) => {
     }
 
     if (type === 'folder') {
-      const folder = await Folder.findById(req.params.id);
-      if (!folder || folder.owner.toString() !== req.user._id.toString()) {
-        return res.status(404).json({ message: 'Folder not found' });
-      }
+      const access = await authorizeFolder(req.params.id, req.user._id, 'owner');
+      if (sendDenied(res, access)) return;
+      const { folder } = access;
       folder.name = name;
       await folder.save();
 
@@ -769,10 +803,9 @@ router.patch('/rename/:id', auth, async (req, res) => {
 
       res.json(folder);
     } else {
-      const file = await File.findById(req.params.id);
-      if (!file || file.owner.toString() !== req.user._id.toString()) {
-        return res.status(404).json({ message: 'File not found' });
-      }
+      const access = await authorizeFile(req.params.id, req.user._id, 'owner');
+      if (sendDenied(res, access)) return;
+      const { file } = access;
       file.originalName = name;
       await file.save();
 
@@ -795,10 +828,9 @@ router.patch('/move/:id', auth, async (req, res) => {
     const { type, targetFolderId } = req.body;
 
     if (type === 'folder') {
-      const folder = await Folder.findById(req.params.id);
-      if (!folder || folder.owner.toString() !== req.user._id.toString()) {
-        return res.status(404).json({ message: 'Folder not found' });
-      }
+      const access = await authorizeFolder(req.params.id, req.user._id, 'owner');
+      if (sendDenied(res, access)) return;
+      const { folder } = access;
 
       // Prevent moving folder into itself or its children
       if (targetFolderId && targetFolderId !== 'root') {
@@ -829,10 +861,9 @@ router.patch('/move/:id', auth, async (req, res) => {
 
       res.json(folder);
     } else {
-      const file = await File.findById(req.params.id);
-      if (!file || file.owner.toString() !== req.user._id.toString()) {
-        return res.status(404).json({ message: 'File not found' });
-      }
+      const access = await authorizeFile(req.params.id, req.user._id, 'owner');
+      if (sendDenied(res, access)) return;
+      const { file } = access;
 
       if (targetFolderId && targetFolderId !== 'root') {
         const targetFolder = await Folder.findById(targetFolderId);
@@ -885,11 +916,9 @@ router.patch('/move/:id', auth, async (req, res) => {
 router.post('/copy/:id', auth, async (req, res) => {
   try {
     const { targetFolderId } = req.body;
-    const file = await File.findById(req.params.id);
-
-    if (!file || file.owner.toString() !== req.user._id.toString()) {
-      return res.status(404).json({ message: 'File not found' });
-    }
+    const access = await authorizeFile(req.params.id, req.user._id, 'owner');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
 
     if (targetFolderId && targetFolderId !== 'root') {
       const targetFolder = await Folder.findById(targetFolderId);
@@ -943,11 +972,9 @@ router.post('/copy/:id', auth, async (req, res) => {
 // Download folder as ZIP
 router.get('/download-folder/:id', auth, async (req, res) => {
   try {
-    const folder = await Folder.findById(req.params.id);
-
-    if (!folder || folder.owner.toString() !== req.user._id.toString()) {
-      return res.status(404).json({ message: 'Folder not found' });
-    }
+    const access = await authorizeFolder(req.params.id, req.user._id, 'owner');
+    if (sendDenied(res, access)) return;
+    const { folder } = access;
 
     // Recursive function to get all files in folder and subfolders
     const getAllFiles = async (folderId, basePath = '') => {
@@ -1000,10 +1027,9 @@ router.get('/download-folder/:id', auth, async (req, res) => {
 // Get file versions
 router.get('/versions/:id', auth, async (req, res) => {
   try {
-    const file = await File.findById(req.params.id);
-    if (!file || file.owner.toString() !== req.user._id.toString()) {
-      return res.status(404).json({ message: 'File not found' });
-    }
+    const access = await authorizeFile(req.params.id, req.user._id, 'editor');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
 
     const versions = await FileVersion.find({ file: req.params.id })
       .populate('uploadedBy', 'name email')
@@ -1025,10 +1051,9 @@ router.get('/version/:versionId/download', auth, async (req, res) => {
       return res.status(404).json({ message: 'Version not found' });
     }
 
-    const file = version.file;
-    if (file.owner.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
+    const access = await authorizeFile(version.file?._id, req.user._id, 'editor');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
 
     if (!await fs.pathExists(version.path)) {
       return res.status(404).json({ message: 'Version file not found on disk' });
@@ -1050,55 +1075,23 @@ router.post('/version/:versionId/restore', auth, async (req, res) => {
       return res.status(404).json({ message: 'Version not found' });
     }
 
-    const file = version.file;
-    if (file.owner.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Access denied' });
+    const access = await authorizeFile(version.file?._id, req.user._id, 'editor');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
+
+    if (!(await fs.pathExists(version.path))) {
+      return res.status(404).json({ message: 'This version is no longer available on disk' });
     }
 
-    // Create new version from current state before restoring
-    const latestVersion = await FileVersion.findOne({ file: file._id })
-      .sort({ versionNumber: -1 })
-      .limit(1);
+    // Keep the current contents as a version, then copy the chosen version back in.
+    await snapshotCurrentVersion(file, req.user._id, `Before restoring version ${version.versionNumber}`);
+    const restoredPath = newLivePath(file, path.extname(version.path) || path.extname(file.originalName));
+    await fs.copy(version.path, restoredPath);
+    await replaceFileContents(file, restoredPath, version.size);
 
-    const backupVersion = new FileVersion({
-      file: file._id,
-      versionNumber: latestVersion ? latestVersion.versionNumber + 1 : 1,
-      path: file.path,
-      size: file.size,
-      uploadedBy: req.user._id,
-      changeDescription: 'Backup before restore'
-    });
-    await backupVersion.save();
+    await logActivity(req.user._id, 'version_restored', file._id, null, `Restored to version ${version.versionNumber}`);
 
-    // Restore file from version
-    if (await fs.pathExists(version.path)) {
-      const newFileName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(file.originalName)}`;
-      const userId = req.user._id.toString();
-      const newPath = path.join(__dirname, '..', 'uploads', userId, newFileName);
-      await fs.copy(version.path, newPath);
-
-      file.path = newPath;
-      file.size = version.size;
-      file.updatedAt = new Date();
-      await file.save();
-
-      const restoredVersion = new FileVersion({
-        file: file._id,
-        versionNumber: backupVersion.versionNumber + 1,
-        path: newPath,
-        size: version.size,
-        uploadedBy: req.user._id,
-        changeDescription: `Restored to version ${version.versionNumber}`
-      });
-      await restoredVersion.save();
-
-      // Log activity
-      await logActivity(req.user._id, 'version_restored', file._id, null, `Restored to version ${version.versionNumber}`);
-
-      res.json(file);
-    } else {
-      res.status(404).json({ message: 'Version file not found' });
-    }
+    res.json(file);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -1107,10 +1100,9 @@ router.post('/version/:versionId/restore', auth, async (req, res) => {
 // Get file activity
 router.get('/activity/:id', auth, async (req, res) => {
   try {
-    const file = await File.findById(req.params.id);
-    if (!file || file.owner.toString() !== req.user._id.toString()) {
-      return res.status(404).json({ message: 'File not found' });
-    }
+    const access = await authorizeFile(req.params.id, req.user._id, 'owner');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
 
     const activities = await Activity.find({ file: req.params.id })
       .populate('user', 'name email')
@@ -1126,10 +1118,9 @@ router.get('/activity/:id', auth, async (req, res) => {
 // Get folder activity
 router.get('/folder-activity/:id', auth, async (req, res) => {
   try {
-    const folder = await Folder.findById(req.params.id);
-    if (!folder || folder.owner.toString() !== req.user._id.toString()) {
-      return res.status(404).json({ message: 'Folder not found' });
-    }
+    const access = await authorizeFolder(req.params.id, req.user._id, 'owner');
+    if (sendDenied(res, access)) return;
+    const { folder } = access;
 
     const activities = await Activity.find({ folder: req.params.id })
       .populate('user', 'name email')
@@ -1145,10 +1136,9 @@ router.get('/folder-activity/:id', auth, async (req, res) => {
 // Get extracted text for preview (for DOCX, PDF, etc.)
 router.get('/preview-text/:id', auth, async (req, res) => {
   try {
-    const file = await File.findById(req.params.id);
-    if (!file || file.owner.toString() !== req.user._id.toString()) {
-      return res.status(404).json({ message: 'File not found' });
-    }
+    const access = await authorizeFile(req.params.id, req.user._id, 'viewer');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
 
     // Check if we have extracted text in FileContent
     let fileContent = await FileContent.findOne({ file: file._id });
@@ -1259,51 +1249,26 @@ router.get('/activity', auth, async (req, res) => {
 // Update file (for TXT and other text files)
 router.put('/update/:id', auth, upload.single('file'), async (req, res) => {
   try {
-    const file = await File.findById(req.params.id);
-    if (!file) {
-      return res.status(404).json({ message: 'File not found' });
+    const access = await authorizeFile(req.params.id, req.user._id, 'editor');
+    if (sendDenied(res, access)) {
+      if (req.file) await fs.remove(req.file.path);
+      return;
     }
-
-    // Check ownership
-    if (file.owner.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'You do not have permission to edit this file' });
-    }
+    const { file } = access;
 
     if (!req.file) {
       return res.status(400).json({ message: 'No file provided' });
     }
 
-    // Create a new version before updating
-    const newVersion = new FileVersion({
-      file: file._id,
-      version: file.version || 1,
-      path: file.path,
-      size: file.size,
-      createdAt: file.updatedAt || file.createdAt,
-    });
-    await newVersion.save();
+    // Keep the previous contents as a version; the name stays the same.
+    await snapshotCurrentVersion(file, req.user._id, req.body.changeDescription || 'Previous version');
+    await replaceFileContents(file, req.file.path, req.file.size);
 
-    // Delete old file
-    if (await fs.pathExists(file.path)) {
-      await fs.remove(file.path);
-    }
-
-    // Update file record
-    file.path = req.file.path;
-    file.size = req.file.size;
-    file.version = (file.version || 0) + 1;
-    file.updatedAt = new Date();
-    if (req.file.originalname) {
-      file.originalName = req.file.originalname;
-    }
-    await file.save();
-
-    // Log activity
     await logActivity(req.user._id, 'edited', file._id, null, `Updated ${file.originalName}`);
 
-    // Emit real-time update
     const io = req.app.get('io');
     io.to(`user-${req.user._id}`).emit('file-updated', file);
+    io.to(`user-${file.owner}`).emit('file-updated', file);
 
     res.json(file);
   } catch (error) {
@@ -1312,34 +1277,17 @@ router.put('/update/:id', auth, upload.single('file'), async (req, res) => {
   }
 });
 
-// Update DOCX file from text content
 router.put('/update-docx/:id', auth, async (req, res) => {
   try {
     const { text, fileName } = req.body;
-    const file = await File.findById(req.params.id);
-
-    if (!file) {
-      return res.status(404).json({ message: 'File not found' });
-    }
-
-    // Check ownership
-    if (file.owner.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'You do not have permission to edit this file' });
-    }
+    const access = await authorizeFile(req.params.id, req.user._id, 'editor');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
 
     const docx = require('docx');
     const fs = require('fs-extra');
     const path = require('path');
 
-    // Create a new version before updating
-    const newVersion = new FileVersion({
-      file: file._id,
-      version: file.version || 1,
-      path: file.path,
-      size: file.size,
-      createdAt: file.updatedAt || file.createdAt,
-    });
-    await newVersion.save();
 
     // Convert text to DOCX paragraphs
     const paragraphs = text.split('\n').map((line) =>
@@ -1359,28 +1307,15 @@ router.put('/update-docx/:id', auth, async (req, res) => {
     // Generate DOCX buffer
     const buffer = await docx.Packer.toBuffer(doc);
 
-    // Delete old file
-    if (await fs.pathExists(file.path)) {
-      await fs.remove(file.path);
-    }
-
-    // Save new file
-    const userId = req.user._id.toString();
-    const uploadPath = path.join(__dirname, '..', 'uploads', userId);
-    await fs.ensureDir(uploadPath);
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const newPath = path.join(uploadPath, uniqueSuffix + '.docx');
+    // Keep the previous contents as a version, then write the new contents.
+    await snapshotCurrentVersion(file, req.user._id, 'Previous version');
+    const newPath = newLivePath(file, '.docx');
+    await fs.ensureDir(path.dirname(newPath));
     await fs.writeFile(newPath, buffer);
-
-    // Update file record
-    file.path = newPath;
-    file.size = buffer.length;
-    file.version = (file.version || 0) + 1;
-    file.updatedAt = new Date();
     if (fileName) {
       file.originalName = fileName.endsWith('.docx') ? fileName : fileName + '.docx';
     }
-    await file.save();
+    await replaceFileContents(file, newPath, buffer.length);
 
     // Log activity
     await logActivity(req.user._id, 'edited', file._id, null, `Updated ${file.originalName}`);
@@ -1400,16 +1335,9 @@ router.put('/update-docx/:id', auth, async (req, res) => {
 router.put('/update-pdf/:id', auth, async (req, res) => {
   try {
     const { text, fileName } = req.body;
-    const file = await File.findById(req.params.id);
-
-    if (!file) {
-      return res.status(404).json({ message: 'File not found' });
-    }
-
-    // Check ownership
-    if (file.owner.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'You do not have permission to edit this file' });
-    }
+    const access = await authorizeFile(req.params.id, req.user._id, 'editor');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
 
     const fs = require('fs-extra');
     const path = require('path');
@@ -1498,28 +1426,15 @@ startxref
       pdfBytes = Buffer.from(pdfText);
     }
 
-    // Delete old file
-    if (await fs.pathExists(file.path)) {
-      await fs.remove(file.path);
-    }
-
-    // Save new file
-    const userId = req.user._id.toString();
-    const uploadPath = path.join(__dirname, '..', 'uploads', userId);
-    await fs.ensureDir(uploadPath);
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const newPath = path.join(uploadPath, uniqueSuffix + '.pdf');
+    // Keep the previous contents as a version, then write the new contents.
+    await snapshotCurrentVersion(file, req.user._id, 'Previous version');
+    const newPath = newLivePath(file, '.pdf');
+    await fs.ensureDir(path.dirname(newPath));
     await fs.writeFile(newPath, pdfBytes);
-
-    // Update file record
-    file.path = newPath;
-    file.size = pdfBytes.length;
-    file.version = (file.version || 0) + 1;
-    file.updatedAt = new Date();
     if (fileName) {
       file.originalName = fileName.endsWith('.pdf') ? fileName : fileName + '.pdf';
     }
-    await file.save();
+    await replaceFileContents(file, newPath, pdfBytes.length);
 
     // Log activity
     await logActivity(req.user._id, 'edited', file._id, null, `Updated ${file.originalName}`);
