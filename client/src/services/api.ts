@@ -10,9 +10,26 @@ const api = axios.create({
   },
 });
 
-// Add token to requests
-api.interceptors.request.use((config) => {
-  const token = LOCAL_PREVIEW_ENABLED ? sessionStorage.getItem('filebox-local-token') : localStorage.getItem('token');
+// Share session creation across concurrent requests, including startup recovery.
+let localSessionRequest: Promise<any> | null = null;
+const getLocalSession = () => {
+  if (!localSessionRequest) {
+    localSessionRequest = axios.post(`${API_URL}/auth/local-session`, {}, {
+      headers: { 'X-Filebox-Local': 'true' }, timeout: 10000,
+    }).then(response => {
+      sessionStorage.setItem('filebox-local-token', response.data.token);
+      return response.data;
+    }).finally(() => { localSessionRequest = null; });
+  }
+  return localSessionRequest;
+};
+
+// Ensure a real session exists before sending any workspace request.
+api.interceptors.request.use(async (config) => {
+  let token = LOCAL_PREVIEW_ENABLED ? sessionStorage.getItem('filebox-local-token') : localStorage.getItem('token');
+  if (LOCAL_PREVIEW_ENABLED && !token && !config.url?.startsWith('/auth/')) {
+    token = (await getLocalSession()).token;
+  }
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -23,16 +40,25 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// A local session may expire or become invalid after a backend restart.
+api.interceptors.response.use(response => response, async error => {
+  const config = error.config;
+  if (!LOCAL_PREVIEW_ENABLED || error.response?.status !== 401 || !config ||
+      config.url?.startsWith('/auth/') || config.localSessionRetried) {
+    return Promise.reject(error);
+  }
+  config.localSessionRetried = true;
+  let token = sessionStorage.getItem('filebox-local-token');
+  if (!token || config.headers.Authorization === `Bearer ${token}`) {
+    token = (await getLocalSession()).token;
+  }
+  config.headers.Authorization = `Bearer ${token}`;
+  return api.request(config);
+});
+
 // Auth API
 export const authAPI = {
-  localSession: async () => {
-    const response = await api.post('/auth/local-session', {}, {
-      headers: { 'X-Filebox-Local': 'true' },
-      timeout: 10000,
-    });
-    sessionStorage.setItem('filebox-local-token', response.data.token);
-    return response.data;
-  },
+  localSession: getLocalSession,
   register: async (email: string, password: string, name: string) => {
     const response = await api.post('/auth/register', { email, password, name });
     return response.data;
@@ -491,18 +517,8 @@ export const relationshipsAPI = {
     return response.data;
   },
   getRelationshipGraph: async () => {
-    if (LOCAL_PREVIEW_ENABLED && !sessionStorage.getItem('filebox-local-token')) {
-      await authAPI.localSession();
-    }
-    try {
-      const response = await api.get('/relationships/graph', { timeout: 10000 });
-      return response.data;
-    } catch (error: any) {
-      if (!LOCAL_PREVIEW_ENABLED || error?.response?.status !== 401) throw error;
-      await authAPI.localSession();
-      const response = await api.get('/relationships/graph', { timeout: 10000 });
-      return response.data;
-    }
+    const response = await api.get('/relationships/graph', { timeout: 10000 });
+    return response.data;
   },
   updateRelationship: async (relationshipId: string, data: { relationshipType?: string; customLabel?: string; description?: string }) => {
     const response = await api.put(`/relationships/${relationshipId}`, data);

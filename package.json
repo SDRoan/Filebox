@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "echo '\n╔══════════════════════════════════════════════════════════════╗' && echo '║  🚀  Starting Nexus Development Server...                  ║' && echo '╚══════════════════════════════════════════════════════════════╝\n' && concurrently -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"npm run server\" \"npm run client\"",
     "server": "cd server && npm run dev",
-    "client": "cd client && npm start",
+    "client": "cd client && BROWSER=none npm start",
     "install-all": "npm install && cd server && npm install && cd ../client && npm install"
   },
   "keywords": ["file-storage", "cloud-storage", "ai", "file-management", "nexus"],

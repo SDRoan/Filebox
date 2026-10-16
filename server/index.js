@@ -8,8 +8,6 @@ require('dotenv').config();
 const appConfig = require('./config/appConfig');
 const { optionalRoute } = require('./utils/optionalModule');
 
-// Import open package for auto-opening browser
-const open = require('open');
 
 const authRoutes = require('./routes/auth');
 const fileRoutes = require('./routes/files');
@@ -266,30 +264,5 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`\n✨  👉  OPEN YOUR BROWSER: http://localhost:${CLIENT_PORT}  👈  ✨\n`);
   console.log('═'.repeat(70) + '\n');
   
-  // Automatically open browser in Google Chrome after a short delay
-  const frontendUrl = `http://localhost:${CLIENT_PORT}`;
-  setTimeout(() => {
-    // Open specifically in Google Chrome
-    const isMac = process.platform === 'darwin';
-    
-    if (isMac) {
-      // On macOS, use 'google chrome' as the app name
-      open(frontendUrl, { app: 'google chrome' }).catch(err => {
-        // Fallback: try alternative Chrome paths
-        console.log(`⚠️  Could not open in Chrome, trying alternative...`);
-        open(frontendUrl, { app: '/Applications/Google Chrome.app' }).catch(fallbackErr => {
-          console.log(`⚠️  Could not automatically open Chrome. Please manually open: ${frontendUrl}`);
-          console.log(`   Error: ${fallbackErr.message}`);
-        });
-      });
-    } else {
-      // On other platforms, try 'chrome' or default browser
-      open(frontendUrl, { app: 'chrome' }).catch(err => {
-        open(frontendUrl).catch(fallbackErr => {
-          console.log(`⚠️  Could not automatically open browser. Please manually open: ${frontendUrl}`);
-        });
-      });
-    }
-  }, 1000);
+  // Browser navigation is manual; server restarts must not open tabs.
 });
-
