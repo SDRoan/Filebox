@@ -6,6 +6,9 @@ const FileSummary = require('../models/FileSummary');
 const ollamaWorkspaceAssistant = require('../services/ollamaWorkspaceAssistant');
 const config = require('../config/aiConfig');
 const { authorizeFile, sendDenied } = require('../services/permissions');
+const fileAIActions = require('../services/fileAIActions');
+const { buildDuplicateSuggestions } = require('../services/duplicateSuggestions');
+const { suggestOrganization, applyProposals } = require('../services/organizeSuggestions');
 
 const sanitizeHistory = (history = []) =>
   (Array.isArray(history) ? history : [])
@@ -192,6 +195,69 @@ router.get('/insights/:fileId', auth, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: error.message || 'Failed to load file insights.' });
+  }
+});
+
+// Errors from the Phase 3 services carry a status (and AI_OFFLINE code when Ollama is down).
+const sendServiceError = (res, error, fallback) => {
+  res.status(error.status || 500).json({ code: error.code, message: error.message || fallback });
+};
+
+// File-type-specific actions for one file. Reading is enough, so viewers may use them.
+router.get('/file-actions/:fileId', auth, async (req, res) => {
+  try {
+    const access = await authorizeFile(req.params.fileId, req.user._id, 'viewer');
+    if (sendDenied(res, access)) return;
+    if (access.file.isTrashed) return res.status(404).json({ message: 'File not found' });
+    res.json(await fileAIActions.listActions(access.file));
+  } catch (error) {
+    sendServiceError(res, error, 'Could not load actions for this file.');
+  }
+});
+
+router.post('/file-actions/:fileId', auth, async (req, res) => {
+  try {
+    const access = await authorizeFile(req.params.fileId, req.user._id, 'viewer');
+    if (sendDenied(res, access)) return;
+    if (access.file.isTrashed) return res.status(404).json({ message: 'File not found' });
+    const action = typeof req.body?.action === 'string' ? req.body.action : '';
+    res.json(await fileAIActions.runAction(access.file, action));
+  } catch (error) {
+    sendServiceError(res, error, 'This action could not be completed.');
+  }
+});
+
+// Duplicate cleanup suggestions for the user's own files. Never deletes anything.
+router.get('/duplicates', auth, async (req, res) => {
+  try {
+    res.json(await buildDuplicateSuggestions(req.user._id, { explain: req.query.explain === '1' }));
+  } catch (error) {
+    sendServiceError(res, error, 'Could not check for duplicates.');
+  }
+});
+
+// Organization: propose changes (nothing is applied) ...
+router.post('/organize/suggest', auth, async (req, res) => {
+  try {
+    const folderId = typeof req.body?.folderId === 'string' && req.body.folderId ? req.body.folderId : null;
+    res.json(await suggestOrganization(req.user._id, { folderId }));
+  } catch (error) {
+    sendServiceError(res, error, 'Could not prepare suggestions.');
+  }
+});
+
+// ... and apply only the changes the user reviewed and confirmed.
+router.post('/organize/apply', auth, async (req, res) => {
+  try {
+    const result = await applyProposals(req.user._id, { actions: req.body?.actions, confirm: req.body?.confirm });
+    const io = req.app.get('io');
+    result.results.filter(r => r.success && r.file).forEach(r => {
+      io?.to(`user-${req.user._id}`).emit(r.type === 'move' ? 'file-moved' : 'file-renamed', r.file);
+      delete r.file;
+    });
+    res.json(result);
+  } catch (error) {
+    sendServiceError(res, error, 'Could not apply these changes.');
   }
 });
 

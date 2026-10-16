@@ -62,6 +62,8 @@ class OllamaClient {
       summaryModel: config.ollama.summaryModel,
       assistantModel: config.ollama.assistantModel,
       plannerModel: config.ollama.plannerModel,
+      visionModel: config.ollama.visionModel,
+      visionModelAvailable: false,
       ocrModelAvailable: false,
       summaryModelAvailable: false,
       assistantModelAvailable: false,
@@ -96,6 +98,7 @@ class OllamaClient {
         summaryModelAvailable: this.isModelAvailable(installedModels, config.ollama.summaryModel),
         assistantModelAvailable: this.isModelAvailable(installedModels, config.ollama.assistantModel),
         plannerModelAvailable: this.isModelAvailable(installedModels, config.ollama.plannerModel),
+        visionModelAvailable: this.isModelAvailable(installedModels, config.ollama.visionModel),
       };
     } catch (error) {
       return {

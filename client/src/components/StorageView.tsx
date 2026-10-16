@@ -3,6 +3,7 @@ import { filesAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { formatBytes, formatRelativeTime } from '../utils/fileDisplay';
 import MoveCopyModal from './MoveCopyModal';
+import DuplicateReview from './DuplicateReview';
 import { DownloadIcon, EyeIcon, PackageIcon, TrashIcon } from './Icons';
 import './OverviewPages.css';
 import './StorageView.css';
@@ -208,24 +209,8 @@ const StorageView: React.FC<StorageViewProps> = ({ onOpenFolder, onOpenTrash }) 
           <h2>Duplicate files</h2>
           {reclaimable > 0 && <span>{formatBytes(reclaimable)} could be freed</span>}
         </div>
-        {summary.duplicates.groups.length === 0 ? (
-          <p className="overview-muted">No identical files found{summary.duplicates.complete ? '.' : ' in the files checked so far.'}</p>
-        ) : (
-          summary.duplicates.groups.map(group => (
-            <div className="storage-duplicate-group" key={group.files.map(f => f._id).join('-')}>
-              <p>{group.files.length} identical copies · {formatBytes(group.size)} each</p>
-              <ul className="storage-file-list">
-                {group.files.map(file => (
-                  <li key={file._id}>
-                    <span className="storage-file-name">{file.originalName}<small>updated {formatRelativeTime(file.updatedAt)}</small></span>
-                    <FileActions file={file} />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))
-        )}
-        <p className="storage-footnote">Duplicates are files with exactly the same contents (compared by checksum). Nothing is deleted automatically.</p>
+        <DuplicateReview onChanged={load} />
+        <p className="storage-footnote">Duplicates are files with exactly the same contents (compared by checksum). File Box suggests which copy to keep; nothing is removed until you confirm, and removed copies go to Trash.</p>
       </section>
 
       {summary.missingFileCount > 0 && (

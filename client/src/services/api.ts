@@ -1130,7 +1130,60 @@ export const aiAssistantAPI = {
     const response = await api.get(`/ai-assistant/insights/${fileId}`);
     return response.data;
   },
+  getFileActions: async (fileId: string): Promise<FileAIActionsInfo> => {
+    const response = await api.get(`/ai-assistant/file-actions/${fileId}`);
+    return response.data;
+  },
+  runFileAction: async (fileId: string, action: string): Promise<{ action: string; result: string; provider: string; truncated?: boolean }> => {
+    const response = await api.post(`/ai-assistant/file-actions/${fileId}`, { action });
+    return response.data;
+  },
+  getDuplicates: async (explain = false): Promise<DuplicateSuggestions> => {
+    const response = await api.get('/ai-assistant/duplicates', { params: explain ? { explain: 1 } : {} });
+    return response.data;
+  },
+  suggestOrganization: async (folderId?: string | null): Promise<OrganizeSuggestions> => {
+    const response = await api.post('/ai-assistant/organize/suggest', { folderId: folderId || undefined });
+    return response.data;
+  },
+  applyOrganization: async (actions: OrganizeProposal[]) => {
+    const response = await api.post('/ai-assistant/organize/apply', { actions, confirm: true });
+    return response.data as { applied: number; failed: number; results: Array<{ id: string; success: boolean; message: string }> };
+  },
 };
+
+export interface FileAIAction { id: string; label: string; needsAI: boolean; available: boolean }
+export interface FileAIActionsInfo { kind: string; aiReady: boolean; actions: FileAIAction[]; canAsk: boolean }
+
+export interface DuplicateCopy {
+  _id: string;
+  originalName: string;
+  size: number;
+  parentFolder: string | null;
+  location: string;
+  updatedAt: string;
+  createdAt: string;
+  reasons: string[];
+  suggested: 'keep' | 'remove' | null;
+}
+export interface DuplicateGroup { size: number; reclaimableBytes: number; why: string; confident: boolean; keepId: string | null; note: string; copies: DuplicateCopy[] }
+export interface DuplicateSuggestions { groups: DuplicateGroup[]; complete: boolean; reclaimableBytes: number; explanation: string | null }
+
+export interface OrganizeProposal {
+  id: string;
+  type: 'move' | 'rename';
+  fileId: string;
+  fileName?: string;
+  currentLocation?: string;
+  folderId?: string | null;
+  folderName?: string;
+  isNewFolder?: boolean;
+  newName?: string;
+  reason?: string;
+  source?: 'rule' | 'ai';
+  scopeFolderId?: string | null;
+}
+export interface OrganizeSuggestions { scope: { folderId: string | null; name: string }; fileCount: number; aiUsed: boolean; aiError: string; proposals: OrganizeProposal[] }
 
 // Templates API
 export const templatesAPI = {

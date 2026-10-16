@@ -8,7 +8,9 @@ import FolderItem from './FolderItem';
 import UploadButton from './UploadButton';
 import CreateFolderModal from './CreateFolderModal';
 import FileSortFilter, { SortOption, SortOrder, FilterOption } from './FileSortFilter';
-import SmartOrganization from './SmartOrganization';
+import OrganizeReview from './OrganizeReview';
+import { AIAssistantIcon, CloseIcon as DialogCloseIcon } from './Icons';
+import './AIPanels.css';
 import FolderPickerModal from './FolderPickerModal';
 import Breadcrumb from './Breadcrumb';
 import { FolderIcon, SmartOrganizeIcon, CheckIcon, TrashIcon } from './Icons';
@@ -525,7 +527,7 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
             }}>
               <summary aria-label="More file actions" title="More file actions"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></summary>
               <div className="file-more-options">
-                {!showTrash && !showStarred && <button onClick={(event) => { setShowSmartOrg(true); event.currentTarget.closest('details')?.removeAttribute('open'); }}><SmartOrganizeIcon size={16} />Organize files</button>}
+                {!showTrash && !showStarred && !isTeamFolder && <button onClick={(event) => { setShowSmartOrg(true); event.currentTarget.closest('details')?.removeAttribute('open'); }}><SmartOrganizeIcon size={16} />Organize with File Box AI</button>}
                 <button disabled={files.length + folders.length === 0} onClick={(event) => { setSelectionMode(true); event.currentTarget.closest('details')?.removeAttribute('open'); }}><CheckIcon size={16} />Select items</button>
               </div>
             </details>
@@ -617,11 +619,18 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
         />
       )}
       {showSmartOrg && (
-        <SmartOrganization
-          folderId={currentFolderId === 'root' ? undefined : currentFolderId}
-          onClose={() => setShowSmartOrg(false)}
-          onOrganized={loadFiles}
-        />
+        <div className="ai-panel-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowSmartOrg(false); }}>
+          <div className="ai-panel-dialog wide" role="dialog" aria-modal="true" aria-labelledby="organize-title">
+            <header className="ai-panel-header">
+              <div>
+                <h2 id="organize-title"><AIAssistantIcon size={18} /> Organize with File Box AI</h2>
+                <p>Review each suggestion; nothing changes until you confirm.</p>
+              </div>
+              <button className="ai-panel-close" onClick={() => setShowSmartOrg(false)} aria-label="Close"><DialogCloseIcon size={18} /></button>
+            </header>
+            <OrganizeReview folderId={currentFolderId === 'root' ? null : currentFolderId} onApplied={loadFiles} />
+          </div>
+        </div>
       )}
       {showFolderPicker && (
         <FolderPickerModal

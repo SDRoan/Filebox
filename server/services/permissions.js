@@ -123,20 +123,70 @@ async function authorizeFolder(folderId, userId, level = 'viewer') {
   return { folder, role };
 }
 
+/** Ids of every folder inside the given Team Spaces (any depth). */
+async function folderIdsInsideTeams(teamIds) {
+  const ids = [];
+  let frontier = teamIds;
+  for (let depth = 0; frontier.length && depth < MAX_FOLDER_DEPTH; depth += 1) {
+    const children = await Folder.find({ parentFolder: { $in: frontier }, isTrashed: { $ne: true } }).select('_id').lean();
+    frontier = children.map(child => child._id);
+    ids.push(...frontier);
+  }
+  return ids;
+}
+
 /**
- * Mongo filter for files a user can read (used by search and File Box AI).
- * Covers owned files, active direct shares, and files directly inside the user's Team Spaces.
+ * Mongo filter for files a user can read (search, Recent, File Box AI).
+ * Covers owned files, active direct shares, and files anywhere inside the user's Team Spaces.
+ * Callers that show results should still confirm each file with getFileRole (see filterReadable).
  */
 async function readableFileFilter(userId) {
   const teams = await TeamFolder.find({ $or: [{ owner: userId }, { 'members.user': userId }] }).select('_id').lean();
+  const teamIds = teams.map(t => t._id);
+  const teamFolderIds = teamIds.length ? [...teamIds, ...(await folderIdsInsideTeams(teamIds))] : [];
   return {
     isTrashed: { $ne: true },
     $or: [
       { owner: userId },
       { sharedWith: { $elemMatch: { user: userId, $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] } } },
-      ...(teams.length ? [{ parentFolder: { $in: teams.map(t => t._id) } }] : []),
+      ...(teamFolderIds.length ? [{ parentFolder: { $in: teamFolderIds } }] : []),
     ],
   };
+}
+
+/**
+ * Why a user can see a file, for labelling results: owned, shared directly, or through a Team Space.
+ * Returns null when the user has no access (same rules as getFileRole).
+ */
+async function describeAccess(file, userId) {
+  const role = await getFileRole(file, userId);
+  if (!role) return null;
+  if (role === 'owner') return { role, source: 'owned' };
+
+  const direct = shareRole(file, userId);
+  const team = file.parentFolder ? await findTeamForParent(file.parentFolder) : null;
+  const teamRole = teamRoleToItemRole(getTeamRole(team, userId));
+  // Prefer the path that grants the effective role; a file can be reachable both ways.
+  const source = teamRole && (!direct || RANK[teamRole] > RANK[direct]) ? 'team' : 'shared';
+  return {
+    role,
+    source,
+    teamName: source === 'team' ? team.name : undefined,
+  };
+}
+
+/** Keep only files the user can read, each annotated with how they can read it. Removes duplicates. */
+async function filterReadable(files, userId) {
+  const seen = new Set();
+  const result = [];
+  for (const file of files) {
+    const id = idOf(file);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const access = await describeAccess(file, userId);
+    if (access) result.push({ file, access });
+  }
+  return result;
 }
 
 /** Send the error part of an authorize* result. Returns true when a response was sent. */
@@ -156,6 +206,8 @@ module.exports = {
   authorizeFile,
   authorizeFolder,
   readableFileFilter,
+  describeAccess,
+  filterReadable,
   sendDenied,
   isActiveShare,
 };

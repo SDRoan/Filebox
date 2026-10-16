@@ -132,4 +132,4 @@ async function recalculateStorage(userId) {
   return bytes;
 }
 
-module.exports = { buildStorageSummary, recalculateStorage, categoryOf };
+module.exports = { buildStorageSummary, recalculateStorage, categoryOf, findDuplicates };

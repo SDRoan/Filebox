@@ -61,3 +61,10 @@
   .filebox-ai-message { max-width: 100%; }
   .filebox-ai-file-picker select { max-width: 150px; }
 }
+
+/* Phase 3: where a result comes from, and inline review panels */
+.filebox-ai-files small.source-shared { color: #5f7fa3; }
+.filebox-ai-files small.source-team { color: #7a6aa0; }
+.filebox-ai-files small.source-trash { color: #a0745a; }
+.filebox-ai-panel { margin-top: 12px; }
+.filebox-ai-message:has(.filebox-ai-panel) { max-width: 100%; }

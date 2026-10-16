@@ -11,6 +11,7 @@ const config = require('../config/aiConfig');
 const { chunkText } = require('../utils/chunkText');
 const { searchWorkspace } = require('./workspaceSearch');
 const { readableFileFilter } = require('./permissions');
+const { buildDuplicateSuggestions } = require('./duplicateSuggestions');
 
 const ACTION_TYPES = [
   'create_relationship',
@@ -190,17 +191,59 @@ class OllamaWorkspaceAssistant {
     return query || question;
   }
 
+  // "Find X", "where is X", "find X in Trash" -- but not "find X and delete it".
+  questionIsPlainFind(question = '') {
+    if (!this.questionIsSearch(question) || this.questionNeedsSummary(question)) return false;
+    const withoutTrashScope = question.replace(/\b(in|from)\s+(the\s+)?(trash|bin)\b/gi, ' ');
+    return !this.questionLooksActionable(withoutTrashScope);
+  }
+
+  questionAsksForTrash(question = '') {
+    return /\b(trash|trashed|deleted|bin)\b/i.test(question);
+  }
+
+  // Search everything the user may read (owned, shared with them, Team Spaces), using the shared permission rules.
   async searchForQuestion(userId, question) {
-    const { files } = await searchWorkspace(userId, this.extractSearchQuery(question), { limit: 6 });
-    return files.map((file) => ({
-      id: file._id.toString(),
-      name: file.originalName,
-      mimeType: file.mimeType,
-      size: file.size,
-      folder: file.parentFolder?.name || 'My Files',
-      parentFolder: file.parentFolder?._id?.toString() || null,
-      updatedAt: file.updatedAt,
-    }));
+    const includeTrash = this.questionAsksForTrash(question);
+    const query = this.extractSearchQuery(question).replace(/\b(in\s+)?(the\s+)?(trash|trashed|deleted|bin)\b/gi, ' ').replace(/\s+/g, ' ').trim() || question;
+    const { files } = await searchWorkspace(userId, query, { limit: 8, scope: 'accessible', includeTrash });
+    return files.map((file) => {
+      const { source, role, teamName } = file.access;
+      const ownerName = file.owner?.name;
+      let location = file.folderName || 'My Files';
+      if (source === 'team') location = teamName ? `Team Space: ${teamName}` : 'Team Space';
+      if (source === 'shared') location = ownerName ? `Shared by ${ownerName}` : 'Shared with you';
+      if (file.isTrashed) location = 'Trash';
+      return {
+        id: file._id.toString(),
+        name: file.originalName,
+        mimeType: file.mimeType,
+        size: file.size,
+        source,
+        role,
+        ownerName: source === 'owned' ? undefined : ownerName,
+        teamName,
+        trashed: Boolean(file.isTrashed),
+        folder: location,
+        // Only meaningful for the user's own files; used to open the folder in My Files.
+        parentFolder: source === 'owned' && !file.isTrashed ? (file.parentFolder?.toString() || null) : null,
+        updatedAt: file.updatedAt,
+      };
+    });
+  }
+
+  findAnswer(question, files) {
+    const query = this.extractSearchQuery(question);
+    if (!files.length) {
+      return `I couldn't find any files matching "${query}" in your files, files shared with you, or your Team Spaces.`;
+    }
+    const counts = ['owned', 'shared', 'team']
+      .map(source => [source, files.filter(f => f.source === source && !f.trashed).length])
+      .filter(([, n]) => n);
+    const labels = { owned: 'yours', shared: 'shared with you', team: 'in Team Spaces' };
+    const breakdown = counts.map(([source, n]) => `${n} ${labels[source]}`).join(', ');
+    const trashed = files.filter(f => f.trashed).length;
+    return `I found ${files.length} file${files.length === 1 ? '' : 's'} matching "${query}"${breakdown ? ` (${breakdown}${trashed ? `, ${trashed} in Trash` : ''})` : trashed ? ' in Trash' : ''}. Select one to open it, or ask me about it.`;
   }
 
   questionNeedsSummary(question = '') {
@@ -755,29 +798,49 @@ Respond to the latest user request now.`,
   }
 
   async chat({ userId, question, fileId, history = [], context = '' }) {
+    // Duplicate cleanup is rule-based and review-only: show the groups, never remove anything here.
+    if (/\b(duplicate|duplicates|identical files|same file twice)\b/i.test(question)) {
+      const { groups, reclaimableBytes } = await buildDuplicateSuggestions(userId);
+      return {
+        answer: groups.length
+          ? `I found ${groups.length} group${groups.length === 1 ? '' : 's'} of identical files (${formatBytes(reclaimableBytes)} could be freed). Review them below. Nothing is removed until you confirm.`
+          : "I didn't find any identical files among your files.",
+        provider: 'local-rules',
+        panel: groups.length ? 'duplicates' : undefined,
+        fileId: null,
+        timestamp: new Date(),
+      };
+    }
+
+    // Organizing is always a proposal the user reviews; the panel fetches and applies suggestions.
+    if (/\b(organi[sz]e|tidy( up)?|clean up my (files|drive)|sort (out )?my files)\b/i.test(question) && !/\b(move|rename)\b/i.test(question)) {
+      return {
+        answer: "I'll suggest changes for My Files. Review each one, keep the ones you want, and nothing changes until you confirm.",
+        provider: 'local-rules',
+        panel: 'organize',
+        fileId: null,
+        timestamp: new Date(),
+      };
+    }
+
+    // Plain "find…" questions are answered straight from local search. This needs no model,
+    // so it keeps working when Ollama is offline, and it never invents files.
+    if (this.questionIsPlainFind(question)) {
+      const files = await this.searchForQuestion(userId, question);
+      return {
+        answer: this.findAnswer(question, files),
+        provider: 'local-search',
+        files,
+        fileId: null,
+        timestamp: new Date(),
+      };
+    }
+
     const status = await this.getStatus();
     if (!status.reachable) {
       throw new Error(
         status.error || `Ollama is unavailable. Start Ollama and pull ${config.ollama.assistantModel}.`
       );
-    }
-
-    // Plain "find…" questions are answered straight from local search: faster, and never invents files.
-    if (this.questionIsSearch(question) && !this.questionLooksActionable(question) && !this.questionNeedsSummary(question)) {
-      const files = await this.searchForQuestion(userId, question);
-      const query = this.extractSearchQuery(question);
-      return {
-        answer: files.length
-          ? (files.length === 1
-            ? `I found 1 file matching "${query}". Select it to open its folder, or ask me to summarize it.`
-            : `I found ${files.length} files matching "${query}". Select one to open its folder, or ask me to summarize it.`)
-          : `I couldn't find any files matching "${query}". Try different words, or check Shared and Trash.`,
-        provider: 'ollama',
-        model: config.ollama.assistantModel,
-        files,
-        fileId: null,
-        timestamp: new Date(),
-      };
     }
 
     const workspaceSnapshot = await this.buildWorkspaceSnapshot(userId);
@@ -861,8 +924,8 @@ Respond to the latest user request now.`,
     }
     const searchContext = foundFiles
       ? (foundFiles.length
-        ? `Local search results from the user's drive (only mention these files):\n${foundFiles
-          .map((file, index) => `${index + 1}. ${file.name} (${file.mimeType}, folder: ${file.folder})`)
+        ? `Local search results the user can access (only mention these files):\n${foundFiles
+          .map((file, index) => `${index + 1}. ${file.name} (${file.mimeType}, ${file.source === 'owned' ? 'owned by the user' : file.source === 'team' ? `Team Space file` : `shared by ${file.ownerName || 'someone'}`}, ${file.folder})`)
           .join('\n')}`
         : 'Local search found no matching files in the user\'s drive. Say so plainly and suggest other search words.')
       : '';

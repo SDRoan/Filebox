@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { aiAssistantAPI, filesAPI, AssistantHistoryMessage } from '../services/api';
+import { aiAssistantAPI, filesAPI, AssistantHistoryMessage, FileAIActionsInfo } from '../services/api';
+import DuplicateReview from './DuplicateReview';
+import OrganizeReview from './OrganizeReview';
+import './AIPanels.css';
 import { useAuth } from '../context/AuthContext';
 import { pagePath } from '../config/workspaceNavigation';
 import { AIAssistantIcon, ArrowRightIcon, DocumentIcon, RefreshIcon } from './Icons';
@@ -11,6 +14,11 @@ interface FoundFile {
   name: string;
   folder: string;
   parentFolder: string | null;
+  source?: 'owned' | 'shared' | 'team';
+  role?: 'owner' | 'editor' | 'viewer';
+  ownerName?: string;
+  teamName?: string;
+  trashed?: boolean;
 }
 
 interface PendingAction {
@@ -27,6 +35,7 @@ interface Message {
   files?: FoundFile[];
   pendingAction?: PendingAction;
   actionState?: 'pending' | 'running' | 'done' | 'cancelled';
+  panel?: 'duplicates' | 'organize';
   error?: boolean;
 }
 
@@ -46,7 +55,8 @@ const SUGGESTIONS = [
   { label: 'Find a document', prompt: 'Find documents about ' },
   { label: 'Search inside documents', prompt: 'Which document mentions ' },
   { label: 'Summarize a file', prompt: 'Summarize this file' },
-  { label: 'Organize my files', prompt: 'Suggest how I could organize my recent files into folders.' },
+  { label: 'Organize my files', prompt: 'Organize my files' },
+  { label: 'Find duplicate files', prompt: 'Find duplicate files' },
   { label: 'Create a folder', prompt: 'Create a folder called ' },
   { label: 'Share a file', prompt: 'Share this file with ' },
 ];
@@ -75,6 +85,8 @@ const AIAssistant: React.FC = () => {
   const [sending, setSending] = useState(false);
   const [fileOptions, setFileOptions] = useState<FileOption[]>([]);
   const [selectedFileId, setSelectedFileId] = useState('');
+  const [fileActions, setFileActions] = useState<FileAIActionsInfo | null>(null);
+  const [runningAction, setRunningAction] = useState('');
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const autoSentRef = useRef(false);
@@ -141,6 +153,7 @@ const AIAssistant: React.FC = () => {
         content: response.answer || 'Done.',
         files: response.files?.length ? response.files : undefined,
         pendingAction: response.pendingAction,
+        panel: response.panel,
         actionState: response.pendingAction ? 'pending' : undefined,
       });
     } catch (error: any) {
@@ -179,7 +192,7 @@ const AIAssistant: React.FC = () => {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const q = params.get('q');
-    if (!q || autoSentRef.current || !status?.ready) return;
+    if (!q || autoSentRef.current || !status) return;
     autoSentRef.current = true;
     navigate(location.pathname, { replace: true });
     send(q, params.get('file') || undefined);
@@ -198,8 +211,41 @@ const AIAssistant: React.FC = () => {
     }
   };
 
-  const openFile = (file: FoundFile) =>
-    navigate(pagePath('files'), { state: { openFolderId: file.parentFolder, highlightFileId: file.id } });
+  // Actions that fit the selected file's type (same list as the file menu's "Ask File Box AI").
+  useEffect(() => {
+    setFileActions(null);
+    if (!selectedFileId) return;
+    aiAssistantAPI.getFileActions(selectedFileId).then(setFileActions).catch(() => setFileActions(null));
+  }, [selectedFileId, status?.ready]);
+
+  const runFileAction = async (actionId: string, label: string) => {
+    const file = fileOptions.find(option => option._id === selectedFileId);
+    appendMessage({ role: 'user', content: `${label}: ${file?.originalName || 'selected file'}` });
+    setRunningAction(actionId);
+    try {
+      const response = await aiAssistantAPI.runFileAction(selectedFileId, actionId);
+      appendMessage({ role: 'assistant', content: response.result + (response.truncated ? '\n\n(Only the first part of this long file was read.)' : '') });
+    } catch (err: any) {
+      appendMessage({ role: 'assistant', content: err?.response?.data?.message || 'This action could not be completed.', error: true });
+    } finally {
+      setRunningAction('');
+    }
+  };
+
+  // Open a result where it lives: your folder, Shared, the Team Space, or Trash.
+  const openFile = (file: FoundFile) => {
+    if (file.trashed) return navigate(pagePath('trash'));
+    if (file.source === 'shared') return navigate(pagePath('shared'));
+    if (file.source === 'team') return navigate(pagePath('teams'));
+    return navigate(pagePath('files'), { state: { openFolderId: file.parentFolder, highlightFileId: file.id } });
+  };
+
+  const sourceLabel = (file: FoundFile) => {
+    if (file.trashed) return 'In Trash';
+    if (file.source === 'shared') return `Shared by ${file.ownerName || 'someone'} · ${file.role === 'editor' ? 'can edit' : 'can view'}`;
+    if (file.source === 'team') return `${file.teamName ? `Team Space: ${file.teamName}` : 'Team Space'} · ${file.role === 'editor' ? 'can edit' : 'can view'}`;
+    return `Yours · ${file.folder}`;
+  };
 
   const applySuggestion = (suggestion: typeof SUGGESTIONS[number]) => {
     setInput(suggestion.prompt);
@@ -207,6 +253,8 @@ const AIAssistant: React.FC = () => {
   };
 
   const ready = Boolean(status?.ready);
+  // Only the newest review panel stays live, so old results never act on stale suggestions.
+  const lastPanelId = [...messages].reverse().find(message => message.panel)?.id;
   const modelMissing = Boolean(status?.reachable && !status?.assistantModelAvailable);
 
   return (
@@ -230,7 +278,7 @@ const AIAssistant: React.FC = () => {
             {modelMissing ? (
               <p>Ollama is running, but the assistant model isn't installed. Run <code>ollama pull {status.assistantModel}</code>, then check again.</p>
             ) : (
-              <p>Start Ollama on your computer to use local AI features. Everything else in File Box keeps working.</p>
+              <p>Start Ollama on your computer to use local AI features. Finding files, duplicate checks and text extraction still work, and so does the rest of File Box.</p>
             )}
           </div>
           <button className="btn-secondary" onClick={checkStatus} disabled={checking}>
@@ -247,9 +295,9 @@ const AIAssistant: React.FC = () => {
           ref={inputRef}
           value={input}
           rows={2}
-          placeholder={ready ? 'Find my resume, summarize a PDF, create a folder…' : 'File Box AI is offline'}
+          placeholder={ready ? 'Find my resume, summarize a PDF, create a folder…' : 'AI is offline — you can still find files and duplicates'}
           aria-label="Message File Box AI"
-          disabled={!ready || sending}
+          disabled={sending}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey) {
@@ -261,21 +309,36 @@ const AIAssistant: React.FC = () => {
         <div className="filebox-ai-composer-bar">
           <label className="filebox-ai-file-picker">
             <DocumentIcon size={14} />
-            <select value={selectedFileId} onChange={(event) => setSelectedFileId(event.target.value)} disabled={!ready} aria-label="File to ask about">
+            <select value={selectedFileId} onChange={(event) => setSelectedFileId(event.target.value)} aria-label="File to ask about">
               <option value="">No file selected</option>
               {fileOptions.map(file => <option key={file._id} value={file._id}>{file.originalName}</option>)}
             </select>
           </label>
-          <button type="submit" className="btn-primary" disabled={!ready || sending || !input.trim()}>
+          <button type="submit" className="btn-primary" disabled={sending || !input.trim()}>
             {sending ? 'Working…' : 'Send'} <ArrowRightIcon size={14} />
           </button>
         </div>
       </form>
 
+      {fileActions && fileActions.actions.length > 0 && (
+        <div className="filebox-ai-suggestions" aria-label="Actions for the selected file">
+          {fileActions.actions.map(action => (
+            <button
+              key={action.id}
+              disabled={!action.available || Boolean(runningAction) || sending}
+              title={action.available ? '' : 'Needs File Box AI (Ollama) to be running'}
+              onClick={() => runFileAction(action.id, action.label)}
+            >
+              {runningAction === action.id ? 'Working…' : action.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {messages.length === 0 && (
         <div className="filebox-ai-suggestions" aria-label="Suggested actions">
           {SUGGESTIONS.map(suggestion => (
-            <button key={suggestion.label} disabled={!ready} onClick={() => applySuggestion(suggestion)}>
+            <button key={suggestion.label} onClick={() => applySuggestion(suggestion)}>
               {suggestion.label}
             </button>
           ))}
@@ -296,12 +359,18 @@ const AIAssistant: React.FC = () => {
                   {message.files.map(file => (
                     <li key={file.id}>
                       <button onClick={() => openFile(file)}>
-                        <DocumentIcon size={14} /><span>{file.name}</span><small>{file.folder}</small>
+                        <DocumentIcon size={14} /><span>{file.name}</span><small className={`source-${file.trashed ? 'trash' : file.source || 'owned'}`}>{sourceLabel(file)}</small>
                       </button>
                     </li>
                   ))}
                 </ul>
               )}
+              {message.panel && message.id === lastPanelId && (
+                <div className="filebox-ai-panel">
+                  {message.panel === 'duplicates' ? <DuplicateReview explain={Boolean(status?.ready)} /> : <OrganizeReview />}
+                </div>
+              )}
+              {message.panel && message.id !== lastPanelId && <p className="ai-panel-muted">This review was replaced by a newer one below.</p>}
               {message.pendingAction && (
                 <div className="filebox-ai-confirm">
                   {message.actionState === 'pending' && (

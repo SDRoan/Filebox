@@ -5,6 +5,7 @@ import { filesAPI } from '../services/api';
 import FilePreview from './FilePreview';
 import MoveCopyModal from './MoveCopyModal';
 import ShareDialog from './ShareDialog';
+import FileAIDialog from './FileAIDialog';
 import { useNavigate } from 'react-router-dom';
 import { capabilitiesFor, AccessRole } from '../utils/permissions';
 import { formatRelativeTime } from '../utils/fileDisplay';
@@ -47,6 +48,7 @@ const FileItem: React.FC<FileItemProps> = ({
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [showAIDialog, setShowAIDialog] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
@@ -332,7 +334,7 @@ const FileItem: React.FC<FileItemProps> = ({
                   <LinkIcon size={18} color="currentColor" />
                 </button>
               )}
-              <button onClick={() => navigate(`${pagePath('ai-assistant')}?file=${file._id}`)} className="icon-button" title="Ask File Box AI">
+              <button onClick={() => setShowAIDialog(true)} className="icon-button" title="Ask File Box AI">
                 <AIAssistantIcon size={18} color="currentColor" />
               </button>
               {caps.canRename && (
@@ -445,6 +447,9 @@ const FileItem: React.FC<FileItemProps> = ({
             onMove?.();
           }}
         />
+      )}
+      {showAIDialog && (
+        <FileAIDialog fileId={file._id} fileName={file.originalName} onClose={() => setShowAIDialog(false)} />
       )}
       {showShareModal && (
         <ShareDialog fileId={file._id} fileName={file.originalName} onClose={() => setShowShareModal(false)} />

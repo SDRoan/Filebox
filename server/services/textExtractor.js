@@ -2,6 +2,9 @@ const fs = require('fs-extra');
 const path = require('path');
 const { PDFParse } = require('pdf-parse');
 const Tesseract = require('tesseract.js');
+
+// OCR language data ships with the repo (server/eng.traineddata), so OCR works offline from any working directory.
+const OCR_OPTIONS = { cachePath: path.join(__dirname, '..'), langPath: path.join(__dirname, '..'), gzip: false };
 const mammoth = require('mammoth');
 const config = require('../config/aiConfig');
 const ollamaClient = require('./ollamaClient');
@@ -341,6 +344,7 @@ class TextExtractor {
               }
             },
             tessedit_pageseg_mode: '1',
+        ...OCR_OPTIONS,
           });
 
           const cleanText = (result.data?.text || '').trim();
@@ -406,6 +410,7 @@ class TextExtractor {
           }
         },
         tessedit_pageseg_mode: '1',
+        ...OCR_OPTIONS,
       });
 
       return (result.data?.text || '').trim();

@@ -9,6 +9,8 @@ module.exports = {
     enabled: process.env.OLLAMA_ENABLED !== 'false',
     baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
     ocrModel: process.env.OLLAMA_OCR_MODEL || 'glm-ocr',
+    // Used for "Describe image" only when this model is installed locally.
+    visionModel: process.env.OLLAMA_VISION_MODEL || 'llama3.2-vision',
     summaryModel: process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
     assistantModel: process.env.OLLAMA_ASSISTANT_MODEL || process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
     plannerModel: process.env.OLLAMA_ASSISTANT_PLANNER_MODEL || process.env.OLLAMA_ASSISTANT_MODEL || process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
