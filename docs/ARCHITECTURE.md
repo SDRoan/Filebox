@@ -104,6 +104,15 @@ Models (e.g. `Course`, `StudyGroup`) stay because file listings still exclude le
 
 Removed outright because they only called hosted AI: `services/summarization.js`, `routes/summarization.js`, `services/aiResourceGenerator.js`, `scripts/generateLearningResources.js`, `DocumentSummary` component, and the `openai` and `@huggingface/inference` packages.
 
+## Known issues
+
+Documented and intentionally left for later phases:
+
+- **Folder sharing** is not supported. `Folder.sharedWith` exists in the schema but no route uses it, so the UI only offers sharing for files.
+- **Team Space subfolders** are permission-aware (access is resolved by walking up to the Space), but only a Space's top level is browsable in the UI.
+- **Recent → team files:** opening a teammate's Team Space file from Home or Recent goes to Shared instead of the Team Space.
+- **Old password-bug accounts:** accounts registered before the double-hashing fix (Phase 1) cannot sign in with their password and need a password reset (which requires SMTP to be configured). The local workspace session is not affected.
+
 ## External services
 
 | Service | Used for | Cost |
