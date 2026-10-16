@@ -4,9 +4,10 @@ import './UploadButton.css';
 
 interface UploadButtonProps {
   onFileSelect: (file: File) => void;
+  label?: string;
 }
 
-const UploadButton: React.FC<UploadButtonProps> = ({ onFileSelect }) => {
+const UploadButton: React.FC<UploadButtonProps> = ({ onFileSelect, label = 'Upload files' }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleClick = () => {
@@ -27,7 +28,7 @@ const UploadButton: React.FC<UploadButtonProps> = ({ onFileSelect }) => {
     <>
       <button className="upload-button" onClick={handleClick}>
         <UploadIcon size={16} color="#ffffff" />
-        <span>Upload</span>
+        <span>{label}</span>
       </button>
       <input
         ref={fileInputRef}

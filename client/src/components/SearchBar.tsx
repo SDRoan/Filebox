@@ -77,54 +77,55 @@ const SearchBar: React.FC<SearchBarProps> = ({ onFileClick, onFolderClick }) => 
   };
 
   return (
-    <div className="search-bar-container">
-      <div className="search-input-wrapper">
+    <div className="workspace-search-bar-container">
+      <div className="workspace-search-input-wrapper">
         <input
           ref={inputRef}
           type="text"
-          placeholder="Search files and folders..."
+          placeholder="Search your workspace"
+          aria-label="Search your workspace"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => query.trim().length > 0 && setShowResults(true)}
-          className="search-input"
+          className="workspace-search-input"
         />
-        <span className="search-icon"></span>
-        <div className="search-shortcut-hint">
+        <svg className="workspace-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></svg>
+        <div className="workspace-search-shortcut-hint">
           <kbd>⌘</kbd><kbd>K</kbd>
         </div>
       </div>
 
-      {showResults && (results.files.length > 0 || results.folders.length > 0 || loading) && (
-        <div className="search-results">
+      {showResults && (
+        <div className="workspace-search-results">
           {loading && (
-            <div className="search-loading">Searching...</div>
+            <div className="workspace-search-loading">Searching...</div>
           )}
 
           {!loading && results.folders.length > 0 && (
-            <div className="search-section">
-              <div className="search-section-title">Folders</div>
+            <div className="workspace-search-section">
+              <div className="workspace-search-section-title">Folders</div>
               {results.folders.map((folder) => (
                 <div
                   key={folder._id}
-                  className="search-result-item"
+                  className="workspace-search-result-item"
                   onClick={() => handleFolderClick(folder)}
                 >
                   <span className="result-icon"></span>
-                  <span className="result-name">{folder.name}</span>
+                  <span className="workspace-result-name">{folder.name}</span>
                 </div>
               ))}
             </div>
           )}
 
           {!loading && results.files.length > 0 && (
-            <div className="search-section">
-              <div className="search-section-title">
+            <div className="workspace-search-section">
+              <div className="workspace-search-section-title">
                 Files
               </div>
               {results.files.map((file) => (
                 <div
                   key={file._id}
-                  className="search-result-item"
+                  className="workspace-search-result-item"
                   onClick={() => handleFileClick(file)}
                 >
                   <span className="result-icon">
@@ -132,8 +133,8 @@ const SearchBar: React.FC<SearchBarProps> = ({ onFileClick, onFolderClick }) => 
                      file.mimeType.startsWith('video/') ? 'Video' :
                      file.mimeType.includes('pdf') ? '' : ''}
                   </span>
-                  <span className="result-name">{file.originalName}</span>
-                  <span className="result-meta">
+                  <span className="workspace-result-name">{file.originalName}</span>
+                  <span className="workspace-result-meta">
                     {(file.size / 1024).toFixed(1)} KB
                   </span>
                 </div>
@@ -142,7 +143,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onFileClick, onFolderClick }) => 
           )}
 
           {!loading && results.files.length === 0 && results.folders.length === 0 && query.trim().length > 0 && (
-            <div className="search-no-results">No results found</div>
+            <div className="workspace-search-no-results">No results found</div>
           )}
         </div>
       )}

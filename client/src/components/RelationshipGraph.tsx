@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { relationshipsAPI, filesAPI } from '../services/api';
 import FilePreview from './FilePreview';
+import ConnectionsError, { connectionErrorMessage } from './ConnectionsError';
 import { FileItemType } from '../types';
 import './RelationshipGraph.css';
 
@@ -27,6 +28,7 @@ interface GraphData {
 const RelationshipGraph: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], edges: [] });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<Edge | null>(null);
   const [editingRelationshipType, setEditingRelationshipType] = useState<string>('');
@@ -106,10 +108,12 @@ const RelationshipGraph: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const loadGraphData = async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       const data = await relationshipsAPI.getRelationshipGraph();
       setGraphData(data);
     } catch (error) {
       console.error('Error loading graph:', error);
+      setLoadError(connectionErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -259,6 +263,15 @@ const RelationshipGraph: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         </div>
       </div>
     );
+  }
+
+  if (loadError) {
+    return <div className="relationship-graph-overlay">
+      <div className="relationship-graph-container">
+        <div className="graph-header"><h2>File Connections</h2><button onClick={onClose}>Close</button></div>
+        <ConnectionsError message={loadError} onRetry={loadGraphData} />
+      </div>
+    </div>;
   }
 
   if (graphData.nodes.length === 0) {

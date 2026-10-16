@@ -6,6 +6,7 @@ const socketIo = require('socket.io');
 const path = require('path');
 require('dotenv').config();
 const appConfig = require('./config/appConfig');
+const { optionalRoute } = require('./utils/optionalModule');
 
 // Import open package for auto-opening browser
 const open = require('open');
@@ -23,7 +24,6 @@ const relationshipRoutes = require('./routes/relationships');
 const summarizationRoutes = require('./routes/summarization');
 const smartOrganizationRoutes = require('./routes/smartOrganization');
 const analyticsRoutes = require('./routes/analytics');
-const socialRoutes = require('./routes/social');
 
 // Import learning resource scheduler
 const learningResourceScheduler = require('./services/learningResourceScheduler');
@@ -77,7 +77,6 @@ app.use('/api/relationships', relationshipRoutes);
 app.use('/api/summarization', summarizationRoutes);
 app.use('/api/smart-org', smartOrganizationRoutes);
 app.use('/api/analytics', analyticsRoutes);
-app.use('/api/social', socialRoutes);
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/security', require('./routes/security'));
 app.use('/api/assignments', require('./routes/assignments'));
@@ -90,10 +89,10 @@ app.use('/api/summaries', require('./routes/summaries'));
 app.use('/api/signatures', require('./routes/signatures'));
 app.use('/api/ai-assistant', require('./routes/aiAssistant'));
 app.use('/api/file-memory', require('./routes/fileMemory'));
-app.use('/api/predictive-org', require('./routes/predictiveOrganization'));
+app.use('/api/predictive-org', optionalRoute(path.join(__dirname, 'routes/predictiveOrganization.js'), [path.join(__dirname, 'services/predictiveOrganization.js')]));
 app.use('/api/cloud-backup', require('./routes/cloudBackup'));
-app.use('/api/templates', require('./routes/templates'));
-app.use('/api/web-shortcuts', require('./routes/webShortcuts'));
+app.use('/api/templates', optionalRoute(path.join(__dirname, 'routes/templates.js'), [path.join(__dirname, 'models/Template.js')]));
+app.use('/api/web-shortcuts', optionalRoute(path.join(__dirname, 'routes/webShortcuts.js'), [path.join(__dirname, 'models/WebShortcut.js')]));
 app.use('/api/secured-links', require('./routes/securedLinks'));
 app.use('/api/integrations', require('./routes/integrations'));
 app.use('/api/referrals', require('./routes/referrals'));

@@ -1,3 +1,4 @@
+import ItemActions from './ItemActions';
 import React, { useState, useEffect, useRef } from 'react';
 import { FileItem as FileItemType } from '../types';
 import { filesAPI } from '../services/api';
@@ -235,6 +236,7 @@ const FileItem: React.FC<FileItemProps> = ({
         {selectionMode && (
           <input
             type="checkbox"
+            aria-label={`Select ${file.originalName}`}
             checked={isSelected}
             onChange={onSelect}
             className="selection-checkbox"
@@ -289,7 +291,7 @@ const FileItem: React.FC<FileItemProps> = ({
             )}
           </div>
         </div>
-        <div className="file-actions" onClick={(e) => e.stopPropagation()}>
+        <ItemActions className="file-actions" label={`Actions for ${file.originalName}`}>
           {!showTrash ? (
             <>
               {canPreview() && (
@@ -370,7 +372,7 @@ const FileItem: React.FC<FileItemProps> = ({
               </button>
             </>
           )}
-        </div>
+        </ItemActions>
       </div>
       {showPreview && (
         <FilePreview file={file} onClose={() => setShowPreview(false)} />

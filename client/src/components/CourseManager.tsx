@@ -80,10 +80,7 @@ const CourseManager: React.FC<CourseManagerProps> = ({ onCourseClick }) => {
   return (
     <div className="course-manager">
       <div className="course-header">
-        <h1>
-          <BookIcon size={28} color="currentColor" style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
-          My Courses
-        </h1>
+        <h2>Courses</h2>
         <button className="btn-primary add-course-btn" onClick={() => setShowCreateModal(true)}>
           <PlusIcon size={16} color="#ffffff" />
           <span>Add Course</span>
@@ -145,7 +142,9 @@ const CourseManager: React.FC<CourseManagerProps> = ({ onCourseClick }) => {
 
       {courses.length === 0 && (
         <div className="empty-state">
-          <p>No courses yet. Add your first course to get started!</p>
+          <BookIcon size={42} color="currentColor" />
+          <h3>One space for each class.</h3>
+          <p>Keep course files and assignments together. Add a course to begin.</p>
         </div>
       )}
 

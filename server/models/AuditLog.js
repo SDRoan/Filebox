@@ -10,7 +10,7 @@ const auditLogSchema = new mongoose.Schema({
     type: String,
     required: true,
     enum: [
-      'login', 'logout', 'login_failed',
+      'login', 'logout', 'login_failed', 'password_reset',
       'file_upload', 'file_download', 'file_delete', 'file_share', 'file_move', 'file_copy',
       'folder_create', 'folder_delete', 'folder_share', 'folder_move',
       'user_create', 'user_update', 'user_delete',
@@ -59,7 +59,6 @@ auditLogSchema.index({ action: 1, timestamp: -1 });
 auditLogSchema.index({ resourceType: 1, resourceId: 1 });
 
 module.exports = mongoose.model('AuditLog', auditLogSchema);
-
 
 
 

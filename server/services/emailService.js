@@ -101,6 +101,78 @@ class EmailService {
     }
   }
 
+  async sendPasswordResetCode(email, code, name) {
+    if (!this.transporter) {
+      throw new Error('Email service not configured. Please set SMTP_USER and SMTP_PASSWORD environment variables.');
+    }
+
+    const mailOptions = {
+      from: `"File Box" <${process.env.SMTP_USER}>`,
+      to: email,
+      subject: 'Reset Your Password - File Box',
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: #6366f1; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+            .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+            .code-box { background: white; border: 2px dashed #6366f1; padding: 20px; text-align: center; margin: 20px 0; border-radius: 8px; }
+            .code { font-size: 32px; font-weight: bold; color: #6366f1; letter-spacing: 8px; font-family: monospace; }
+            .footer { margin-top: 20px; font-size: 12px; color: #666; text-align: center; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>File Box</h1>
+            </div>
+            <div class="content">
+              <h2>Hello ${name || 'there'}!</h2>
+              <p>We received a request to reset the password for your File Box account. Enter this code to choose a new password:</p>
+
+              <div class="code-box">
+                <div class="code">${code}</div>
+              </div>
+
+              <p>This code will expire in 10 minutes.</p>
+              <p>If you did not request a password reset, you can safely ignore this email.</p>
+            </div>
+            <div class="footer">
+              <p>© ${new Date().getFullYear()} File Box. All rights reserved.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+      text: `
+        Hello ${name || 'there'}!
+
+        We received a request to reset the password for your File Box account.
+
+        Password Reset Code: ${code}
+
+        This code will expire in 10 minutes.
+
+        If you did not request a password reset, you can safely ignore this email.
+
+        © ${new Date().getFullYear()} File Box. All rights reserved.
+      `
+    };
+
+    try {
+      const info = await this.transporter.sendMail(mailOptions);
+      console.log(`[Email Service] Password reset email sent to ${email}:`, info.messageId);
+      return { success: true, messageId: info.messageId };
+    } catch (error) {
+      console.error('[Email Service] Error sending password reset email:', error);
+      throw error;
+    }
+  }
+
   isConfigured() {
     return this.transporter !== null;
   }

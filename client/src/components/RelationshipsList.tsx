@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { relationshipsAPI } from '../services/api';
 import RelationshipGraph from './RelationshipGraph';
+import ConnectionsError, { connectionErrorMessage } from './ConnectionsError';
 import { RelationshipsIcon, LinkIcon, ArrowRightIcon, PackageIcon, ScrollIcon, CopyIcon, TagIcon, DocumentIcon, ImageIcon, SummaryIcon, VideoIcon, AudioIcon, PaperclipIcon, TrashIcon } from './Icons';
 import './RelationshipsList.css';
 
@@ -28,6 +29,7 @@ interface GraphData {
 const RelationshipsList: React.FC = () => {
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], edges: [] });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showGraph, setShowGraph] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
@@ -42,15 +44,12 @@ const RelationshipsList: React.FC = () => {
   const loadRelationships = async () => {
     try {
       setLoading(true);
-      console.log('Loading relationships...');
+      setLoadError(null);
       const data = await relationshipsAPI.getRelationshipGraph();
-      console.log('Relationships loaded:', data);
-      console.log('Nodes:', data.nodes);
-      console.log('Edges:', data.edges);
       setGraphData(data);
     } catch (error) {
       console.error('Error loading relationships:', error);
-      alert('Failed to load connections. Check console for details.');
+      setLoadError(connectionErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -221,6 +220,13 @@ const RelationshipsList: React.FC = () => {
         <div className="loading">Loading connections...</div>
       </div>
     );
+  }
+
+  if (loadError) {
+    return <div className="relationships-list-container">
+      <div className="relationships-header"><h2>File Connections</h2></div>
+      <ConnectionsError message={loadError} onRetry={loadRelationships} />
+    </div>;
   }
 
   if (graphData.edges.length === 0) {

@@ -29,9 +29,10 @@ interface FileRequest {
 
 interface FileRequestsProps {
   onClose: () => void;
+  embedded?: boolean;
 }
 
-const FileRequests: React.FC<FileRequestsProps> = ({ onClose }) => {
+const FileRequests: React.FC<FileRequestsProps> = ({ onClose, embedded = false }) => {
   const { user } = useAuth();
   const [requests, setRequests] = useState<FileRequest[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -193,11 +194,11 @@ const FileRequests: React.FC<FileRequestsProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className={embedded ? "file-requests-page" : "modal-overlay"} onClick={embedded ? undefined : onClose}>
       <div className="modal-content file-requests-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>File Requests</h2>
-          <button onClick={onClose} className="close-btn">×</button>
+          {!embedded && <button onClick={onClose} className="close-btn">×</button>}
         </div>
 
         <div className="file-requests-actions">

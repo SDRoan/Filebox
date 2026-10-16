@@ -267,7 +267,7 @@ const Learning: React.FC = () => {
   return (
     <div className="learning">
       <div className="learning-header">
-        <h2><LearningIcon size={24} color="currentColor" /> Learning Resources</h2>
+        <div><h2>Learning library.</h2><p>Something new to read, watch, or try.</p></div>
       </div>
 
       {loading ? (

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { filesAPI } from '../services/api';
 import './CreateFolderModal.css';
 
@@ -17,6 +17,12 @@ const CreateFolderModal: React.FC<CreateFolderModalProps> = ({
   isTeamFolder = false,
   teamFolderId,
 }) => {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.showModal();
+    return () => dialog?.close();
+  }, []);
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -42,29 +48,32 @@ const CreateFolderModal: React.FC<CreateFolderModalProps> = ({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <h2>Create New Folder</h2>
+    <dialog ref={dialogRef} className="folder-dialog" aria-labelledby="folder-dialog-title" onCancel={(event) => { event.preventDefault(); onClose(); }} onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="folder-dialog-content" onClick={(e) => e.stopPropagation()}>
+        <h2 id="folder-dialog-title">New folder</h2>
+        <p>A little space for a project of its own.</p>
         <form onSubmit={handleSubmit}>
+          <label htmlFor="folder-name">Folder name</label>
           <input
+            id="folder-name"
             type="text"
-            placeholder="Folder Name"
+            placeholder="Untitled folder"
             value={name}
             onChange={(e) => setName(e.target.value)}
             autoFocus
-            className="modal-input"
+            className="folder-dialog-input"
           />
-          <div className="modal-actions">
-            <button type="button" onClick={onClose} className="cancel-button">
+          <div className="folder-dialog-actions">
+            <button type="button" onClick={onClose} className="folder-dialog-cancel">
               Cancel
             </button>
-            <button type="submit" disabled={loading || !name.trim()} className="create-button">
+            <button type="submit" disabled={loading || !name.trim()} className="folder-dialog-create">
               {loading ? 'Creating...' : 'Create'}
             </button>
           </div>
         </form>
       </div>
-    </div>
+    </dialog>
   );
 };
 

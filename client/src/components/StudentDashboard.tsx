@@ -27,11 +27,8 @@ const StudentDashboard: React.FC = () => {
   return (
     <div className="student-dashboard">
       <div className="student-header">
-        <h1>
-          <StudentIcon size={32} color="currentColor" style={{ display: 'inline-block', marginRight: '0.5rem', verticalAlign: 'middle' }} />
-          Student Dashboard
-        </h1>
-        <p>Manage your courses, assignments, and academic resources</p>
+        <h1>Study space.</h1>
+        <p>Your classes, notes, and next steps. Together.</p>
       </div>
 
       <div className="student-content">

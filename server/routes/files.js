@@ -14,7 +14,7 @@ const analytics = require('../services/analytics');
 const appConfig = require('../config/appConfig');
 const StudyGroup = require('../models/StudyGroup');
 const FileMemory = require('../models/FileMemory');
-const predictiveOrgService = require('../services/predictiveOrganization');
+const { assertAvailable } = require('../utils/optionalModule');
 const router = express.Router();
 
 // Helper function to log activity
@@ -97,12 +97,12 @@ router.get('/', auth, async (req, res) => {
   try {
     const { folderId, trashed, starred } = req.query;
     const query = { owner: req.user._id, isTrashed: trashed === 'true' };
-    
+
     // Filter by starred status if requested
     if (starred === 'true') {
       query.isStarred = true;
     }
-    
+
     if (folderId) {
       query.parentFolder = folderId === 'root' ? null : folderId;
     } else {
@@ -110,10 +110,10 @@ router.get('/', auth, async (req, res) => {
     }
 
     const files = await File.find(query).populate('owner', 'name email').sort({ createdAt: -1 });
-    
+
     // Exclude course folders and study group folders from regular Files view
     const folderQuery = { ...query, isCourseFolder: { $ne: true } };
-    
+
     // Get all study group folder IDs to exclude
     const studyGroups = await StudyGroup.find({
       $or: [
@@ -121,27 +121,27 @@ router.get('/', auth, async (req, res) => {
         { 'members.user': req.user._id }
       ]
     }).select('folder').lean();
-    
+
     const studyGroupFolderIds = studyGroups
       .map(sg => sg.folder)
       .filter(id => id !== null && id !== undefined);
-    
+
     // Exclude study group folders by ID and by name pattern
     const exclusionConditions = [];
-    
+
     // Exclude by folder ID if we found any study group folders
     if (studyGroupFolderIds.length > 0) {
       exclusionConditions.push({ _id: { $nin: studyGroupFolderIds } });
     }
-    
+
     // Always exclude folders that start with "Study Group:" as a fallback
     exclusionConditions.push({ name: { $not: /^Study Group:/ } });
-    
+
     // Combine exclusion conditions with $and
     if (exclusionConditions.length > 0) {
       folderQuery.$and = exclusionConditions;
     }
-    
+
     const folders = await Folder.find(folderQuery).populate('owner', 'name email').sort({ createdAt: -1 });
 
     res.json({ files, folders });
@@ -216,7 +216,7 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
     }
 
     await file.populate('owner', 'name email');
-    
+
     // Send response before background processing
     res.status(201).json(file);
 
@@ -233,12 +233,12 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
           console.log(`[Extraction] Starting extraction for: ${file.originalName}`);
           const extractedText = await textExtractor.extractText(file.path, file.mimeType);
           console.log(`[Extraction] Extracted ${extractedText.length} characters from ${file.originalName}`);
-          
+
           if (extractedText && extractedText.length > 0) {
             console.log(`[Extraction] Generating embedding for: ${file.originalName}`);
             const embedding = await aiSearch.generateEmbedding(extractedText);
             console.log(`[Extraction] Generated embedding (length: ${embedding.length}) for: ${file.originalName}`);
-            
+
             const fileContent = new FileContent({
               file: file._id,
               extractedText,
@@ -320,31 +320,64 @@ router.post('/folder', auth, async (req, res) => {
 // Download file
 router.get('/download/:id', auth, async (req, res) => {
   try {
+    console.log(`[Download] Request for file ${req.params.id} by user ${req.user._id}`);
     const file = await File.findById(req.params.id);
-    
+
     if (!file) {
+      console.log(`[Download] File ${req.params.id} not found in database`);
       return res.status(404).json({ message: 'File not found' });
     }
 
-    // Check permissions
-    if (file.owner.toString() !== req.user._id.toString() && 
-        !file.sharedWith.some(s => s.user.toString() === req.user._id.toString())) {
-      return res.status(403).json({ message: 'Access denied' });
+    console.log(`[Download] File found: ${file.originalName}, owner: ${file.owner}, path: ${file.path}`);
+
+    // Check permissions - allow if:
+    // 1. User owns the file
+    // 2. File is shared with user
+    // 3. File is in a public social post
+    const isOwner = file.owner.toString() === req.user._id.toString();
+    const isSharedWith = file.sharedWith && file.sharedWith.some(s => s.user.toString() === req.user._id.toString());
+
+    console.log(`[Download] Permission check - isOwner: ${isOwner}, isSharedWith: ${isSharedWith}`);
+
+    // Check if file is in a public social post
+    let isInPublicPost = false;
+    if (!isOwner && !isSharedWith) {
+      try {
+        const SocialPost = require('../models/SocialPost');
+        const publicPost = await SocialPost.findOne({
+          file: file._id,
+          isPublic: true
+        });
+        isInPublicPost = !!publicPost;
+        console.log(`[Download] Public post check - isInPublicPost: ${isInPublicPost}`);
+      } catch (error) {
+        console.error('[Download] Error checking public post:', error);
+        // Continue with other permission checks
+      }
     }
 
-    if (!await fs.pathExists(file.path)) {
-      return res.status(404).json({ message: 'File not found on disk' });
+    if (!isOwner && !isSharedWith && !isInPublicPost) {
+      console.log(`[Download] Access denied for user ${req.user._id} to file ${file._id}`);
+      return res.status(403).json({ message: 'Access denied. You do not have permission to access this file.' });
+    }
+
+    const pathExists = await fs.pathExists(file.path);
+    console.log(`[Download] File path exists: ${pathExists}, path: ${file.path}`);
+
+    if (!pathExists) {
+      console.error(`[Download] File path does not exist: ${file.path} for file ${file._id}`);
+      return res.status(404).json({ message: 'File not found on disk. The file may have been deleted.' });
     }
 
     // Track activity - notify owner if this is a shared file
     const isSharedFile = file.owner.toString() !== req.user._id.toString();
-    
+
     // Log activity
     await logActivity(req.user._id, 'downloaded', file._id, null, file.originalName);
     // Record analytics
-    await analytics.recordActivity(file._id, req.user._id, 'download', { 
+    await analytics.recordActivity(file._id, req.user._id, 'download', {
       fileName: file.originalName,
-      isSharedFile 
+      isSharedFile
     });
 
     // Notify file owner in real-time if someone else is downloading
@@ -391,9 +424,22 @@ router.get('/download/:id', auth, async (req, res) => {
       });
     }
 
-    res.download(file.path, file.originalName);
+    console.log(`[Download] Sending file: ${file.path}`);
+    res.download(file.path, file.originalName, (err) => {
+      if (err) {
+        console.error(`[Download] Error sending file:`, err);
+        if (!res.headersSent) {
+          res.status(500).json({ message: `Failed to download file: ${err.message}` });
+        }
+      } else {
+        console.log(`[Download] File sent successfully: ${file.originalName}`);
+      }
+    });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error(`[Download] Unexpected error:`, error);
+    if (!res.headersSent) {
+      res.status(500).json({ message: error.message || 'An error occurred while downloading the file' });
+    }
   }
 });
 
@@ -401,20 +447,20 @@ router.get('/download/:id', auth, async (req, res) => {
 router.post('/view/:id', auth, async (req, res) => {
   try {
     const file = await File.findById(req.params.id);
-    
+
     if (!file) {
       return res.status(404).json({ message: 'File not found' });
     }
 
     // Check permissions
-    if (file.owner.toString() !== req.user._id.toString() && 
+    if (file.owner.toString() !== req.user._id.toString() &&
         !file.sharedWith.some(s => s.user.toString() === req.user._id.toString())) {
       return res.status(403).json({ message: 'Access denied' });
     }
 
     // Track activity - notify owner if this is a shared file
     const isSharedFile = file.owner.toString() !== req.user._id.toString();
-    
+
     // Update access log
     const ipAddress = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
     file.accessLog.push({
@@ -426,9 +472,9 @@ router.post('/view/:id', auth, async (req, res) => {
     await file.save();
 
     // Record analytics
-    await analytics.recordActivity(file._id, req.user._id, 'view', { 
+    await analytics.recordActivity(file._id, req.user._id, 'view', {
       fileName: file.originalName,
-      isSharedFile 
+      isSharedFile
     });
 
     // Update file memory usage patterns (non-blocking)
@@ -475,7 +521,7 @@ router.post('/view/:id', auth, async (req, res) => {
 router.delete('/:id', auth, async (req, res) => {
   try {
     const { type } = req.query; // 'file' or 'folder'
-    
+
     if (type === 'folder') {
       const folder = await Folder.findById(req.params.id);
       if (!folder || folder.owner.toString() !== req.user._id.toString()) {
@@ -484,27 +530,27 @@ router.delete('/:id', auth, async (req, res) => {
       folder.isTrashed = true;
       folder.deletedAt = new Date();
       await folder.save();
-      
+
       const io = req.app.get('io');
       io.to(`user-${req.user._id}`).emit('folder-deleted', folder);
-      
+
       res.json({ message: 'Folder moved to trash' });
     } else {
       const file = await File.findById(req.params.id);
       if (!file || file.owner.toString() !== req.user._id.toString()) {
         return res.status(404).json({ message: 'File not found' });
       }
-      
+
       file.isTrashed = true;
       file.deletedAt = new Date();
       await file.save();
-      
+
       // Log activity
       await logActivity(req.user._id, 'deleted', file._id, null, file.originalName);
-      
+
       const io = req.app.get('io');
       io.to(`user-${req.user._id}`).emit('file-deleted', file);
-      
+
       res.json({ message: 'File moved to trash' });
     }
   } catch (error) {
@@ -516,39 +562,39 @@ router.delete('/:id', auth, async (req, res) => {
 router.delete('/permanent/:id', auth, async (req, res) => {
   try {
     const { type } = req.query;
-    
+
     if (type === 'folder') {
       const folder = await Folder.findById(req.params.id);
       if (!folder || folder.owner.toString() !== req.user._id.toString()) {
         return res.status(404).json({ message: 'Folder not found' });
       }
       await folder.deleteOne();
-      
+
       const io = req.app.get('io');
       io.to(`user-${req.user._id}`).emit('folder-permanently-deleted', folder);
-      
+
       res.json({ message: 'Folder permanently deleted' });
     } else {
       const file = await File.findById(req.params.id);
       if (!file || file.owner.toString() !== req.user._id.toString()) {
         return res.status(404).json({ message: 'File not found' });
       }
-      
+
       // Delete physical file
       if (await fs.pathExists(file.path)) {
         await fs.remove(file.path);
       }
-      
+
       // Update user storage
       const user = await User.findById(req.user._id);
       user.storageUsed -= file.size;
       await user.save();
-      
+
       await file.deleteOne();
-      
+
       const io = req.app.get('io');
       io.to(`user-${req.user._id}`).emit('file-permanently-deleted', file);
-      
+
       res.json({ message: 'File permanently deleted' });
     }
   } catch (error) {
@@ -560,7 +606,7 @@ router.delete('/permanent/:id', auth, async (req, res) => {
 router.post('/restore/:id', auth, async (req, res) => {
   try {
     const { type } = req.query;
-    
+
     if (type === 'folder') {
       const folder = await Folder.findById(req.params.id);
       if (!folder || folder.owner.toString() !== req.user._id.toString()) {
@@ -569,13 +615,13 @@ router.post('/restore/:id', auth, async (req, res) => {
       folder.isTrashed = false;
       folder.deletedAt = null;
       await folder.save();
-      
+
       // Log activity
       await logActivity(req.user._id, 'restored', null, folder._id, `Folder: ${folder.name}`);
-      
+
       const io = req.app.get('io');
       io.to(`user-${req.user._id}`).emit('folder-restored', folder);
-      
+
       res.json(folder);
     } else {
       const file = await File.findById(req.params.id);
@@ -585,13 +631,13 @@ router.post('/restore/:id', auth, async (req, res) => {
       file.isTrashed = false;
       file.deletedAt = null;
       await file.save();
-      
+
       // Log activity
       await logActivity(req.user._id, 'restored', file._id, null, file.originalName);
-      
+
       const io = req.app.get('io');
       io.to(`user-${req.user._id}`).emit('file-restored', file);
-      
+
       res.json(file);
     }
   } catch (error) {
@@ -604,7 +650,7 @@ router.post('/star/:id', auth, async (req, res) => {
   try {
     const io = req.app.get('io');
     const { type } = req.query;
-    
+
     if (type === 'folder') {
       const folder = await Folder.findById(req.params.id);
       if (!folder || folder.owner.toString() !== req.user._id.toString()) {
@@ -612,15 +658,15 @@ router.post('/star/:id', auth, async (req, res) => {
       }
       folder.isStarred = !folder.isStarred;
       await folder.save();
-      
+
       // Log activity
       await logActivity(req.user._id, folder.isStarred ? 'starred' : 'unstarred', null, folder._id, `Folder: ${folder.name}`);
-      
+
       // Emit socket event
       if (io) {
         io.to(`user-${req.user._id}`).emit(folder.isStarred ? 'file-starred' : 'file-unstarred', { type: 'folder', id: folder._id });
       }
-      
+
       res.json(folder);
     } else {
       const file = await File.findById(req.params.id);
@@ -629,17 +675,17 @@ router.post('/star/:id', auth, async (req, res) => {
       }
       file.isStarred = !file.isStarred;
       await file.save();
-      
+
       // Log activity
       await logActivity(req.user._id, file.isStarred ? 'starred' : 'unstarred', file._id, null, file.originalName);
       // Record analytics
       await analytics.recordActivity(file._id, req.user._id, file.isStarred ? 'star' : 'unstar', { fileName: file.originalName });
-      
+
       // Emit socket event
       if (io) {
         io.to(`user-${req.user._id}`).emit(file.isStarred ? 'file-starred' : 'file-unstarred', { type: 'file', id: file._id });
       }
-      
+
       res.json(file);
     }
   } catch (error) {
@@ -651,11 +697,11 @@ router.post('/star/:id', auth, async (req, res) => {
 router.patch('/rename/:id', auth, async (req, res) => {
   try {
     const { name, type } = req.body;
-    
+
     if (!name) {
       return res.status(400).json({ message: 'Name is required' });
     }
-    
+
     if (type === 'folder') {
       const folder = await Folder.findById(req.params.id);
       if (!folder || folder.owner.toString() !== req.user._id.toString()) {
@@ -663,13 +709,13 @@ router.patch('/rename/:id', auth, async (req, res) => {
       }
       folder.name = name;
       await folder.save();
-      
+
       // Log activity
       await logActivity(req.user._id, 'renamed', null, folder._id, `Renamed to: ${name}`);
-      
+
       const io = req.app.get('io');
       io.to(`user-${req.user._id}`).emit('folder-renamed', folder);
-      
+
       res.json(folder);
     } else {
       const file = await File.findById(req.params.id);
@@ -678,13 +724,13 @@ router.patch('/rename/:id', auth, async (req, res) => {
       }
       file.originalName = name;
       await file.save();
-      
+
       // Log activity
       await logActivity(req.user._id, 'renamed', file._id, null, `Renamed to: ${name}`);
-      
+
       const io = req.app.get('io');
       io.to(`user-${req.user._id}`).emit('file-renamed', file);
-      
+
       res.json(file);
     }
   } catch (error) {
@@ -696,20 +742,20 @@ router.patch('/rename/:id', auth, async (req, res) => {
 router.patch('/move/:id', auth, async (req, res) => {
   try {
     const { type, targetFolderId } = req.body;
-    
+
     if (type === 'folder') {
       const folder = await Folder.findById(req.params.id);
       if (!folder || folder.owner.toString() !== req.user._id.toString()) {
         return res.status(404).json({ message: 'Folder not found' });
       }
-      
+
       // Prevent moving folder into itself or its children
       if (targetFolderId && targetFolderId !== 'root') {
         const targetFolder = await Folder.findById(targetFolderId);
         if (!targetFolder || targetFolder.owner.toString() !== req.user._id.toString()) {
           return res.status(404).json({ message: 'Target folder not found' });
         }
-        
+
         // Check if target is a child of the folder being moved
         let currentParent = targetFolder.parentFolder;
         while (currentParent) {
@@ -720,41 +766,43 @@ router.patch('/move/:id', auth, async (req, res) => {
           currentParent = parentFolder ? parentFolder.parentFolder : null;
         }
       }
-      
+
       folder.parentFolder = targetFolderId && targetFolderId !== 'root' ? targetFolderId : null;
       await folder.save();
-      
+
       // Log activity
       await logActivity(req.user._id, 'moved', null, folder._id, `Folder: ${folder.name}`);
-      
+
       const io = req.app.get('io');
       io.to(`user-${req.user._id}`).emit('folder-moved', folder);
-      
+
       res.json(folder);
     } else {
       const file = await File.findById(req.params.id);
       if (!file || file.owner.toString() !== req.user._id.toString()) {
         return res.status(404).json({ message: 'File not found' });
       }
-      
+
       if (targetFolderId && targetFolderId !== 'root') {
         const targetFolder = await Folder.findById(targetFolderId);
         if (!targetFolder || targetFolder.owner.toString() !== req.user._id.toString()) {
           return res.status(404).json({ message: 'Target folder not found' });
         }
       }
-      
+
       const sourceFolderId = file.parentFolder;
       file.parentFolder = targetFolderId && targetFolderId !== 'root' ? targetFolderId : null;
       await file.save();
-      
+
       // Log activity
       await logActivity(req.user._id, 'moved', file._id, null, file.originalName);
-      
+
       // Record pattern for predictive organization (non-blocking)
       if (sourceFolderId !== file.parentFolder) {
         setImmediate(async () => {
           try {
+            assertAvailable(path.join(__dirname, '../services/predictiveOrganization.js'));
+            const predictiveOrgService = require('../services/predictiveOrganization');
             await predictiveOrgService.recordPattern(
               req.user._id,
               file,
@@ -771,10 +819,10 @@ router.patch('/move/:id', auth, async (req, res) => {
           }
         });
       }
-      
+
       const io = req.app.get('io');
       io.to(`user-${req.user._id}`).emit('file-moved', file);
-      
+
       res.json(file);
     }
   } catch (error) {
@@ -787,31 +835,31 @@ router.post('/copy/:id', auth, async (req, res) => {
   try {
     const { targetFolderId } = req.body;
     const file = await File.findById(req.params.id);
-    
+
     if (!file || file.owner.toString() !== req.user._id.toString()) {
       return res.status(404).json({ message: 'File not found' });
     }
-    
+
     if (targetFolderId && targetFolderId !== 'root') {
       const targetFolder = await Folder.findById(targetFolderId);
       if (!targetFolder || targetFolder.owner.toString() !== req.user._id.toString()) {
         return res.status(404).json({ message: 'Target folder not found' });
       }
     }
-    
+
     // Read the original file
     const originalPath = file.path;
     if (!await fs.pathExists(originalPath)) {
       return res.status(404).json({ message: 'Original file not found on disk' });
     }
-    
+
     // Create new file entry
     const newFileName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(file.originalName)}`;
     const userId = req.user._id.toString();
     const newPath = path.join(__dirname, '..', 'uploads', userId, newFileName);
-    
+
     await fs.copy(originalPath, newPath);
-    
+
     const newFile = new File({
       name: newFileName,
       originalName: `Copy of ${file.originalName}`,
@@ -821,20 +869,20 @@ router.post('/copy/:id', auth, async (req, res) => {
       owner: req.user._id,
       parentFolder: targetFolderId && targetFolderId !== 'root' ? targetFolderId : null
     });
-    
+
     await newFile.save();
-    
+
     // Update user storage
     const user = await User.findById(req.user._id);
     user.storageUsed += file.size;
     await user.save();
-    
+
       // Log activity
       await logActivity(req.user._id, 'copied', newFile._id, null, `Copied: ${newFile.originalName}`);
-      
+
       const io = req.app.get('io');
       io.to(`user-${req.user._id}`).emit('file-copied', newFile);
-      
+
       res.status(201).json(newFile);
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -845,7 +893,7 @@ router.post('/copy/:id', auth, async (req, res) => {
 router.get('/download-folder/:id', auth, async (req, res) => {
   try {
     const folder = await Folder.findById(req.params.id);
-    
+
     if (!folder || folder.owner.toString() !== req.user._id.toString()) {
       return res.status(404).json({ message: 'Folder not found' });
     }
@@ -881,7 +929,7 @@ router.get('/download-folder/:id', auth, async (req, res) => {
 
     // Create ZIP archive
     const archive = archiver('zip', { zlib: { level: 9 } });
-    
+
     res.attachment(`${folder.name}.zip`);
     archive.pipe(res);
 
@@ -921,7 +969,7 @@ router.get('/version/:versionId/download', auth, async (req, res) => {
   try {
     const version = await FileVersion.findById(req.params.versionId)
       .populate('file');
-    
+
     if (!version) {
       return res.status(404).json({ message: 'Version not found' });
     }
@@ -946,7 +994,7 @@ router.post('/version/:versionId/restore', auth, async (req, res) => {
   try {
     const version = await FileVersion.findById(req.params.versionId)
       .populate('file');
-    
+
     if (!version) {
       return res.status(404).json({ message: 'Version not found' });
     }
@@ -1053,7 +1101,7 @@ router.get('/preview-text/:id', auth, async (req, res) => {
 
     // Check if we have extracted text in FileContent
     let fileContent = await FileContent.findOne({ file: file._id });
-    
+
     if (fileContent && fileContent.extractedText && fileContent.extractedText.length > 0) {
       return res.json({
         text: fileContent.extractedText,
@@ -1063,20 +1111,20 @@ router.get('/preview-text/:id', auth, async (req, res) => {
 
     // If no extracted text exists, try to extract it now
     const textExtractor = require('../services/textExtractor');
-    
+
     // Check if extraction is supported (for Word docs, PDFs, etc.)
     const mimeType = file.mimeType.toLowerCase();
-    const isWordDoc = mimeType.includes('word') || 
-                      mimeType.includes('document') || 
+    const isWordDoc = mimeType.includes('word') ||
+                      mimeType.includes('document') ||
                       mimeType.includes('msword') ||
                       mimeType.includes('vnd.openxmlformats-officedocument.wordprocessingml');
-    const isSupported = isWordDoc || 
-                       mimeType.includes('pdf') || 
+    const isSupported = isWordDoc ||
+                       mimeType.includes('pdf') ||
                        mimeType.startsWith('text/') ||
                        (textExtractor.isSupported && textExtractor.isSupported(file.mimeType));
-    
+
     if (!isSupported) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: 'Text extraction not supported for this file type'
       });
     }
@@ -1084,37 +1132,37 @@ router.get('/preview-text/:id', auth, async (req, res) => {
     // Extract text
     console.log(`[Preview] Extracting text from: ${file.originalName} (${file.mimeType})`);
     const extractedText = await textExtractor.extractText(file.path, file.mimeType);
-    
+
     if (!extractedText || extractedText.trim().length === 0) {
       // For DOCX files, check if file exists and is valid
       if (isWordDoc) {
         const fs = require('fs-extra');
         const fileExists = await fs.pathExists(file.path);
         if (!fileExists) {
-          return res.status(404).json({ 
+          return res.status(404).json({
             message: 'File not found on disk'
           });
         }
         // Check file size - if it's very small, it might be empty
         const stats = await fs.stat(file.path);
         if (stats.size < 100) {
-          return res.status(400).json({ 
+          return res.status(400).json({
             message: 'File appears to be empty or corrupted'
           });
         }
       }
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: 'No text could be extracted from this file. The file may be empty, corrupted, or in an unsupported format.'
       });
     }
-    
+
     // Validate extracted text - make sure it's not binary data
     const textPreview = extractedText.substring(0, 200);
     // Check for common binary/XML patterns that indicate we got raw DOCX content
-    if (textPreview.includes('PK') && textPreview.includes('<?xml') && 
+    if (textPreview.includes('PK') && textPreview.includes('<?xml') &&
         (textPreview.match(/[<>]/g)?.length || 0) > 20) {
       console.error(`[Preview] ⚠️ Extracted text appears to be raw binary/XML data for: ${file.originalName}`);
-      return res.status(500).json({ 
+      return res.status(500).json({
         message: 'Text extraction returned invalid data. Please try again or download the file.'
       });
     }
@@ -1218,7 +1266,7 @@ router.put('/update-docx/:id', auth, async (req, res) => {
   try {
     const { text, fileName } = req.body;
     const file = await File.findById(req.params.id);
-    
+
     if (!file) {
       return res.status(404).json({ message: 'File not found' });
     }
@@ -1243,7 +1291,7 @@ router.put('/update-docx/:id', auth, async (req, res) => {
     await newVersion.save();
 
     // Convert text to DOCX paragraphs
-    const paragraphs = text.split('\n').map((line) => 
+    const paragraphs = text.split('\n').map((line) =>
       new docx.Paragraph({
         children: [new docx.TextRun(line || ' ')],
       })
@@ -1302,7 +1350,7 @@ router.put('/update-pdf/:id', auth, async (req, res) => {
   try {
     const { text, fileName } = req.body;
     const file = await File.findById(req.params.id);
-    
+
     if (!file) {
       return res.status(404).json({ message: 'File not found' });
     }
@@ -1314,21 +1362,21 @@ router.put('/update-pdf/:id', auth, async (req, res) => {
 
     const fs = require('fs-extra');
     const path = require('path');
-    
+
     // Try to use pdf-lib if available, otherwise use a simple text-to-PDF approach
     let pdfBytes;
     try {
       const { PDFDocument, StandardFonts } = require('pdf-lib');
-      
+
       // Create new PDF document
       const pdfDoc = await PDFDocument.create();
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      
+
       // Split text into pages (approximately 50 lines per page)
       const lines = text.split('\n');
       const linesPerPage = 50;
       const pages = [];
-      
+
       for (let i = 0; i < lines.length; i += linesPerPage) {
         pages.push(lines.slice(i, i + linesPerPage));
       }
@@ -1356,7 +1404,7 @@ router.put('/update-pdf/:id', auth, async (req, res) => {
       // Fallback: Create a simple text-based PDF
       // Note: Install pdf-lib for better PDF generation: npm install pdf-lib
       console.log('pdf-lib not available, using fallback method:', pdfLibError.message);
-      
+
       // Create a minimal PDF structure
       const escapedText = text.replace(/[()\\]/g, '\\$&').substring(0, 1000); // Limit length
       const pdfText = `%PDF-1.4
@@ -1384,18 +1432,18 @@ endobj
 endobj
 xref
 0 6
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000300 00000 n 
-0000000500 00000 n 
+0000000000 65535 f
+0000000009 00000 n
+0000000058 00000 n
+0000000115 00000 n
+0000000300 00000 n
+0000000500 00000 n
 trailer
 << /Size 6 /Root 1 0 R >>
 startxref
 600
 %%EOF`;
-      
+
       pdfBytes = Buffer.from(pdfText);
     }
 

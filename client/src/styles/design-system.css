@@ -2,29 +2,29 @@
 
 :root {
   /* Color Palette - Gray & White Theme */
-  --primary: #4b5563;
-  --primary-dark: #374151;
-  --primary-light: #6b7280;
+  --primary: #3f6543;
+  --primary-dark: #315536;
+  --primary-light: #78966b;
   --secondary: #6b7280;
   --accent: #9ca3af;
   
   /* Neutrals */
-  --bg-primary: #ffffff;
-  --bg-secondary: #fafbfc;
-  --bg-tertiary: #f3f4f6;
+  --bg-primary: #fdfdfb;
+  --bg-secondary: #f6f7f1;
+  --bg-tertiary: #eef2e7;
   --bg-dark: #1f2937;
   --bg-dark-secondary: #374151;
   --bg-dark-tertiary: #4b5563;
   
   /* Text */
-  --text-primary: #111827;
-  --text-secondary: #374151;
-  --text-tertiary: #6b7280;
+  --text-primary: #2c3829;
+  --text-secondary: #56644c;
+  --text-tertiary: #87937b;
   --text-inverse: #ffffff;
   
   /* Borders */
-  --border-light: #e5e7eb;
-  --border-medium: #d1d5db;
+  --border-light: #e2e7d9;
+  --border-medium: #c8d2bc;
   --border-dark: #9ca3af;
   
   /* Status Colors - Gray Scale */
@@ -291,3 +291,8 @@ html {
 
 
 
+
+button, input, select, textarea { font-family: inherit; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

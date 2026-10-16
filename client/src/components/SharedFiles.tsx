@@ -277,7 +277,7 @@ const SharedFiles: React.FC = () => {
     <div className="shared-files-container">
       <div className="shared-files-header">
         <div className="shared-files-title-section">
-          <h2>Shared Files</h2>
+          <div className="shared-page-title"><h2>Shared files.</h2><p>Good work happens together.</p></div>
           <div className="shared-files-tabs">
             <button
               className={`tab-button ${activeTab === 'with-me' ? 'active' : ''}`}

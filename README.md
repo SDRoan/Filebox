@@ -36,7 +36,6 @@ A comprehensive cloud storage and student management platform built with React a
 - 🔌 Integrations (Microsoft Teams, etc.)
 - 📑 Templates Library
 - 🌐 Web Shortcuts
-- 💬 Social Feed & Community
 - 📚 Learning Resources
 
 ## Tech Stack

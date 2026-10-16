@@ -16,6 +16,7 @@ const App: React.FC = () => {
   return (
     <Router>
       <Routes>
+        <Route path="/social/*" element={<Navigate to="/" replace />} />
         <Route
           path="/login"
           element={user ? <Navigate to="/" /> : <Login />}

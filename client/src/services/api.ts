@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { LOCAL_PREVIEW_ENABLED } from '../config/localPreview';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
 
@@ -11,7 +12,7 @@ const api = axios.create({
 
 // Add token to requests
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
+  const token = LOCAL_PREVIEW_ENABLED ? sessionStorage.getItem('filebox-local-token') : localStorage.getItem('token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -24,6 +25,14 @@ api.interceptors.request.use((config) => {
 
 // Auth API
 export const authAPI = {
+  localSession: async () => {
+    const response = await api.post('/auth/local-session', {}, {
+      headers: { 'X-Filebox-Local': 'true' },
+      timeout: 10000,
+    });
+    sessionStorage.setItem('filebox-local-token', response.data.token);
+    return response.data;
+  },
   register: async (email: string, password: string, name: string) => {
     const response = await api.post('/auth/register', { email, password, name });
     return response.data;
@@ -38,6 +47,14 @@ export const authAPI = {
   },
   login: async (email: string, password: string) => {
     const response = await api.post('/auth/login', { email, password });
+    return response.data;
+  },
+  forgotPassword: async (email: string) => {
+    const response = await api.post('/auth/forgot-password', { email });
+    return response.data;
+  },
+  resetPassword: async (email: string, code: string, password: string) => {
+    const response = await api.post('/auth/reset-password', { email, code, password });
     return response.data;
   },
   getCurrentUser: async () => {
@@ -474,8 +491,18 @@ export const relationshipsAPI = {
     return response.data;
   },
   getRelationshipGraph: async () => {
-    const response = await api.get('/relationships/graph');
-    return response.data;
+    if (LOCAL_PREVIEW_ENABLED && !sessionStorage.getItem('filebox-local-token')) {
+      await authAPI.localSession();
+    }
+    try {
+      const response = await api.get('/relationships/graph', { timeout: 10000 });
+      return response.data;
+    } catch (error: any) {
+      if (!LOCAL_PREVIEW_ENABLED || error?.response?.status !== 401) throw error;
+      await authAPI.localSession();
+      const response = await api.get('/relationships/graph', { timeout: 10000 });
+      return response.data;
+    }
   },
   updateRelationship: async (relationshipId: string, data: { relationshipType?: string; customLabel?: string; description?: string }) => {
     const response = await api.put(`/relationships/${relationshipId}`, data);
@@ -1546,4 +1573,3 @@ export const studySessionsAPI = {
 };
 
 export default api;
-

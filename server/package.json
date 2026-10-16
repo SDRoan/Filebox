@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon index.js",
+    "dev": "NODE_ENV=development nodemon --ignore node_modules.offloaded index.js",
     "seed:learning": "node scripts/seedLearningResources.js",
     "generate:learning": "node scripts/generateLearningResources.js"
   },

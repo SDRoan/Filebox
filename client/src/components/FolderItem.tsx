@@ -1,3 +1,4 @@
+import ItemActions from './ItemActions';
 import React, { useState } from 'react';
 import { Folder } from '../types';
 import { filesAPI } from '../services/api';
@@ -52,10 +53,11 @@ const FolderItem: React.FC<FolderItemProps> = ({
       {selectionMode && (
         <input
           type="checkbox"
+            aria-label={`Select ${folder.name}`}
           checked={isSelected}
           readOnly
           className="selection-checkbox"
-          onClick={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onClick(); }}
         />
       )}
       <div className="folder-icon">
@@ -88,7 +90,7 @@ const FolderItem: React.FC<FolderItemProps> = ({
           )}
         </div>
       </div>
-      <div className="folder-actions" onClick={(e) => e.stopPropagation()}>
+      <ItemActions className="folder-actions" label={`Actions for ${folder.name}`}>
         {!showTrash ? (
           <>
             <button onClick={handleDownloadAsZip} className="icon-button" title="Download as ZIP">
@@ -122,7 +124,7 @@ const FolderItem: React.FC<FolderItemProps> = ({
             </button>
           </>
         )}
-      </div>
+      </ItemActions>
       {showMoveModal && (
         <MoveCopyModal
           itemId={folder._id}

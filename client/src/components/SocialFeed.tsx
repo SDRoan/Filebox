@@ -403,17 +403,48 @@ const SocialFeed: React.FC = () => {
     return date.toLocaleDateString();
   };
 
+  const getImageUrl = (fileId: string): string => {
+    const token = localStorage.getItem('token');
+    const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+    return `${API_URL}/files/download/${fileId}?token=${token}`;
+  };
+
   const loadImagePreview = async (fileId: string, mimeType: string) => {
     if (!mimeType.startsWith('image/')) return;
-    if (imagePreviews[fileId] || loadingPreviews.has(fileId)) return;
+    if (imagePreviews[fileId] || loadingPreviews.has(fileId)) {
+      console.log(`Skipping load for ${fileId}: already loaded or loading`);
+      return;
+    }
 
     try {
+      console.log(`Loading image preview for file ${fileId}`);
       setLoadingPreviews(prev => new Set(prev).add(fileId));
-      const blob = await filesAPI.downloadFile(fileId);
-      const url = URL.createObjectURL(blob);
-      setImagePreviews(prev => ({ ...prev, [fileId]: url }));
+      // Use direct URL approach - fetch with auth header and create blob URL
+      const token = localStorage.getItem('token');
+      const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+      const url = `${API_URL}/files/download/${fileId}`;
+      console.log(`Fetching image from: ${url}`);
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`Failed to load image: ${response.status} ${response.statusText}`, errorText);
+        throw new Error(`Failed to load image: ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      console.log(`Image loaded successfully for ${fileId}, blob URL created`);
+      setImagePreviews(prev => ({ ...prev, [fileId]: blobUrl }));
     } catch (error) {
       console.error('Error loading image preview:', error);
+      // On error, still mark as attempted to avoid infinite retries
+      setImagePreviews(prev => ({ ...prev, [fileId]: '' }));
     } finally {
       setLoadingPreviews(prev => {
         const newSet = new Set(prev);
@@ -425,29 +456,47 @@ const SocialFeed: React.FC = () => {
 
   const handleDownloadFile = async (fileId: string, fileName: string) => {
     try {
+      console.log(`Downloading file ${fileId}: ${fileName}`);
       const blob = await filesAPI.downloadFile(fileId);
+      if (!blob || blob.size === 0) {
+        throw new Error('Received empty file');
+      }
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = fileName;
       document.body.appendChild(a);
       a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 100);
+    } catch (error: any) {
       console.error('Error downloading file:', error);
-      alert('Failed to download file');
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to download file';
+      alert(`Failed to download file: ${errorMessage}`);
     }
   };
 
   // Load image previews for posts with image files
   useEffect(() => {
-    posts.forEach(post => {
-      if (post.file && post.file.mimeType?.startsWith('image/') && !imagePreviews[post.file._id] && !loadingPreviews.has(post.file._id)) {
-        loadImagePreview(post.file._id, post.file.mimeType);
+    const imagePosts = posts.filter(post =>
+      post.file &&
+      post.file.mimeType?.startsWith('image/')
+    );
+
+    imagePosts.forEach((post, index) => {
+      const fileId = post.file!._id;
+      // Only load if not already loaded or loading
+      if (!imagePreviews[fileId] && !loadingPreviews.has(fileId)) {
+        // Small stagger to avoid overwhelming the network
+        setTimeout(() => {
+          loadImagePreview(fileId, post.file!.mimeType!);
+        }, index * 100); // Increased delay slightly
       }
     });
-  }, [posts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [posts.length]); // Trigger when number of posts changes
 
   // Cleanup image URLs on unmount
   useEffect(() => {
@@ -471,10 +520,7 @@ const SocialFeed: React.FC = () => {
   return (
     <div className="social-feed-container forums">
       <div className="forums-header">
-        <h2>
-          <SocialFeedIcon size={24} color="currentColor" />
-          Community Feed
-        </h2>
+        <div className="community-page-title"><h2>Community.</h2><p>Share what you’re working on.</p></div>
         <div className="forums-header-actions">
           <button className="btn-primary" onClick={() => {
             setShowCreateModal(true);
@@ -544,38 +590,80 @@ const SocialFeed: React.FC = () => {
               </div>
               
               {/* File/Folder Preview */}
-              {post.file && (
-                <div className="shared-file-preview">
-                  {post.file.mimeType?.startsWith('image/') && imagePreviews[post.file._id] ? (
-                    <div className="file-image-preview">
-                      <img 
-                        src={imagePreviews[post.file._id]} 
-                        alt={post.file.originalName}
-                        className="preview-image"
-                      />
-                    </div>
-                  ) : (
-                    <div className="file-info-card">
-                      <div className="file-info-icon">
-                        {getFileIcon(post.file.mimeType)}
+              {post.file && (() => {
+                const file = post.file;
+                // Trigger image loading immediately when rendering
+                if (file.mimeType?.startsWith('image/') &&
+                    !imagePreviews[file._id] &&
+                    !loadingPreviews.has(file._id)) {
+                  // Start loading immediately
+                  setTimeout(() => loadImagePreview(file._id, file.mimeType), 0);
+                }
+
+                return (
+                  <div className="shared-file-preview">
+                    {file.mimeType?.startsWith('image/') ? (
+                      <div className="file-image-preview">
+                        {imagePreviews[file._id] ? (
+                          <img
+                            src={imagePreviews[file._id]}
+                            alt={file.originalName}
+                            className="preview-image"
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => window.open(imagePreviews[file._id], '_blank')}
+                            onError={() => {
+                              console.error('Image preview failed to load');
+                            }}
+                          />
+                        ) : loadingPreviews.has(file._id) ? (
+                          <div className="image-loading" style={{ padding: '2rem', textAlign: 'center', color: '#666', minHeight: '200px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                            <LoadingIcon size={32} color="#666" />
+                            <p style={{ marginTop: '1rem', fontSize: '0.875rem' }}>Loading image...</p>
+                          </div>
+                        ) : (
+                          <div className="file-info-card" style={{ cursor: 'default' }}>
+                            <div className="file-info-icon">
+                              {getFileIcon(file.mimeType)}
+                            </div>
+                            <div className="file-info-details">
+                              <div className="file-info-name">{file.originalName}</div>
+                              <div className="file-info-meta">
+                                {formatSize(file.size || 0)} • {file.mimeType || 'Unknown type'}
+                              </div>
+                            </div>
+                            <button
+                              className="file-download-btn"
+                              onClick={() => handleDownloadFile(file._id, file.originalName)}
+                              title="Download file"
+                            >
+                              <DownloadIcon size={18} color="currentColor" />
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <div className="file-info-details">
-                        <div className="file-info-name">{post.file.originalName}</div>
-                        <div className="file-info-meta">
-                          {formatSize(post.file.size || 0)} • {post.file.mimeType || 'Unknown type'}
+                    ) : (
+                      <div className="file-info-card">
+                        <div className="file-info-icon">
+                          {getFileIcon(file.mimeType)}
                         </div>
+                        <div className="file-info-details">
+                          <div className="file-info-name">{file.originalName}</div>
+                          <div className="file-info-meta">
+                            {formatSize(file.size || 0)} • {file.mimeType || 'Unknown type'}
+                          </div>
+                        </div>
+                        <button
+                          className="file-download-btn"
+                          onClick={() => handleDownloadFile(file._id, file.originalName)}
+                          title="Download file"
+                        >
+                          <DownloadIcon size={18} color="currentColor" />
+                        </button>
                       </div>
-                      <button
-                        className="file-download-btn"
-                        onClick={() => handleDownloadFile(post.file!._id, post.file!.originalName)}
-                        title="Download file"
-                      >
-                        <DownloadIcon size={18} color="currentColor" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                );
+              })()}
 
               {post.folder && (
                 <div className="shared-folder-preview">
@@ -717,4 +805,3 @@ const SocialFeed: React.FC = () => {
 };
 
 export default SocialFeed;
-

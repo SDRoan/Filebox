@@ -27,10 +27,11 @@ interface TeamFolder {
 
 interface TeamFoldersProps {
   onClose: () => void;
+  embedded?: boolean;
   onFolderSelect: (folderId: string) => void;
 }
 
-const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect }) => {
+const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embedded = false }) => {
   const { user } = useAuth();
   const [teamFolders, setTeamFolders] = useState<TeamFolder[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -238,11 +239,11 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect }) =>
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className={embedded ? "team-folders-page" : "modal-overlay"} onClick={embedded ? undefined : onClose}>
       <div className="modal-content team-folders-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>Team Folders</h2>
-          <button onClick={onClose} className="close-btn">×</button>
+          {!embedded && <button onClick={onClose} className="close-btn">×</button>}
         </div>
 
         <div className="team-folders-actions">

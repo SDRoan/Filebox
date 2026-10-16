@@ -1,26 +1,11 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { workspacePages } from '../config/workspaceNavigation';
 import Logo from './Logo';
 import {
-  FilesIcon,
-  SharedIcon,
-  StarredIcon,
-  TrashIcon,
-  TeamFoldersIcon,
-  FileRequestsIcon,
-  RelationshipsIcon,
-  SocialFeedIcon,
-  AnalyticsIcon,
-  SecurityIcon,
-  AIAssistantIcon,
-  StudentIcon,
-  BackIcon,
-  TemplateIcon,
-  ShortcutIcon,
-  IntegrationIcon,
-  ForumIcon,
-  LearningIcon,
-  CloudBackupIcon,
+  FilesIcon, SharedIcon, StarredIcon, TrashIcon, TeamFoldersIcon, FileRequestsIcon,
+  RelationshipsIcon, AnalyticsIcon, SecurityIcon, AIAssistantIcon,
+  StudentIcon, BackIcon, TemplateIcon, ShortcutIcon, IntegrationIcon, LearningIcon, CloudBackupIcon,
 } from './Icons';
 import './Sidebar.css';
 
@@ -29,206 +14,91 @@ interface SidebarProps {
   onViewChange: (view: string) => void;
   onNavigateUp: () => void;
   currentFolderId?: string;
+  mobileOpen: boolean;
+  onClose: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({
-  currentView,
-  onViewChange,
-  onNavigateUp,
-  currentFolderId,
-}) => {
-  const { user, logout } = useAuth();
+const primaryItems = [
+  { id: 'files', Icon: FilesIcon }, { id: 'shared', Icon: SharedIcon },
+  { id: 'starred', Icon: StarredIcon }, { id: 'trash', Icon: TrashIcon },
+];
+const workspaceItems = [
+  { id: 'teams', Icon: TeamFoldersIcon }, { id: 'student', Icon: StudentIcon },
+  { id: 'learning', Icon: LearningIcon },
+];
+const toolItems = [
+  { id: 'requests', Icon: FileRequestsIcon }, { id: 'relationships', Icon: RelationshipsIcon },
+  { id: 'templates', Icon: TemplateIcon }, { id: 'shortcuts', Icon: ShortcutIcon },
+  { id: 'secured-links', Icon: SecurityIcon }, { id: 'cloud-backup', Icon: CloudBackupIcon },
+  { id: 'analytics', Icon: AnalyticsIcon }, { id: 'security', Icon: SecurityIcon },
+  { id: 'integrations', Icon: IntegrationIcon }, { id: 'ai-assistant', Icon: AIAssistantIcon },
+];
 
-  const formatStorage = (bytes: number) => {
-    const gb = bytes / (1024 * 1024 * 1024);
-    return `${gb.toFixed(2)} GB`;
-  };
-
-  const storagePercent = user
-    ? (user.storageUsed / user.storageLimit) * 100
-    : 0;
-
+const Sidebar: React.FC<SidebarProps> = ({ currentView, onViewChange, onNavigateUp, currentFolderId, mobileOpen, onClose }) => {
+  const { user, logout, isLocalPreview } = useAuth();
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const opener = document.activeElement as HTMLElement | null;
+    sidebarRef.current?.querySelector<HTMLButtonElement>('nav button')?.focus();
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+      if (event.key !== 'Tab') return;
+      const buttons = Array.from(sidebarRef.current?.querySelectorAll<HTMLButtonElement>('button') || []).filter(button => button.offsetParent !== null);
+      const first = buttons[0];
+      const last = buttons[buttons.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => { document.removeEventListener('keydown', handleKey); opener?.focus(); };
+  }, [mobileOpen, onClose]);
+  useEffect(() => {
+    if (toolItems.some(item => item.id === currentView)) setToolsOpen(true);
+  }, [currentView]);
+  const formatStorage = (bytes: number) => bytes === 0 ? '0 GB' : `${(bytes / (1024 ** 3)).toFixed(1)} GB`;
+  const storagePercent = user?.storageLimit ? Math.min(100, (user.storageUsed / user.storageLimit) * 100) : 0;
+  const initials = (user?.name || 'Workspace').split(' ').map(part => part[0]).slice(0, 2).join('');
+  const renderItem = ({ id, Icon }: typeof primaryItems[number]) => (
+    <button key={id} className={`nav-item ${currentView === id ? 'active' : ''}`}
+      aria-current={currentView === id ? 'page' : undefined} onClick={() => { onViewChange(id); onClose(); }}>
+      <Icon size={18} /><span>{workspacePages.find(page => page.id === id)?.label}</span>
+      {currentView === id && <span className="nav-active-dot" aria-hidden="true" />}
+    </button>
+  );
   return (
-    <div className="sidebar">
-      <div className="sidebar-header">
-        <Logo size="small" showText={true} text="File Box" />
-      </div>
-      <nav className="sidebar-nav">
-        <div className="nav-section">
-          <div className="nav-section-title">Main</div>
-          <button
-            className={`nav-item ${currentView === 'files' ? 'active' : ''}`}
-            onClick={() => onViewChange('files')}
-          >
-            <FilesIcon size={18} color="currentColor" />
-            <span>Files</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'shared' ? 'active' : ''}`}
-            onClick={() => onViewChange('shared')}
-          >
-            <SharedIcon size={18} color="currentColor" />
-            <span>Shared</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'starred' ? 'active' : ''}`}
-            onClick={() => onViewChange('starred')}
-          >
-            <StarredIcon size={18} color="currentColor" />
-            <span>Starred</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'trash' ? 'active' : ''}`}
-            onClick={() => onViewChange('trash')}
-          >
-            <TrashIcon size={18} color="currentColor" />
-            <span>Trash</span>
-          </button>
+    <>
+      {mobileOpen && <button className="sidebar-backdrop" onClick={onClose} aria-label="Close navigation" />}
+      <aside ref={sidebarRef} role={mobileOpen ? 'dialog' : undefined} aria-modal={mobileOpen ? true : undefined} aria-label={mobileOpen ? 'Workspace navigation' : undefined} id="workspace-navigation" className={`sidebar ${mobileOpen ? 'sidebar-open' : ''}`}>
+        <div className="sidebar-header">
+          <button className="brand-home" onClick={() => { onViewChange('files'); onClose(); }} aria-label="File Box home"><Logo size="small" /></button>
+          <button className="sidebar-close" onClick={onClose} aria-label="Close navigation">×</button>
         </div>
-
-        <div className="nav-section">
-          <div className="nav-section-title">Collaboration</div>
-          <button
-            className={`nav-item ${currentView === 'teams' ? 'active' : ''}`}
-            onClick={() => onViewChange('teams')}
-          >
-            <TeamFoldersIcon size={18} color="currentColor" />
-            <span>Team Folders</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'requests' ? 'active' : ''}`}
-            onClick={() => onViewChange('requests')}
-          >
-            <FileRequestsIcon size={18} color="currentColor" />
-            <span>File Requests</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'relationships' ? 'active' : ''}`}
-            onClick={() => onViewChange('relationships')}
-          >
-            <RelationshipsIcon size={18} color="currentColor" />
-            <span>Connections</span>
-          </button>
-        </div>
-
-        <div className="nav-section">
-          <div className="nav-section-title">Tools</div>
-          <button
-            className={`nav-item ${currentView === 'templates' ? 'active' : ''}`}
-            onClick={() => onViewChange('templates')}
-          >
-            <TemplateIcon size={18} color="currentColor" />
-            <span>Templates</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'shortcuts' ? 'active' : ''}`}
-            onClick={() => onViewChange('shortcuts')}
-          >
-            <ShortcutIcon size={18} color="currentColor" />
-            <span>Shortcuts</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'secured-links' ? 'active' : ''}`}
-            onClick={() => onViewChange('secured-links')}
-          >
-            <SecurityIcon size={18} color="currentColor" />
-            <span>Secured Links</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'cloud-backup' ? 'active' : ''}`}
-            onClick={() => onViewChange('cloud-backup')}
-          >
-            <CloudBackupIcon size={18} color="currentColor" />
-            <span>Cloud Backup</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'analytics' ? 'active' : ''}`}
-            onClick={() => onViewChange('analytics')}
-          >
-            <AnalyticsIcon size={18} color="currentColor" />
-            <span>Analytics</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'security' ? 'active' : ''}`}
-            onClick={() => onViewChange('security')}
-          >
-            <SecurityIcon size={18} color="currentColor" />
-            <span>Security</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'integrations' ? 'active' : ''}`}
-            onClick={() => onViewChange('integrations')}
-          >
-            <IntegrationIcon size={18} color="currentColor" />
-            <span>Integrations</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'ai-assistant' ? 'active' : ''}`}
-            onClick={() => onViewChange('ai-assistant')}
-          >
-            <AIAssistantIcon size={18} color="currentColor" />
-            <span>AI Assistant</span>
-          </button>
-        </div>
-
-        <div className="nav-section">
-          <div className="nav-section-title">Community</div>
-          <button
-            className={`nav-item ${currentView === 'social' ? 'active' : ''}`}
-            onClick={() => onViewChange('social')}
-          >
-            <SocialFeedIcon size={18} color="currentColor" />
-            <span>Community Feed</span>
-          </button>
-          <button
-            className={`nav-item ${currentView === 'learning' ? 'active' : ''}`}
-            onClick={() => onViewChange('learning')}
-          >
-            <LearningIcon size={18} color="currentColor" />
-            <span>Learning</span>
-          </button>
-        </div>
-
-        <div className="nav-section">
-          <div className="nav-section-title">Student</div>
-          <button
-            className={`nav-item ${currentView === 'student' ? 'active' : ''}`}
-            onClick={() => onViewChange('student')}
-          >
-            <StudentIcon size={18} color="currentColor" />
-            <span>Student</span>
-          </button>
-        </div>
-      </nav>
-      {currentFolderId && currentFolderId !== 'root' && (
-        <button className="nav-item" onClick={onNavigateUp}>
-          <BackIcon size={18} color="currentColor" />
-          <span>Back</span>
-        </button>
-      )}
-      <div className="sidebar-footer">
-        <div className="storage-info">
-          <div className="storage-label">
-            Storage: {formatStorage(user?.storageUsed || 0)} /{' '}
-            {formatStorage(user?.storageLimit || 0)}
+        <div className="workspace-label"><span className="workspace-mark">W</span><div>Personal workspace<span>Just for you</span></div></div>
+        <nav className="sidebar-nav" aria-label="Workspace">
+          <div className="nav-section"><div className="nav-section-title">Library</div>{primaryItems.map(renderItem)}</div>
+          <div className="nav-section"><div className="nav-section-title">Work & study</div>{workspaceItems.map(renderItem)}</div>
+          <div className="nav-section tools-section">
+            <button className="tools-toggle" aria-expanded={toolsOpen} aria-controls="workspace-tools" onClick={() => setToolsOpen(!toolsOpen)}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 17.5h7m-3.5-3.5v7"/></svg>
+              <span>More tools</span><span className={`tools-chevron ${toolsOpen ? 'open' : ''}`} aria-hidden="true">⌄</span>
+            </button>
+            <div id="workspace-tools" hidden={!toolsOpen}>{toolItems.map(renderItem)}</div>
           </div>
-          <div className="storage-bar">
-            <div
-              className="storage-bar-fill"
-              style={{ width: `${storagePercent}%` }}
-            />
+        </nav>
+        {currentFolderId && currentFolderId !== 'root' && <button className="nav-item" onClick={onNavigateUp}><BackIcon size={18} /><span>Parent folder</span></button>}
+        <div className="sidebar-footer">
+          <div className="sidebar-storage-info"><div className="sidebar-storage-label"><span>Storage</span><span>{Math.round(storagePercent)}%</span></div>
+            <div className="sidebar-storage-bar"><div className="sidebar-storage-bar-fill" style={{ width: `${storagePercent}%` }} /></div>
+            <p>{formatStorage(user?.storageUsed || 0)} of {formatStorage(user?.storageLimit || 0)} used</p>
+          </div>
+          <div className="sidebar-user-info"><span className="sidebar-user-avatar" aria-hidden="true">{initials}</span><div className="sidebar-user-details"><div className="sidebar-user-name">{user?.name}</div><span>{isLocalPreview ? 'Personal account' : user?.email}</span></div>
+            {!isLocalPreview && <button onClick={logout} className="sidebar-logout-button" title="Sign out" aria-label="Sign out">↪</button>}
           </div>
         </div>
-        <div className="user-info">
-          <div className="user-name" style={{ color: '#ffffff' }}>{user?.name}</div>
-          <button onClick={logout} className="logout-button">
-            Logout
-          </button>
-        </div>
-      </div>
-    </div>
+      </aside>
+    </>
   );
 };
-
 export default Sidebar;
-

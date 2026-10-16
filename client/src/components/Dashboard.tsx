@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import FileBrowser from './FileBrowser';
@@ -8,8 +8,6 @@ import FileRequests from './FileRequests';
 import RelationshipGraph from './RelationshipGraph';
 import AnalyticsDashboard from './AnalyticsDashboard';
 import RelationshipsList from './RelationshipsList';
-import SocialFeed from './SocialFeed';
-import GroupsList from './GroupsList';
 import SecurityDashboard from './SecurityDashboard';
 import StudentDashboard from './StudentDashboard';
 import AIAssistant from './AIAssistant';
@@ -19,60 +17,22 @@ import WebShortcuts from './WebShortcuts';
 import SecuredLinks from './SecuredLinks';
 import CloudBackup from './CloudBackup';
 import Integrations from './Integrations';
-import Forums from './Forums';
 import Learning from './Learning';
 import { FileItemType } from '../types';
+import { getWorkspacePage, workspacePages } from '../config/workspaceNavigation';
 import './Dashboard.css';
+import './WorkspacePages.css';
 
 const Dashboard: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [currentView, setCurrentView] = useState('files');
-
-  // Sync currentView with URL pathname
-  useEffect(() => {
-    const path = location.pathname;
-    if (path === '/integrations' || path.startsWith('/integrations')) {
-      setCurrentView('integrations');
-    } else if (path === '/cloud-backup' || path.startsWith('/cloud-backup')) {
-      setCurrentView('cloud-backup');
-    } else if (path === '/social' || path.startsWith('/social')) {
-      setCurrentView('social');
-    } else if (path === '/learning' || path.startsWith('/learning')) {
-      setCurrentView('learning');
-    } else if (path === '/secured-links' || path.startsWith('/secured-links')) {
-      setCurrentView('secured-links');
-    } else if (path === '/web-shortcuts' || path.startsWith('/web-shortcuts')) {
-      setCurrentView('web-shortcuts');
-    } else if (path === '/templates' || path.startsWith('/templates')) {
-      setCurrentView('templates');
-    } else if (path === '/shared-files' || path.startsWith('/shared-files')) {
-      setCurrentView('shared-files');
-    } else if (path === '/ai-assistant' || path.startsWith('/ai-assistant')) {
-      setCurrentView('ai-assistant');
-    } else if (path === '/security' || path.startsWith('/security')) {
-      setCurrentView('security');
-    } else if (path === '/student' || path.startsWith('/student')) {
-      setCurrentView('student');
-    } else if (path === '/groups' || path.startsWith('/groups')) {
-      setCurrentView('groups');
-    } else if (path === '/social' || path.startsWith('/social')) {
-      setCurrentView('social');
-    } else if (path === '/relationships' || path.startsWith('/relationships')) {
-      setCurrentView('relationships');
-    } else if (path === '/analytics' || path.startsWith('/analytics')) {
-      setCurrentView('analytics');
-    } else if (path === '/file-requests' || path.startsWith('/file-requests')) {
-      setCurrentView('file-requests');
-    } else if (path === '/team-folders' || path.startsWith('/team-folders')) {
-      setCurrentView('team-folders');
-    } else if (path === '/' || path === '') {
-      setCurrentView('files');
-    }
-  }, [location.pathname]);
+  const page = getWorkspacePage(location.pathname);
+  const currentView = page.id;
+  const setCurrentView = (view: string) => navigate(workspacePages.find(item => item.id === view)?.path || '/');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const closeMobileNav = useCallback(() => setMobileNavOpen(false), []);
   const [folderStack, setFolderStack] = useState<string[]>(['root']);
   const [showGraph, setShowGraph] = useState(false);
-  const [showAnalytics, setShowAnalytics] = useState(false);
   const [selectedTeamFolder, setSelectedTeamFolder] = useState<string | null>(null);
   const [relationshipsRefreshKey, setRelationshipsRefreshKey] = useState(0);
 
@@ -110,9 +70,6 @@ const Dashboard: React.FC = () => {
       setSelectedTeamFolder(null);
       setFolderStack(['root']);
     }
-    if (view === 'analytics') {
-      setShowAnalytics(true);
-    }
     if (view === 'relationships') {
       // Force refresh of relationships when navigating to this view
       setRelationshipsRefreshKey(prev => prev + 1);
@@ -121,26 +78,24 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="dashboard">
+      <a className="skip-link" href="#main-content">Skip to content</a>
       <Sidebar
         currentView={currentView}
         onViewChange={handleViewChange}
         onNavigateUp={handleNavigateUp}
         currentFolderId={currentFolderId}
+        mobileOpen={mobileNavOpen}
+        onClose={closeMobileNav}
       />
-      <div className="dashboard-content">
-        <div className="dashboard-header">
-          <div className="dashboard-header-content">
-            <div className="dashboard-header-left">
-              <SearchBar
-                onFileClick={handleSearchFileClick}
-                onFolderClick={handleFolderClick}
-              />
-            </div>
-            <div className="dashboard-header-right">
-              {/* Quick actions can be added here */}
-            </div>
-          </div>
-        </div>
+      <main className="dashboard-content" id="main-content">
+        <header className="dashboard-header">
+          <button className="mobile-nav-toggle" onClick={() => setMobileNavOpen(!mobileNavOpen)} aria-label="Open navigation" aria-expanded={mobileNavOpen} aria-controls="workspace-navigation">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+          </button>
+          <div className="workspace-breadcrumb"><span>Workspace</span><span aria-hidden="true">/</span><strong>{page.label}</strong></div>
+          <SearchBar onFileClick={handleSearchFileClick} onFolderClick={handleFolderClick} />
+        </header>
+        <div className={`workspace-view workspace-view-${currentView}`}>
         {currentView === 'files' && (
           <FileBrowser
             currentFolderId={currentFolderId}
@@ -174,6 +129,7 @@ const Dashboard: React.FC = () => {
         )}
         {currentView === 'teams' && !selectedTeamFolder && (
           <TeamFolders
+            embedded
             onClose={() => setCurrentView('files')}
             onFolderSelect={(folderId) => {
               setSelectedTeamFolder(folderId);
@@ -213,14 +169,12 @@ const Dashboard: React.FC = () => {
         )}
         {currentView === 'requests' && (
           <FileRequests
+            embedded
             onClose={() => setCurrentView('files')}
           />
         )}
         {currentView === 'relationships' && (
           <RelationshipsList key={relationshipsRefreshKey} />
-        )}
-        {currentView === 'social' && (
-          <SocialFeed />
         )}
         {currentView === 'security' && (
           <SecurityDashboard />
@@ -249,13 +203,13 @@ const Dashboard: React.FC = () => {
         {currentView === 'learning' && (
           <Learning />
         )}
-      </div>
+        </div>
+      </main>
       {showGraph && (
         <RelationshipGraph onClose={() => setShowGraph(false)} />
       )}
-      {showAnalytics && (
+      {currentView === 'analytics' && (
         <AnalyticsDashboard onClose={() => {
-          setShowAnalytics(false);
           setCurrentView('files');
         }} />
       )}
