@@ -91,8 +91,11 @@ const userSchema = new mongoose.Schema({
   }
 });
 
+// Registration hashes the password before email verification, so a value may already be a bcrypt hash.
+const BCRYPT_HASH = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
+
 userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
+  if (!this.isModified('password') || BCRYPT_HASH.test(this.password)) return next();
   this.password = await bcrypt.hash(this.password, 10);
   next();
 });

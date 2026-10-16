@@ -14,8 +14,16 @@ CLIENT_URL=http://localhost:3000   # Frontend URL for CORS
 
 ### Database Configuration
 ```bash
-MONGODB_URI=mongodb://localhost:27017/dropbox-clone
+MONGODB_URI=mongodb://localhost:27017/filebox
 ```
+
+`filebox` is the database File Box uses. Earlier versions of this project defaulted to a database named
+`dropbox-clone`; that database is legacy data from an older copy of the app and is no longer read. If your
+`server/.env` still says `dropbox-clone`, change it to `filebox`.
+
+Uploaded file contents are stored on disk, and each file record keeps the absolute path it was saved to.
+Files uploaded by an older checkout (for example `~/Desktop/File Box/server/uploads`) keep working from
+that location; new uploads go to `server/uploads` in the checkout that is running.
 
 ### JWT Configuration
 ```bash

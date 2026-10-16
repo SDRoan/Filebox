@@ -17,7 +17,7 @@ module.exports = {
 
   // Database Configuration
   database: {
-    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/dropbox-clone',
+    uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/filebox',
   },
 
   // JWT Configuration

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { workspacePages } from '../config/workspaceNavigation';
 import Logo from './Logo';
+import { formatBytes } from '../utils/fileDisplay';
 import {
   HomeIcon, FilesIcon, SharedIcon, RecentIcon, StarredIcon, AIAssistantIcon, TeamFoldersIcon,
   FileRequestsIcon, SignatureIcon, CloudBackupIcon, TrashIcon, SettingsIcon, BackIcon, PlusIcon,
@@ -72,7 +73,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     return () => { document.removeEventListener('mousedown', closeOnOutside); document.removeEventListener('keydown', closeOnEscape); };
   }, [newMenuOpen]);
 
-  const formatStorage = (bytes: number) => bytes === 0 ? '0 GB' : `${(bytes / (1024 ** 3)).toFixed(1)} GB`;
   const storagePercent = user?.storageLimit ? Math.min(100, (user.storageUsed / user.storageLimit) * 100) : 0;
   const initials = (user?.name || 'Workspace').split(' ').map(part => part[0]).slice(0, 2).join('');
 
@@ -136,7 +136,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
         <div className="sidebar-footer">
           <div className="sidebar-storage-info" aria-label="Storage usage">
-            <p><span>Storage</span>{formatStorage(user?.storageUsed || 0)} of {formatStorage(user?.storageLimit || 0)}</p>
+            <p><span>Storage</span>{formatBytes(user?.storageUsed || 0)} of {formatBytes(user?.storageLimit || 0)}</p>
             <div className="sidebar-storage-bar" role="progressbar" aria-valuenow={Math.round(storagePercent)} aria-valuemin={0} aria-valuemax={100} aria-label="Storage used"><div className="sidebar-storage-bar-fill" style={{ width: `${storagePercent}%` }} /></div>
           </div>
           <button className={`nav-item sidebar-settings ${currentView === 'settings' ? 'active' : ''}`} aria-current={currentView === 'settings' ? 'page' : undefined} onClick={() => go('settings')}>

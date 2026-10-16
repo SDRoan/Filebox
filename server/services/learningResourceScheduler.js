@@ -53,7 +53,7 @@ class LearningResourceScheduler {
       console.log(`[Scheduler] Fetched ${newResources.length} random articles from internet`);
 
       // Connect to MongoDB
-      const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/dropbox-clone';
+      const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/filebox';
       
       // Check if already connected
       if (mongoose.connection.readyState === 0) {

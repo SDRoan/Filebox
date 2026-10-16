@@ -31,7 +31,7 @@ Edit `server/.env` with your configuration:
 
 ```env
 PORT=5000
-MONGODB_URI=mongodb://localhost:27017/dropbox-clone
+MONGODB_URI=mongodb://localhost:27017/filebox
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 CLIENT_URL=http://localhost:3000
 ```
@@ -39,7 +39,7 @@ CLIENT_URL=http://localhost:3000
 **For MongoDB Atlas users:**
 Replace `MONGODB_URI` with your Atlas connection string:
 ```
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/dropbox-clone
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/filebox
 ```
 
 ### 3. Start MongoDB
