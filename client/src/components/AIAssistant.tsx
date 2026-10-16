@@ -55,7 +55,7 @@ const starterMessage: Message = {
   id: 'welcome',
   type: 'assistant',
   content:
-    "I’m your local File Box copilot running on Ollama.\n\nYou can treat me like an AI version of the user inside this website. Ask me to do the same kinds of actions you would normally do yourself: create folders, move or rename files, share items, make file requests, create shortcuts, secured links, templates, team spaces, courses, assignments, study groups, backups, and more.",
+    "I’m your local File Box copilot running on Ollama.\n\nTell me what you want done in this website and I’ll do it for you when that action is available in File Box. For normal website tasks, I should perform the action instead of telling you what to click.",
   timestamp: new Date(),
 };
 
@@ -330,8 +330,8 @@ const AIAssistant: React.FC = () => {
           <h2>Chat with your drive</h2>
           <p>
             This assistant uses Ollama to act like your operator inside File Box:
-            answer questions, understand files, and perform the same website actions a
-            normal user can perform.
+            give it a task and it should carry out the website action for you instead
+            of walking you through manual steps.
           </p>
           <div className="ai-capability-row">
             <span>Grounded in your files</span>

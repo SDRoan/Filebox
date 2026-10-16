@@ -33,7 +33,7 @@ const ACTION_TYPES = [
 ];
 
 const SUMMARY_HINT_REGEX = /(summar(?:ize|y)|what is this|what is in|tell me about this file|explain this file|what does this file say|give me the gist)/i;
-const FILE_CONTEXT_HINT_REGEX = /(this file|this document|selected file|pdf|docx?|document|resume|report|notes?)/i;
+const FILE_CONTEXT_HINT_REGEX = /(\bthis file\b|\bthis document\b|\bselected file\b|\bpdf\b|\bdocx?\b|\bdocument\b|\bresume\b|\breport\b|\bnotes?\b)/i;
 
 const stripFences = (value = '') =>
   value
@@ -73,6 +73,18 @@ const formatBytes = (bytes = 0) => {
 };
 
 class OllamaWorkspaceAssistant {
+  questionIsHowTo(question = '') {
+    return /(^|\b)(how do i|how can i|how to|steps|walk me through|guide me|where do i|what do i click|show me how)\b/i.test(question);
+  }
+
+  questionLooksActionable(question = '') {
+    return /\b(create|make|rename|move|delete|remove|trash|share|star|favorite|bookmark|upload|set up|setup|schedule|add|save|generate|turn|convert|relate|link|connect|backup|summarize)\b/i.test(question);
+  }
+
+  buildUnsupportedActionAnswer() {
+    return "I couldn't perform that inside File Box yet. I can already handle file, folder, sharing, shortcut, secured link, template, backup, course, assignment, calendar, study group, and document actions.";
+  }
+
   cleanActionMessage(message = '') {
     return (message || '')
       .replace(/^✅\s*/u, '')
@@ -200,27 +212,38 @@ class OllamaWorkspaceAssistant {
     const fallbackAction = aiActionExecutor.parseAction(question);
     const fallbackIsSummary = this.questionNeedsSummary(question);
     const fallbackNeedsFileContext = this.questionNeedsFileContext(question, hasSelectedFile);
-    const isHowTo = /(^|\b)(how|steps|walk me through|guide|explain|where|what|why)\b/i.test(question);
-    const shouldPreferFallbackAction = Boolean(fallbackAction && !isHowTo && !fallbackIsSummary);
+    const isHowTo = this.questionIsHowTo(question);
+    const isActionRequest = this.questionLooksActionable(question) && !isHowTo && !fallbackIsSummary;
+    const shouldPreferFallbackAction = Boolean(fallbackAction && isActionRequest);
 
-    const toolAction = ACTION_TYPES.includes(parsed.toolAction)
+    const parsedToolAction = ACTION_TYPES.includes(parsed.toolAction)
       ? parsed.toolAction
+      : 'none';
+    const toolAction = parsedToolAction !== 'none'
+      ? parsedToolAction
       : (fallbackAction?.type || 'none');
 
-    const confidence = typeof parsed.confidence === 'number'
+    let confidence = typeof parsed.confidence === 'number'
       ? Math.max(0, Math.min(1, parsed.confidence))
       : (fallbackAction?.confidence || 0);
+
+    if (toolAction !== 'none' && isActionRequest) {
+      confidence = Math.max(confidence, fallbackAction?.confidence || 0.84);
+    }
 
     let intent = typeof parsed.intent === 'string' ? parsed.intent : '';
     if (!intent) {
       if (fallbackIsSummary) {
         intent = 'summarize';
-      } else if (toolAction !== 'none' && !isHowTo) {
+      } else if (isActionRequest) {
         intent = 'action';
       } else {
         intent = 'answer';
       }
-    } else if (shouldPreferFallbackAction && !['action', 'mixed', 'clarify', 'summarize'].includes(intent)) {
+    } else if (
+      (shouldPreferFallbackAction || isActionRequest) &&
+      !['action', 'mixed', 'clarify', 'summarize'].includes(intent)
+    ) {
       intent = 'action';
     }
 
@@ -230,7 +253,7 @@ class OllamaWorkspaceAssistant {
       confidence,
       shouldExecuteAction: shouldPreferFallbackAction
         ? true
-        : (parsed.shouldExecuteAction !== false && toolAction !== 'none' && !isHowTo),
+        : (parsed.shouldExecuteAction !== false && toolAction !== 'none' && isActionRequest),
       needsFileContext: typeof parsed.needsFileContext === 'boolean'
         ? parsed.needsFileContext
         : fallbackNeedsFileContext,
@@ -545,7 +568,10 @@ ${ACTION_TYPES.join(', ')}
 
 Rules:
 - For "how do I" questions, do not execute actions.
-- Only choose a toolAction if the user clearly wants the action performed now.
+- For direct commands like create, rename, move, delete, share, set up, schedule, save, upload, or make, prefer intent "action".
+- Do not turn executable website commands into tutorials or click-by-click guidance.
+- If the action is possible but you need one missing detail, choose intent "clarify".
+- If the request is an action but no supported toolAction fits, still choose intent "action" with toolAction "none".
 - If the user says "this file" or wants a summary but no file is selected, choose intent "clarify".
 - Keep responseMode "steps" for procedural guidance and "chat" for normal answers.
 
@@ -605,7 +631,9 @@ Behave like ChatGPT for this product:
 - act like an AI version of the user across the available website features
 - when a tool action was already executed, explain what happened in plain language
 - never claim an action succeeded unless the tool summary says it did
-- when the user asks how to do something, give compact numbered steps
+- only give steps for explicit how-to questions
+- for direct commands, do the action when available instead of describing manual clicks
+- never tell the user how to click around the UI for an action the website assistant can perform
 - when summarizing a file, explain what it is about and the main points in plain English
 
 Keep answers concise but useful. Prefer short paragraphs. Use bullets only when they help.`,
@@ -643,7 +671,7 @@ Respond to the latest user request now.`,
       ...health,
       assistantModel: config.ollama.assistantModel,
       plannerModel: config.ollama.plannerModel,
-      assistantMode: 'chatgpt-openclaw-style',
+      assistantMode: 'operator-mode',
     };
   }
 
@@ -664,6 +692,9 @@ Respond to the latest user request now.`,
       selectedFile,
       context,
     });
+    const isActionRequest = this.questionLooksActionable(question)
+      && !this.questionIsHowTo(question)
+      && !this.questionNeedsSummary(question);
 
     if (planningDecision.intent === 'clarify') {
       return {
@@ -710,6 +741,16 @@ Respond to the latest user request now.`,
       );
     }
 
+    if (planningDecision.intent === 'action' && planningDecision.toolAction === 'none' && isActionRequest) {
+      return {
+        answer: this.buildUnsupportedActionAnswer(),
+        provider: 'ollama',
+        model: config.ollama.assistantModel,
+        fileId: selectedFile?._id || fileId || null,
+        timestamp: new Date(),
+      };
+    }
+
     const answer = actionResult
       ? this.formatActionAnswer(planningDecision.toolAction, actionResult)
       : await this.composeAnswer({
@@ -735,7 +776,6 @@ Respond to the latest user request now.`,
             error: actionResult.success ? undefined : actionResult.message,
           }
         : undefined,
-      fileId: selectedFile?._id || fileId || null,
       fileId: actionResult?.data?.fileId || selectedFile?._id || fileId || null,
       timestamp: new Date(),
     };

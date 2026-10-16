@@ -4,6 +4,94 @@ const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 
 const normalizeWhitespace = (value = '') => value.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ');
 
+const PDF_CHAR_FALLBACKS = {
+  '\u00a0': ' ',
+  '\u00b7': '-',
+  '\u00a9': '(C)',
+  '\u00ae': '(R)',
+  '\u2010': '-',
+  '\u2011': '-',
+  '\u2012': '-',
+  '\u2013': '-',
+  '\u2014': '--',
+  '\u2015': '--',
+  '\u2018': "'",
+  '\u2019': "'",
+  '\u201a': ',',
+  '\u201b': "'",
+  '\u201c': '"',
+  '\u201d': '"',
+  '\u201e': '"',
+  '\u2022': '-',
+  '\u2023': '-',
+  '\u2026': '...',
+  '\u2032': "'",
+  '\u2033': '"',
+  '\u2122': 'TM',
+  '\u2212': '-',
+  '\u25cf': '-',
+  '\u25e6': '-',
+};
+
+const stripCombiningMarks = (value = '') => value.normalize('NFKD').replace(/[\u0300-\u036f]/g, '');
+
+const isPdfEncodableChar = (font, value) => {
+  if (!value || value === '\n' || value === '\t') {
+    return true;
+  }
+
+  try {
+    font.encodeText(value);
+    return true;
+  } catch (error) {
+    return false;
+  }
+};
+
+const sanitizePdfText = (font, value = '') => {
+  if (!value) {
+    return ' ';
+  }
+
+  const normalized = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  let result = '';
+
+  for (const char of normalized) {
+    if (char === '\n') {
+      result += '\n';
+      continue;
+    }
+
+    if (char === '\t') {
+      result += '    ';
+      continue;
+    }
+
+    if (isPdfEncodableChar(font, char)) {
+      result += char;
+      continue;
+    }
+
+    const fallback = PDF_CHAR_FALLBACKS[char] ?? stripCombiningMarks(char);
+
+    if (!fallback) {
+      result += '?';
+      continue;
+    }
+
+    for (const fallbackChar of fallback) {
+      if (fallbackChar === '\n') {
+        result += '\n';
+        continue;
+      }
+
+      result += isPdfEncodableChar(font, fallbackChar) ? fallbackChar : '?';
+    }
+  }
+
+  return result || ' ';
+};
+
 const getAlignment = ($node) => {
   const style = ($node.attr('style') || '').toLowerCase();
   const align = ($node.attr('align') || '').toLowerCase();
@@ -457,8 +545,9 @@ const buildPdfBytesFromHtml = async (html = '') => {
   blocks.forEach((block, index) => {
     const style = getPdfStyle(block);
     const font = getPdfFont(fonts, block);
-    const prefix = block.type === 'list-item' ? (block.ordered ? '1. ' : '• ') : '';
-    const text = `${prefix}${block.runs.map((run) => (run.break ? '\n' : run.text || '')).join('')}`.trimEnd() || ' ';
+    const prefix = block.type === 'list-item' ? (block.ordered ? '1. ' : '- ') : '';
+    const rawText = `${prefix}${block.runs.map((run) => (run.break ? '\n' : run.text || '')).join('')}`.trimEnd() || ' ';
+    const text = sanitizePdfText(font, rawText);
     const maxWidth = page.getWidth() - style.indent - marginRight;
     const lines = wrapText(text, font, style.size, maxWidth);
     const blockHeight = lines.length * style.lineHeight + (index < blocks.length - 1 ? 8 : 0);
