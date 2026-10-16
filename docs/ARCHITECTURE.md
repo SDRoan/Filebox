@@ -75,9 +75,34 @@ AIAssistant page ─► POST /api/ai-assistant/chat
 - **Permissions**: file lookups in the executor always filter by `owner: userId` and `isTrashed != true`. Reading for summaries/questions also allows files shared with the user. The confirm endpoint re-runs the same scoped lookup, so a forged request cannot touch another user's files.
 - **Confirmation**: `delete_file` (move to Trash) and `share_file` never run directly from chat; the assistant returns a `pendingAction` that the UI shows with *Move to Trash / Share* and *Cancel*.
 - **Not available to AI**: permanent deletion, custom backup paths, student features.
-- **Offline**: the status check has a 3-second timeout. Chat and summaries return `503` with `code: "AI_OFFLINE"`, and the UI shows the offline banner and re-checks every 15 seconds.
+- **Offline**: the status check has a 3-second timeout. Questions that need the model and AI file actions return `503` with `code: "AI_OFFLINE"`; the UI shows the offline banner and re-checks every 15 seconds. Finding files, duplicate checks, rule-based organization suggestions and OCR text extraction keep working without Ollama.
 - **Summaries** (`/api/summaries`, assistant) use `OLLAMA_SUMMARY_MODEL` on demand. Uploads no longer auto-summarize.
-- **OCR**: scanned PDFs try Ollama's OCR model, then fall back to Tesseract.js (local).
+- **OCR**: scanned PDFs try Ollama's OCR model, then fall back to Tesseract.js. The English language data ships in the repo (`server/eng.traineddata`), so OCR works offline. OCR runs in a guarded worker so a corrupt image can't crash the server.
+
+### AI search scope (Phase 3)
+
+"Find…" questions search everything the user may read, using the Phase 2 permission module: owned files, active direct shares, and files anywhere inside the user's Team Spaces (`readableFileFilter`). Every result is then re-checked with `getFileRole` (`filterReadable`), labelled with how the user can see it (`source`: owned / shared / team, plus role, owner name or Team Space name), and de-duplicated; a file reachable both by direct share and through a Team Space appears once with the stronger access. Results never include server paths or other recipients. Trash is searched only when the question asks for it, and only the user's own trashed files. The header search stays limited to the user's own files.
+
+### File-type actions
+
+`GET/POST /api/ai-assistant/file-actions/:fileId` (viewer access, file not in Trash). Actions depend on the file type and on what can actually run:
+
+| Type | Actions |
+| --- | --- |
+| PDF, DOCX and other documents | Summarize, Explain simply, Key points, Important dates |
+| Code | Explain code, Summarize, Find important sections |
+| Text (txt, md, csv…) | Summarize, Key points, Find important sections, Important dates |
+| Images | Extract text (local OCR, works offline), Summarize extracted text, Describe image (only if the local vision model `OLLAMA_VISION_MODEL`, default `llama3.2-vision`, is installed) |
+
+"Ask a question about this file" opens the File Box AI chat with the file selected. Prompts are fixed per action and only see the file's own text (first 12,000 characters).
+
+### Duplicate suggestions
+
+`GET /api/ai-assistant/duplicates` uses the Phase 2 checksum detection on the user's own files. For each group, rules choose a copy to keep and say why: shared or linked (removing it would break sharing), starred, has versions, organized in a folder, strictly the oldest; names like "Copy of…" or "(1)" count against a copy. When the best copies score the same, File Box says it cannot choose. With `?explain=1` and Ollama online, the model writes a short explanation without changing the suggestions. Nothing is deleted; the UI moves only the copies the user confirms to Trash and refuses to remove every copy of a group.
+
+### Organization suggestions
+
+`POST /api/ai-assistant/organize/suggest` proposes changes for one folder (or My Files) of the user's own files; nothing is applied. Rules group screenshots and files sharing a clear name prefix and give camera-style image names a date name. When Ollama is available it adds topic folders and names for vague files, validated (renames only for vague names, new folders only for 2+ files, no adding to rule-owned folders, file type never changed). `POST /api/ai-assistant/organize/apply` requires `confirm: true` and re-authorizes every action as owner (file and destination folder); results are reported per action. The UI pre-selects nothing and lets the user edit destinations and names before confirming.
 
 ## Search
 
@@ -112,6 +137,13 @@ Documented and intentionally left for later phases:
 - **Team Space subfolders** are permission-aware (access is resolved by walking up to the Space), but only a Space's top level is browsable in the UI.
 - **Recent → team files:** opening a teammate's Team Space file from Home or Recent goes to Shared instead of the Team Space.
 - **Old password-bug accounts:** accounts registered before the double-hashing fix (Phase 1) cannot sign in with their password and need a password reset (which requires SMTP to be configured). The local workspace session is not affected.
+
+### Phase 3 known issues
+
+- AI search returns at most 8 files per question; there is no "show more" yet.
+- AI organization suggestions vary between runs (model output); every proposal is reviewed by the user, and rule-based ones are stable.
+- Duplicate detection covers only the user's own files (others' copies can't be trashed by them), and checks at most 300 same-size files / 1 GB per request.
+- Image description needs the optional local vision model; without it the action is not offered.
 
 ## External services
 
