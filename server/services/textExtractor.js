@@ -5,6 +5,30 @@ const Tesseract = require('tesseract.js');
 
 // OCR language data ships with the repo (server/eng.traineddata), so OCR works offline from any working directory.
 const OCR_OPTIONS = { cachePath: path.join(__dirname, '..'), langPath: path.join(__dirname, '..'), gzip: false };
+
+/**
+ * Run OCR in a dedicated worker. Without an errorHandler, tesseract.js throws worker errors
+ * outside any try/catch (e.g. for a corrupt or mislabeled image), which crashes the server.
+ */
+async function ocrImage(input, label = 'OCR') {
+  let workerError = null;
+  const worker = await Tesseract.createWorker(config.extraction.ocrLanguage, 1, {
+    ...OCR_OPTIONS,
+    errorHandler: (error) => { workerError = error; },
+    logger: (message) => {
+      if (message.status === 'recognizing text') console.log(`[${label}] ${Math.round(message.progress * 100)}%`);
+    },
+  });
+  try {
+    await worker.setParameters({ tessedit_pageseg_mode: '3' }); // automatic layout, no orientation data needed
+    const result = await worker.recognize(input);
+    return (result.data?.text || '').trim();
+  } catch (error) {
+    throw new Error(String(workerError || error?.message || error));
+  } finally {
+    await worker.terminate().catch(() => {});
+  }
+}
 const mammoth = require('mammoth');
 const config = require('../config/aiConfig');
 const ollamaClient = require('./ollamaClient');
@@ -337,17 +361,8 @@ class TextExtractor {
           }).promise;
 
           const imageBuffer = canvas.toBuffer('image/png');
-          const result = await Tesseract.recognize(imageBuffer, config.extraction.ocrLanguage, {
-            logger: (message) => {
-              if (message.status === 'recognizing text') {
-                console.log(`[PDF OCR] Page ${pageNum}: ${Math.round(message.progress * 100)}%`);
-              }
-            },
-            tessedit_pageseg_mode: '1',
-        ...OCR_OPTIONS,
-          });
-
-          const cleanText = (result.data?.text || '').trim();
+          const pageText = await ocrImage(imageBuffer, `PDF OCR page ${pageNum}`);
+          const cleanText = pageText;
           if (cleanText) {
             fullText += `${fullText ? '\n\n' : ''}--- Page ${pageNum} ---\n${cleanText}`;
           }
@@ -403,17 +418,7 @@ class TextExtractor {
 
   async extractFromImage(filePath) {
     try {
-      const result = await Tesseract.recognize(filePath, config.extraction.ocrLanguage, {
-        logger: (message) => {
-          if (message.status === 'recognizing text') {
-            console.log(`[Image OCR] ${Math.round(message.progress * 100)}%`);
-          }
-        },
-        tessedit_pageseg_mode: '1',
-        ...OCR_OPTIONS,
-      });
-
-      return (result.data?.text || '').trim();
+      return await ocrImage(filePath, 'Image OCR');
     } catch (error) {
       console.error('[Image OCR] Error extracting text from image:', error.message);
       return '';

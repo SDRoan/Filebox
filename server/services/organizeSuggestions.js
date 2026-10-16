@@ -151,7 +151,11 @@ async function suggestOrganization(userId, { folderId = null } = {}) {
     try {
       const taken = new Set(proposals.filter(p => p.type === 'move').map(p => p.fileId.toString()));
       const renamed = new Set(proposals.filter(p => p.type === 'rename').map(p => p.fileId.toString()));
-      const extra = (await aiProposals(files, folders, taken)).filter(p => !(p.type === 'rename' && renamed.has(p.fileId.toString())));
+      // Rule-based groupings (e.g. Screenshots) belong to the rules; the model may not add unrelated files to them.
+      const ruleFolders = new Set(proposals.filter(p => p.type === 'move' && p.isNewFolder).map(p => p.folderName.toLowerCase()));
+      const extra = (await aiProposals(files, folders, taken))
+        .filter(p => !(p.type === 'rename' && renamed.has(p.fileId.toString())))
+        .filter(p => !(p.type === 'move' && ruleFolders.has(p.folderName.toLowerCase())));
       proposals.push(...extra);
     } catch (error) {
       aiError = error.message;

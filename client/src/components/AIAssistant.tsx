@@ -90,6 +90,8 @@ const AIAssistant: React.FC = () => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const autoSentRef = useRef(false);
+  // Review panels stay live only for requests made during this visit; restored history doesn't re-run analysis.
+  const livePanelIds = useRef<Set<string>>(new Set());
 
   const checkStatus = useCallback(async () => {
     setChecking(true);
@@ -129,8 +131,11 @@ const AIAssistant: React.FC = () => {
     endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
   }, [messages.length]);
 
-  const appendMessage = (message: Omit<Message, 'id'>) =>
-    setMessages(prev => [...prev, { ...message, id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}` }]);
+  const appendMessage = (message: Omit<Message, 'id'>) => {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    if (message.panel) livePanelIds.current.add(id);
+    setMessages(prev => [...prev, { ...message, id }]);
+  };
 
   const updateMessage = (id: string, patch: Partial<Message>) =>
     setMessages(prev => prev.map(message => message.id === id ? { ...message, ...patch } : message));
@@ -254,7 +259,7 @@ const AIAssistant: React.FC = () => {
 
   const ready = Boolean(status?.ready);
   // Only the newest review panel stays live, so old results never act on stale suggestions.
-  const lastPanelId = [...messages].reverse().find(message => message.panel)?.id;
+  const lastPanelId = [...messages].reverse().find(message => message.panel && livePanelIds.current.has(message.id))?.id;
   const modelMissing = Boolean(status?.reachable && !status?.assistantModelAvailable);
 
   return (
@@ -370,7 +375,11 @@ const AIAssistant: React.FC = () => {
                   {message.panel === 'duplicates' ? <DuplicateReview explain={Boolean(status?.ready)} /> : <OrganizeReview />}
                 </div>
               )}
-              {message.panel && message.id !== lastPanelId && <p className="ai-panel-muted">This review was replaced by a newer one below.</p>}
+              {message.panel && message.id !== lastPanelId && (
+                <p className="ai-panel-muted">
+                  {livePanelIds.current.has(message.id) ? 'This review was replaced by a newer one below.' : 'Ask again to start a fresh review.'}
+                </p>
+              )}
               {message.pendingAction && (
                 <div className="filebox-ai-confirm">
                   {message.actionState === 'pending' && (

@@ -6,11 +6,9 @@ import FilePreview from './FilePreview';
 import MoveCopyModal from './MoveCopyModal';
 import ShareDialog from './ShareDialog';
 import FileAIDialog from './FileAIDialog';
-import { useNavigate } from 'react-router-dom';
 import { capabilitiesFor, AccessRole } from '../utils/permissions';
 import { formatRelativeTime } from '../utils/fileDisplay';
 import { shareAPI } from '../services/api';
-import { pagePath } from '../config/workspaceNavigation';
 import FileVersions from './FileVersions';
 import FileComments from './FileComments';
 import FileActivity from './FileActivity';
@@ -57,7 +55,6 @@ const FileItem: React.FC<FileItemProps> = ({
   const [renameValue, setRenameValue] = useState(file.originalName);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const isSavingRef = useRef(false);
-  const navigate = useNavigate();
   // Files from Shared, Recent and Team Spaces carry the viewer's role; files in My Files are owned.
   const caps = capabilitiesFor(((file as any).access as AccessRole) || 'owner');
 
