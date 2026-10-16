@@ -293,8 +293,21 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
     }
   };
 
+  const handleEmptyTrash = async () => {
+    const count = files.length + folders.length;
+    if (!window.confirm(`Permanently delete all ${count} item${count === 1 ? '' : 's'} in Trash, including everything inside trashed folders? This cannot be undone.`)) return;
+    try {
+      await filesAPI.emptyTrash();
+      await Promise.all([loadFiles(), refreshUser()]);
+    } catch (error: any) {
+      alert(error?.response?.data?.message || 'Could not empty Trash.');
+    }
+  };
+
   const handlePermanentDelete = async (id: string, type: 'file' | 'folder') => {
-    if (!window.confirm('Are you sure you want to permanently delete this item?')) {
+    if (!window.confirm(type === 'folder'
+      ? 'Permanently delete this folder and everything in it? This cannot be undone.'
+      : 'Permanently delete this file and its version history? This cannot be undone.')) {
       return;
     }
     try {
@@ -303,7 +316,7 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
       } else {
         await filesAPI.permanentDeleteFolder(id);
       }
-      loadFiles();
+      await Promise.all([loadFiles(), refreshUser()]);
     } catch (error) {
       console.error('Error permanently deleting:', error);
       alert('Failed to delete');
@@ -340,8 +353,8 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
     if (selectedItems.size === 0) return;
     
     const confirmMessage = showTrash 
-      ? `Permanently delete ${selectedItems.size} item(s)? This action cannot be undone.`
-      : `Delete ${selectedItems.size} item(s)?`;
+      ? `Permanently delete ${selectedItems.size} item(s), including everything inside selected folders? This cannot be undone.`
+      : `Move ${selectedItems.size} item(s) to Trash? You can restore them for 30 days.`;
     
     if (!window.confirm(confirmMessage)) return;
 
@@ -368,7 +381,7 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
       
       await Promise.all(deletePromises);
       clearSelection();
-      loadFiles();
+      await Promise.all([loadFiles(), refreshUser()]);
     } catch (error) {
       console.error('Error deleting items:', error);
       alert('Failed to delete some items');
@@ -497,9 +510,12 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
         <div className="file-page-heading">
           <div>
             <h1>{showTrash ? 'Trash' : showStarred ? 'Starred' : breadcrumbFolders.length > 0 ? breadcrumbFolders[breadcrumbFolders.length - 1].name : 'Your files'}<span className="page-heading-period">.</span></h1>
-            <p>{showTrash ? 'A second chance for things you no longer need.' : showStarred ? 'The things you want to keep close.' : 'A home for everything you’re working on.'}</p>
+            <p>{showTrash ? 'Items here are deleted forever 30 days after you delete them. Restore anything you still need.' : showStarred ? 'The things you want to keep close.' : 'A home for everything you’re working on.'}</p>
           </div>
           <div className="file-page-actions">
+            {showTrash && files.length + folders.length > 0 && (
+              <button className="file-action-button danger" onClick={handleEmptyTrash}><TrashIcon size={16} /><span>Empty Trash</span></button>
+            )}
             {!showTrash && !showStarred && <>
               <button className="file-action-button" onClick={() => setShowCreateFolder(true)}><FolderIcon size={16} /><span>New folder</span></button>
               <UploadButton onFileSelect={handleFileUpload} />

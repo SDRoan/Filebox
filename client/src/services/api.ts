@@ -123,6 +123,22 @@ export const filesAPI = {
     const response = await api.get('/files', { params });
     return response.data;
   },
+  getStorageSummary: async () => {
+    const response = await api.get('/files/storage/summary');
+    return response.data;
+  },
+  recalculateStorage: async () => {
+    const response = await api.post('/files/storage/recalculate');
+    return response.data;
+  },
+  getTrashSummary: async () => {
+    const response = await api.get('/files/trash/summary');
+    return response.data;
+  },
+  emptyTrash: async () => {
+    const response = await api.delete('/files/trash', { data: { confirm: true } });
+    return response.data;
+  },
   getRecent: async (limit = 30) => {
     const response = await api.get('/files/recent', { params: { limit } });
     return response.data;
@@ -229,14 +245,13 @@ export const filesAPI = {
   uploadFileVersion: async (fileId: string, file: File, changeDescription?: string) => {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('isNewVersion', 'true');
-    formData.append('fileId', fileId);
     if (changeDescription) formData.append('changeDescription', changeDescription);
-    const response = await api.post('/files/upload', formData, {
+    const response = await api.put(`/files/update/${fileId}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
   },
+
   getFileActivity: async (fileId: string) => {
     const response = await api.get(`/files/activity/${fileId}`);
     return response.data;
@@ -287,8 +302,16 @@ export const teamFoldersAPI = {
     const response = await api.get(`/team-folders/${folderId}`);
     return response.data;
   },
-  addMember: async (folderId: string, userId: string, role: 'admin' | 'editor' | 'viewer') => {
+  addMember: async (folderId: string, email: string, role: 'admin' | 'editor' | 'viewer') => {
+    const response = await api.post(`/team-folders/${folderId}/members`, { email, role });
+    return response.data;
+  },
+  setMemberRole: async (folderId: string, userId: string, role: 'admin' | 'editor' | 'viewer') => {
     const response = await api.post(`/team-folders/${folderId}/members`, { userId, role });
+    return response.data;
+  },
+  renameTeamFolder: async (folderId: string, name: string) => {
+    const response = await api.patch(`/team-folders/${folderId}`, { name });
     return response.data;
   },
   removeMember: async (folderId: string, userId: string) => {
@@ -411,19 +434,58 @@ export const commentsAPI = {
 };
 
 // Share API
+export interface ShareLinkInfo {
+  shareId: string;
+  url: string;
+  hasPassword: boolean;
+  allowDownload: boolean;
+  expiresAt: string | null;
+  expired: boolean;
+  downloadCount: number;
+  createdAt: string;
+}
+
+export interface FileAccessInfo {
+  file: { _id: string; originalName: string; mimeType: string };
+  owner: { _id: string; name: string; email: string };
+  people: Array<{
+    user: { _id: string; name: string; email: string };
+    permission: 'view' | 'edit';
+    expiresAt: string | null;
+    expired: boolean;
+    sharedAt: string | null;
+  }>;
+  links: ShareLinkInfo[];
+}
+
 export const shareAPI = {
-  createShare: async (fileId: string, accessType?: string, password?: string, expiresAt?: string) => {
-    const response = await api.post('/share/create', { fileId, accessType, password, expiresAt });
+  getFileAccess: async (fileId: string): Promise<FileAccessInfo> => {
+    const response = await api.get(`/share/file/${fileId}`);
     return response.data;
   },
-  getShare: async (shareId: string) => {
+  shareWithEmail: async (fileId: string, email: string, permission: 'view' | 'edit', expiresAt?: string | null) => {
+    const response = await api.post('/share/user', { fileId, email, permission, expiresAt: expiresAt ?? undefined });
+    return response.data;
+  },
+  setPermission: async (fileId: string, userId: string, permission: 'view' | 'edit') => {
+    const response = await api.post('/share/user', { fileId, userId, permission });
+    return response.data;
+  },
+  removeAccess: async (fileId: string, userId: string) => {
+    const response = await api.delete(`/share/user/${fileId}/${userId}`);
+    return response.data;
+  },
+  createLink: async (fileId: string, options: { password?: string; expiresAt?: string; allowDownload?: boolean } = {}): Promise<ShareLinkInfo> => {
+    const response = await api.post('/share/create', { fileId, ...options });
+    return response.data;
+  },
+  // Public (no sign-in) link endpoints
+  getPublicLink: async (shareId: string) => {
     const response = await api.get(`/share/${shareId}`);
     return response.data;
   },
-  shareWithUser: async (fileId: string, userId: string, permission?: string, password?: string, expiresAt?: string) => {
-    const response = await api.post('/share/user', { fileId, userId, permission, password, expiresAt });
-    return response.data;
-  },
+  publicDownloadUrl: (shareId: string, password?: string) =>
+    `${API_URL}/share/${shareId}/download${password ? `?password=${encodeURIComponent(password)}` : ''}`,
   getSharedWithMe: async () => {
     const response = await api.get('/share/shared/with-me');
     return response.data;
@@ -456,14 +518,13 @@ export const usersAPI = {
     const response = await api.patch('/users/profile', { name, email });
     return response.data;
   },
+  // Exact email lookup only; File Box does not expose a user directory.
   searchUsers: async (query: string) => {
     const response = await api.get('/users/search', { params: { q: query } });
     return response.data;
   },
-  getAllUsers: async () => {
-    const response = await api.get('/users/all');
-    return response.data;
-  },
+  // Kept for the hidden student components; the user list endpoint was removed for privacy.
+  getAllUsers: async (): Promise<any[]> => [],
 };
 
 // Search API

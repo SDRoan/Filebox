@@ -18,6 +18,7 @@ export const workspacePages: WorkspacePage[] = [
   { id: 'signatures', path: '/signatures', label: 'Signatures' },
   { id: 'cloud-backup', path: '/backup', label: 'Backup' },
   { id: 'trash', path: '/trash', label: 'Trash' },
+  { id: 'storage', path: '/storage', label: 'Storage' },
   { id: 'settings', path: '/settings', label: 'Settings' },
   { id: 'secured-links', path: '/secured-links', label: 'Secured links', secondary: true },
   { id: 'relationships', path: '/connections', label: 'File connections', secondary: true },

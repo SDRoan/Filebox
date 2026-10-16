@@ -20,8 +20,8 @@ File Box has no hosted dependencies. Storage, sharing, search and backups never 
 
 - **Metadata** lives in MongoDB (`File`, `Folder`, `FileVersion`, `FileContent`, `Share`, `Activity`).
 - **Contents** are written by Multer to `server/uploads/<userId>/<timestamp>-<random>.<ext>`. `File.path` stores the absolute path.
-- **Versions**: editing a file through the editor copies the previous contents into a `FileVersion` record (with its own path) before overwriting. Versions can be listed, downloaded and restored by the owner.
-- **Trash**: trashing sets `isTrashed`/`deletedAt`; a daily job permanently deletes items after the 30-day recovery period.
+- **Versions**: every edit or restore first copies the current contents to `uploads/<owner>/versions/` and records a `FileVersion`. See [VERSION_HISTORY.md](VERSION_HISTORY.md).
+- **Trash**: trashing sets `isTrashed`/`deletedAt`. Permanent deletion (single item, Empty Trash, the daily 30-day cleanup, deleting a Team Space) goes through `services/trash.js`, which removes contents, versions, links and extracted text and frees storage. Restored items return to their folder if it still exists, otherwise to My Files.
 
 ### Current limitations
 
@@ -35,6 +35,29 @@ File Box has no hosted dependencies. Storage, sharing, search and backups never 
 2. Move all file I/O in routes behind the provider; keep `server/uploads` as the local backend so nothing migrates.
 3. Later, add an S3-compatible provider. Free, self-hostable options: **MinIO** or **Garage** locally. Hosted object storage stays optional and is never required to run File Box.
 4. Content hashing (SHA-256) on upload enables duplicate detection and, later, deduplicated versions.
+
+## Permissions
+
+`server/services/permissions.js` is the single place that decides access. A user's role on a file is:
+
+| Role | From | Can |
+| --- | --- | --- |
+| owner | `File.owner` | everything: rename, move, copy, star, share, trash, delete, edit, versions |
+| editor | direct share with `edit`, or Team Space role admin/editor | edit contents, versions, view, download, comment |
+| viewer | direct share with `view`, or Team Space role viewer | view, download, comment |
+| none | anything else, expired shares, or the file is in someone else's Trash | nothing; routes answer 404 so existence isn't revealed |
+
+- Direct shares honor `expiresAt`.
+- Team Space access comes from the Space the item is inside (walking up nested folders).
+- `authorizeFile` / `authorizeFolder` are used by file, version, share, comment, annotation, signature, file-memory, summary and AI routes. `readableFileFilter` is the query File Box AI uses to find files it may read.
+- Team Space management (`getTeamRole`): owner and admins manage members and rename; editors upload and add folders; viewers read. Members can leave; the owner cannot.
+- The client mirrors the same rules in `client/src/utils/permissions.ts` only to decide which actions to show; the server always re-checks.
+
+## Sharing
+
+- **People:** owners add people by exact email with *Can view* or *Can edit*, change permission, or remove access. Recipients can remove a file from their own Shared list. There is no user directory or partial user search.
+- **Links:** view-only public links at `/s/<id>` with optional password (stored as a bcrypt hash; older plain-text link passwords still work), expiry date, and download on/off. Links stop working when the file is trashed. Public link metadata never includes server paths or other recipients.
+- **Not supported:** folder sharing (the `Folder.sharedWith` field exists but no route uses it) and editable links.
 
 ## File Box AI
 
@@ -90,8 +113,12 @@ Removed outright because they only called hosted AI: `services/summarization.js`
 | SMTP (optional) | Email verification and password reset | Free with any mailbox you already have; File Box works without it |
 | Microsoft Teams / Zoom / Slack OAuth (optional) | Integrations page | Free developer apps; not needed for core File Box |
 
+## Storage page
+
+`services/storageSummary.js` measures real usage from the user's files (active plus Trash), by category (Documents, Images, Videos, Audio, Archives, Other, by MIME type and extension), the largest files, Trash size, files missing from disk, and duplicate files. Duplicates are found by grouping equal sizes and confirming with SHA-256 (capped at 300 files / 1 GB per request). If the account's quota counter has drifted from the measured total, the page says so and offers an explicit recalculation.
+
 ## Planned work (not started)
 
-- **Version history UX**: version list with timestamps, restore while keeping the current version as a new version, and retention limits. This builds on the existing `FileVersion` model; no data migration is needed.
-- **Storage page**: real used/total, breakdown by type, large files, duplicates (after content hashing), trash size.
-- **Permissions**: one shared `canAccessFile(user, file, level)` helper for routes and AI, replacing the per-route checks.
+- Version retention limits and content-hash deduplication (see VERSION_HISTORY.md).
+- Folder sharing, if wanted, using the existing `Folder.sharedWith` field and the permission layer.
+- Nested folders inside Team Spaces are permission-aware but only the Space's top level is browsable in the UI.

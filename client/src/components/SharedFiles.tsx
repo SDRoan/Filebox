@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { FileItem } from '../types';
-import { shareAPI } from '../services/api';
+import { shareAPI, filesAPI } from '../services/api';
+import ShareDialog from './ShareDialog';
+import { fileKind, formatRelativeTime } from '../utils/fileDisplay';
 import { useAuth } from '../context/AuthContext';
 import { io, Socket } from 'socket.io-client';
 import FileSortFilter, { SortOption, SortOrder, FilterOption } from './FileSortFilter';
@@ -12,6 +14,7 @@ import './SharedFiles.css';
 type SharedFile = Omit<FileItem, 'owner'> & {
   sharePermission?: 'view' | 'edit';
   sharedAt?: string;
+  linkCount?: number;
   // owner can be User, string, or backend shape (with _id) - all optional
   owner?: FileItem['owner'] | {
     _id: string;
@@ -45,6 +48,7 @@ const SharedFiles: React.FC = () => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showActivity, setShowActivity] = useState<string | null>(null);
   const [fileActivity, setFileActivity] = useState<{ [key: string]: any[] }>({});
+  const [sharingFile, setSharingFile] = useState<SharedFile | null>(null);
   const { user } = useAuth();
   const socketRef = useRef<Socket | null>(null);
 
@@ -148,14 +152,29 @@ const SharedFiles: React.FC = () => {
     setSelectedFile(null);
   };
 
-  const handleRemoveAccess = async (file: SharedFile) => {
-    if (activeTab === 'by-me') {
-      // Remove share from a specific user
-      // This would require additional API endpoint
-      alert('Remove share functionality - to be implemented');
-    } else {
-      // Remove yourself from shared files (stop receiving)
-      alert('Stop receiving shared file - to be implemented');
+  // Shared with me: remove yourself. Shared by me: the sharing dialog manages people and links.
+  const handleLeaveShare = async (file: SharedFile) => {
+    if (!user) return;
+    if (!window.confirm(`Remove "${file.originalName}" from your shared files? The owner can share it with you again.`)) return;
+    try {
+      await shareAPI.removeAccess(file._id, user.id);
+      loadFiles();
+    } catch (error: any) {
+      alert(error?.response?.data?.message || 'Could not remove this file.');
+    }
+  };
+
+  const handleDownload = async (file: SharedFile) => {
+    try {
+      const blob = await filesAPI.downloadFile(file._id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = file.originalName;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert('Download failed. You may no longer have access to this file.');
     }
   };
 
@@ -414,14 +433,20 @@ const SharedFiles: React.FC = () => {
                           </h4>
                           
                           <div className="file-meta">
-                            <span className="file-size">{formatFileSize(file.size)}</span>
-                            <span className="file-date">{formatDate(file.createdAt)}</span>
+                            <span className="file-size">{fileKind(file.mimeType, file.originalName)} · {formatFileSize(file.size)}</span>
+                            <span className="file-date">Shared {formatRelativeTime(file.sharedAt || file.createdAt)}</span>
                           </div>
 
                           {activeTab === 'with-me' && file.owner && typeof file.owner === 'object' && (
                             <div className="sharer-info">
                               <span className="sharer-label">Shared by:</span>
                               <span className="sharer-name">{file.owner.name || file.owner.email}</span>
+                            </div>
+                          )}
+
+                          {activeTab === 'by-me' && Boolean(file.linkCount) && (
+                            <div className="shared-with-info">
+                              <span className="shared-with-label">{file.linkCount} link{file.linkCount === 1 ? '' : 's'}</span>
                             </div>
                           )}
 
@@ -474,20 +499,33 @@ const SharedFiles: React.FC = () => {
                             className="action-button download-btn"
                             onClick={(e) => {
                               e.stopPropagation();
-                              window.open(`http://localhost:5001/api/files/${file._id}/download`, '_blank');
+                              handleDownload(file);
                             }}
                             title="Download"
                           >
                             <DownloadIcon size={18} color="currentColor" />
                           </button>
-                          {activeTab === 'by-me' && (
+                          {activeTab === 'by-me' ? (
+                            <button
+                              className="action-button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSharingFile(file);
+                              }}
+                              title="Manage sharing"
+                              aria-label={`Manage sharing for ${file.originalName}`}
+                            >
+                              <UsersIcon size={18} color="currentColor" />
+                            </button>
+                          ) : (
                             <button
                               className="action-button remove-btn"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleRemoveAccess(file);
+                                handleLeaveShare(file);
                               }}
-                              title="Remove Share"
+                              title="Remove from Shared with me"
+                              aria-label={`Remove ${file.originalName} from Shared with me`}
                             >
                               <TrashIcon size={18} color="currentColor" />
                             </button>
@@ -541,6 +579,14 @@ const SharedFiles: React.FC = () => {
           </>
         )}
       </div>
+
+      {sharingFile && (
+        <ShareDialog
+          fileId={sharingFile._id}
+          fileName={sharingFile.originalName}
+          onClose={() => { setSharingFile(null); loadFiles(); }}
+        />
+      )}
 
       {showPreview && selectedFile && (
         <FilePreview

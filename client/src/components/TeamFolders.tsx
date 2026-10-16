@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { teamFoldersAPI, usersAPI } from '../services/api';
+import { teamFoldersAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import TeamFolderChat from './TeamFolderChat';
 import './TeamFolders.css';
@@ -39,7 +39,8 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
   const [selectedFolder, setSelectedFolder] = useState<TeamFolder | null>(null);
   const [showAddMember, setShowAddMember] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [newMemberRole, setNewMemberRole] = useState<'admin' | 'editor' | 'viewer'>('viewer');
+  const [memberError, setMemberError] = useState('');
   const [loading, setLoading] = useState(true);
   const [folderSearchQuery, setFolderSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'name' | 'date' | 'members'>('date');
@@ -95,35 +96,23 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
       setShowCreateModal(false);
       loadTeamFolders();
     } catch (error) {
-      alert('Failed to create team folder');
+      alert('Failed to create Team Space');
     }
   };
 
-  const handleSearchUsers = async (query: string) => {
-    if (query.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-
+  // Members are added by exact email; File Box has no user directory.
+  const handleAddMember = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedFolder || !searchQuery.trim()) return;
+    setMemberError('');
     try {
-      const results = await usersAPI.searchUsers(query);
-      setSearchResults(results);
-    } catch (error) {
-      console.error('Error searching users:', error);
-    }
-  };
-
-  const handleAddMember = async (userId: string, role: 'admin' | 'editor' | 'viewer') => {
-    if (!selectedFolder) return;
-
-    try {
-      await teamFoldersAPI.addMember(selectedFolder._id, userId, role);
-      setShowAddMember(false);
+      const updated = await teamFoldersAPI.addMember(selectedFolder._id, searchQuery.trim(), newMemberRole);
+      setSelectedFolder(updated);
       setSearchQuery('');
-      setSearchResults([]);
+      setNewMemberRole('viewer');
       loadTeamFolders();
-    } catch (error) {
-      alert('Failed to add member');
+    } catch (error: any) {
+      setMemberError(error?.response?.data?.message || 'Could not add this person.');
     }
   };
 
@@ -133,6 +122,7 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
 
     try {
       await teamFoldersAPI.removeMember(selectedFolder._id, userId);
+      setSelectedFolder({ ...selectedFolder, members: selectedFolder.members.filter(m => m.user._id !== userId) });
       loadTeamFolders();
     } catch (error) {
       alert('Failed to remove member');
@@ -142,7 +132,8 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
   const handleChangeRole = async (userId: string, newRole: 'admin' | 'editor' | 'viewer') => {
     if (!selectedFolder) return;
     try {
-      await teamFoldersAPI.addMember(selectedFolder._id, userId, newRole);
+      const updated = await teamFoldersAPI.setMemberRole(selectedFolder._id, userId, newRole);
+      setSelectedFolder(updated);
       loadTeamFolders();
     } catch (error) {
       alert('Failed to change role');
@@ -152,17 +143,17 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
   const handleRenameFolder = async () => {
     if (!selectedFolder || !renameValue.trim()) return;
     try {
-      // Add rename API call when backend supports it
-      alert('Rename functionality - backend endpoint needed');
+      await teamFoldersAPI.renameTeamFolder(selectedFolder._id, renameValue.trim());
       setShowRenameModal(false);
       setRenameValue('');
+      loadTeamFolders();
     } catch (error) {
       alert('Failed to rename folder');
     }
   };
 
   const handleDeleteFolder = async (folderId: string) => {
-    if (!window.confirm('Are you sure you want to delete this team folder? This will delete all files and folders inside. This action cannot be undone.')) {
+    if (!window.confirm('Delete this Team Space? All files and folders inside are permanently deleted for every member. This cannot be undone.')) {
       return;
     }
     try {
@@ -176,13 +167,12 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
   };
 
   const handleLeaveFolder = async (folderId: string) => {
-    if (!window.confirm('Leave this team folder?')) return;
+    if (!user || !window.confirm('Leave this Team Space? You will lose access to its files until someone adds you again.')) return;
     try {
-      // Add leave API call when backend supports it
-      alert('Leave functionality - backend endpoint needed');
+      await teamFoldersAPI.removeMember(folderId, user.id);
       loadTeamFolders();
-    } catch (error) {
-      alert('Failed to leave folder');
+    } catch (error: any) {
+      alert(error?.response?.data?.message || 'Failed to leave this Team Space');
     }
   };
 
@@ -219,12 +209,16 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
+  const canManageMembers = (folder: TeamFolder) =>
+    folder.owner.email === user?.email ||
+    folder.members.some(m => m.user.email === user?.email && m.role === 'admin');
+
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
-      case 'admin': return '#e74c3c';
-      case 'editor': return '#3498db';
-      case 'viewer': return '#95a5a6';
-      default: return '#95a5a6';
+      case 'admin': return '#3f6543';
+      case 'editor': return '#5f7fa3';
+      case 'viewer': return '#9aa58f';
+      default: return '#9aa58f';
     }
   };
 
@@ -242,7 +236,7 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
     <div className={embedded ? "team-folders-page" : "modal-overlay"} onClick={embedded ? undefined : onClose}>
       <div className="modal-content team-folders-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h2>Team Folders</h2>
+          <h2>Team Spaces</h2>
           {!embedded && <button onClick={onClose} className="close-btn">×</button>}
         </div>
 
@@ -251,7 +245,7 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
             <div className="search-box-team">
               <input
                 type="text"
-                placeholder="Search team folders..."
+                placeholder="Search Team Spaces..."
                 value={folderSearchQuery}
                 onChange={(e) => setFolderSearchQuery(e.target.value)}
                 className="search-input-team"
@@ -268,7 +262,7 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
               <option value="members">Sort by Members</option>
             </select>
             <button onClick={() => setShowCreateModal(true)} className="action-button">
-              + Create Team Folder
+              + New Team Space
             </button>
           </div>
         </div>
@@ -279,7 +273,7 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
           <div className="team-folders-list">
             {filteredAndSortedFolders.length === 0 ? (
               <div className="empty-state">
-                {folderSearchQuery ? 'No folders match your search' : 'No team folders yet'}
+                {folderSearchQuery ? 'No Team Spaces match your search' : 'No Team Spaces yet. Create one to share a folder with your team.'}
               </div>
             ) : (
               filteredAndSortedFolders.map((folder) => {
@@ -366,7 +360,7 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
                         }}
                         className="add-member-btn"
                       >
-                        + Add Member
+                        {canManageMembers(folder) ? 'Manage members' : 'Members'}
                       </button>
                       <div className="folder-menu-wrapper">
                         <button
@@ -384,13 +378,14 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
                               <>
                                 <button
                                   onClick={() => {
+                                    setSelectedFolder(folder);
                                     setRenameValue(folder.name);
                                     setShowRenameModal(true);
                                     setShowFolderMenu(null);
                                   }}
                                   className="menu-item"
                                 >
-                                  Edit Rename
+                                  Rename
                                 </button>
                                 <button
                                   onClick={() => {
@@ -399,7 +394,7 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
                                   }}
                                   className="menu-item delete"
                                 >
-                                  Delete Delete
+                                  Delete Team Space…
                                 </button>
                               </>
                             )}
@@ -428,7 +423,7 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
         {showCreateModal && (
           <div className="modal-overlay-inner" onClick={() => setShowCreateModal(false)}>
             <div className="modal-content-small" onClick={(e) => e.stopPropagation()}>
-              <h3>Create Team Folder</h3>
+              <h3>New Team Space</h3>
               <form onSubmit={handleCreateFolder}>
                 <input
                   type="text"
@@ -452,42 +447,33 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
         {showAddMember && selectedFolder && (
           <div className="modal-overlay-inner" onClick={() => setShowAddMember(false)}>
             <div className="modal-content-small" onClick={(e) => e.stopPropagation()}>
-              <h3>Add Member to {selectedFolder.name}</h3>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  handleSearchUsers(e.target.value);
-                }}
-                placeholder="Search users by name or email..."
-                className="form-input"
-              />
-              {searchResults.length > 0 && (
-                <div className="search-results">
-                  {searchResults.map((result) => (
-                    <div key={result._id} className="search-result-item">
-                      <div>
-                        <div className="result-name">{result.name}</div>
-                        <div className="result-email">{result.email}</div>
-                      </div>
-                      <select
-                        onChange={(e) => handleAddMember(result._id, e.target.value as any)}
-                        className="role-select"
-                      >
-                        <option value="viewer">Viewer</option>
-                        <option value="editor">Editor</option>
-                        <option value="admin">Admin</option>
-                      </select>
-                    </div>
-                  ))}
-                </div>
+              <h3>Members of {selectedFolder.name}</h3>
+              {canManageMembers(selectedFolder) && (
+                <form className="team-add-member" onSubmit={handleAddMember}>
+                  <input
+                    type="email"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Email address"
+                    aria-label="Email address of the person to add"
+                    className="form-input"
+                    autoFocus
+                  />
+                  <select value={newMemberRole} onChange={(e) => setNewMemberRole(e.target.value as any)} className="role-select" aria-label="Role">
+                    <option value="viewer">Viewer</option>
+                    <option value="editor">Editor</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                  <button type="submit" className="action-button" disabled={!searchQuery.trim()}>Add</button>
+                </form>
               )}
+              {memberError && <p className="team-member-error" role="alert">{memberError}</p>}
+              <p className="team-role-help">Viewers can open and download files. Editors can also upload and add folders. Admins can manage members.</p>
               <div className="current-members">
                 <h4>Current Members ({selectedFolder.members.length})</h4>
                 {selectedFolder.members.map((member) => {
                   const isMemberOwner = selectedFolder.owner.email === member.user.email;
-                  const canManage = selectedFolder.owner.email === user?.email;
+                  const canManage = canManageMembers(selectedFolder);
                   
                   return (
                     <div key={member.user._id} className="member-item">
@@ -548,7 +534,7 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
         {showRenameModal && selectedFolder && (
           <div className="modal-overlay-inner" onClick={() => setShowRenameModal(false)}>
             <div className="modal-content-small" onClick={(e) => e.stopPropagation()}>
-              <h3>Rename Team Folder</h3>
+              <h3>Rename Team Space</h3>
               <form onSubmit={(e) => { e.preventDefault(); handleRenameFolder(); }}>
                 <input
                   type="text"

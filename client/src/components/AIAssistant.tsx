@@ -161,6 +161,20 @@ const AIAssistant: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sending, messages]);
 
+  // "Ask File Box AI" from a file menu: /ai?file=<id> preselects that file.
+  useEffect(() => {
+    const fileId = new URLSearchParams(location.search).get('file');
+    if (!fileId) return;
+    setSelectedFileId(fileId);
+    filesAPI.getFileById(fileId)
+      .then((data: any) => {
+        const file = data?.file;
+        if (file) setFileOptions(prev => (prev.some(option => option._id === file._id) ? prev : [file, ...prev]));
+      })
+      .catch(() => setSelectedFileId(''));
+    inputRef.current?.focus();
+  }, [location.search]);
+
   // Questions handed over from Home or search: /ai?q=...
   useEffect(() => {
     const params = new URLSearchParams(location.search);

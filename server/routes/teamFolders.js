@@ -10,6 +10,7 @@ const fs = require('fs-extra');
 const path = require('path');
 const router = express.Router();
 const { getTeamRole, authorizeFile, sendDenied } = require('../services/permissions');
+const { purgeFile, purgeFolderTree } = require('../services/trash');
 
 const TEAM_ROLES = ['admin', 'editor', 'viewer'];
 
@@ -510,6 +511,29 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
+// Rename a Team Space (owner or admin)
+router.patch('/:id', auth, async (req, res) => {
+  try {
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    if (!name) return res.status(400).json({ message: 'Name is required' });
+
+    const teamFolder = await TeamFolder.findById(req.params.id);
+    if (!teamFolder || !getTeamRole(teamFolder, req.user._id)) {
+      return res.status(404).json({ message: 'Team folder not found' });
+    }
+    if (!['owner', 'admin'].includes(getTeamRole(teamFolder, req.user._id))) {
+      return res.status(403).json({ message: 'Only the owner and admins can rename this Team Space' });
+    }
+
+    teamFolder.name = name;
+    teamFolder.updatedAt = new Date();
+    await teamFolder.save();
+    res.json(teamFolder);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Add member to team folder
 router.post('/:id/members', auth, async (req, res) => {
   try {
@@ -548,7 +572,7 @@ router.post('/:id/members', auth, async (req, res) => {
     }
 
     await teamFolder.save();
-    await teamFolder.populate('members.user', 'name email');
+    await teamFolder.populate([{ path: 'members.user', select: 'name email' }, { path: 'owner', select: 'name email' }]);
 
     res.json(teamFolder);
   } catch (error) {
@@ -568,7 +592,12 @@ router.delete('/:id/members/:userId', auth, async (req, res) => {
     // Check if user is admin or owner
     const isAdmin = ['owner', 'admin'].includes(getTeamRole(teamFolder, req.user._id));
 
-    if (!isAdmin) {
+    // Members may leave on their own; removing someone else needs owner or admin.
+    const leaving = req.params.userId === req.user._id.toString();
+    if (leaving && teamFolder.owner.toString() === req.user._id.toString()) {
+      return res.status(400).json({ message: 'The owner cannot leave; delete the Team Space instead' });
+    }
+    if (!isAdmin && !(leaving && getTeamRole(teamFolder, req.user._id))) {
       return res.status(403).json({ message: 'Only admins can remove members' });
     }
 
@@ -754,23 +783,12 @@ router.delete('/:id', auth, async (req, res) => {
       return res.status(403).json({ message: 'Only the owner can delete the team folder' });
     }
 
-    // Delete all files in the team folder
-    const files = await File.find({ parentFolder: req.params.id });
-    for (const file of files) {
-      try {
-        if (await fs.pathExists(file.path)) {
-          await fs.remove(file.path);
-        }
-        await File.findByIdAndDelete(file._id);
-      } catch (err) {
-        console.error('Error deleting file:', err);
-      }
+    // Delete everything inside: files (freeing each uploader's storage) and nested folders.
+    for (const file of await File.find({ parentFolder: req.params.id })) {
+      await purgeFile(file);
     }
-
-    // Delete all folders in the team folder
-    const folders = await Folder.find({ parentFolder: req.params.id });
-    for (const folder of folders) {
-      await Folder.findByIdAndDelete(folder._id);
+    for (const folder of await Folder.find({ parentFolder: req.params.id })) {
+      await purgeFolderTree(folder);
     }
 
     // Delete all messages

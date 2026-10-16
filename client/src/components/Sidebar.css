@@ -19,10 +19,12 @@
 .sidebar .nav-item.active { background: #e3ebdf; color: #315439; font-weight: 600; }
 .nav-active-dot { width: 5px; height: 5px; border-radius: 50%; background: #52794e; }
 .sidebar-footer { flex-shrink: 0; padding: 14px 24px 16px; border-top: 1px solid #e0e3d9; }
-.sidebar-storage-bar { height: 4px; background: #e1e5db; border-radius: 3px; margin: 7px 0 0; overflow: hidden; }
-.sidebar-storage-bar-fill { height: 100%; background: #577b4d; border-radius: inherit; }
-.sidebar-storage-info p { display: flex; justify-content: space-between; gap: 8px; color: #7a8371; font-size: 11px; }
-.sidebar-storage-info p span { color: #5f685a; }
+.sidebar-storage-info { display: block; width: 100%; padding: 8px 10px; margin: 0 -10px; width: calc(100% + 20px); border: 0; border-radius: 6px; background: none; font: inherit; text-align: left; cursor: pointer; }
+.sidebar-storage-info:hover, .sidebar-storage-info.active { background: #eceee7; }
+.sidebar-storage-bar { display: block; height: 4px; background: #e1e5db; border-radius: 3px; margin: 7px 0 0; overflow: hidden; }
+.sidebar-storage-bar-fill { display: block; height: 100%; background: #577b4d; border-radius: inherit; }
+.sidebar-storage-text { display: flex; justify-content: space-between; gap: 8px; color: #7a8371; font-size: 11px; }
+.sidebar-storage-text span { color: #5f685a; }
 .sidebar-user-info { flex: initial; display: flex; align-items: center; gap: 9px; border-top: 1px solid #e0e3d9; padding-top: 14px; margin-top: 10px; }
 .sidebar-user-avatar { display: grid; place-items: center; width: 31px; height: 31px; flex-shrink: 0; border-radius: 50%; background: #e0e5d5; color: #4d6241; font-size: 11px; font-weight: 600; }
 .sidebar-user-details { min-width: 0; flex: 1; }

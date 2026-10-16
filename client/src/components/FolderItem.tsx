@@ -1,7 +1,9 @@
 import ItemActions from './ItemActions';
+import { formatRelativeTime } from '../utils/fileDisplay';
 import React, { useState } from 'react';
 import { Folder } from '../types';
 import { filesAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import MoveCopyModal from './MoveCopyModal';
 import ClassificationBadge from './ClassificationBadge';
 import { FolderIcon, DownloadIcon, PackageIcon, StarredIcon, TrashIcon, RestoreIcon } from './Icons';
@@ -30,6 +32,10 @@ const FolderItem: React.FC<FolderItemProps> = ({
   isSelected = false,
   selectionMode = false,
 }) => {
+  const { user } = useAuth();
+  // Folder actions are owner-only on the server; teammates' folders in a Team Space only open.
+  const ownerId = typeof folder.owner === 'object' && folder.owner ? ((folder.owner as any)._id || (folder.owner as any).id) : folder.owner;
+  const isOwner = !ownerId || !user || ownerId === user.id;
   const [showMoveModal, setShowMoveModal] = useState(false);
 
   const handleDownloadAsZip = async () => {
@@ -68,20 +74,19 @@ const FolderItem: React.FC<FolderItemProps> = ({
           {folder.name}
         </div>
           <div className="folder-meta">
-            {new Date(folder.createdAt).toLocaleDateString()}
-            {showTrash && folder.deletedAt && (
+            {showTrash && folder.deletedAt ? (
               <span className="recovery-info">
+                Deleted {formatRelativeTime(folder.deletedAt)}{((folder as any).originalLocation) ? ` · from ${(folder as any).originalLocation}` : ''}
                 {(() => {
                   const daysDeleted = Math.floor((Date.now() - new Date(folder.deletedAt).getTime()) / (1000 * 60 * 60 * 24));
-                  const recoveryDays = folder.recoveryPeriodDays || 30;
-                  const daysRemaining = recoveryDays - daysDeleted;
-                  if (daysRemaining > 0) {
-                    return ` • ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} until permanent deletion`;
-                  } else {
-                    return ' • Will be permanently deleted soon';
-                  }
+                  const daysRemaining = 30 - daysDeleted;
+                  return daysRemaining > 0
+                    ? ` · deleted forever in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`
+                    : ' · will be deleted forever soon';
                 })()}
               </span>
+            ) : (
+              <>{new Date(folder.createdAt).toLocaleDateString()}</>
             )}
           {folder.dataClassification && (
             <div style={{ marginTop: '4px' }}>
@@ -90,25 +95,34 @@ const FolderItem: React.FC<FolderItemProps> = ({
           )}
         </div>
       </div>
+      {(showTrash || isOwner) && (
       <ItemActions className="folder-actions" label={`Actions for ${folder.name}`}>
         {!showTrash ? (
           <>
-            <button onClick={handleDownloadAsZip} className="icon-button" title="Download as ZIP">
-              <DownloadIcon size={18} color="currentColor" />
-            </button>
-            <button onClick={() => setShowMoveModal(true)} className="icon-button" title="Move">
-              <PackageIcon size={18} color="currentColor" />
-            </button>
-            <button
-              onClick={() => filesAPI.starFolder(folder._id)}
-              className={`icon-button ${folder.isStarred ? 'starred' : ''}`}
-              title="Star"
-            >
-              <StarredIcon size={18} color="currentColor" />
-            </button>
-            <button onClick={onDelete} className="icon-button" title="Delete">
-              <TrashIcon size={18} color="currentColor" />
-            </button>
+            {isOwner && (
+              <button onClick={handleDownloadAsZip} className="icon-button" title="Download as ZIP">
+                <DownloadIcon size={18} color="currentColor" />
+              </button>
+            )}
+            {isOwner && (
+              <button onClick={() => setShowMoveModal(true)} className="icon-button" title="Move">
+                <PackageIcon size={18} color="currentColor" />
+              </button>
+            )}
+            {isOwner && (
+              <button
+                onClick={() => filesAPI.starFolder(folder._id)}
+                className={`icon-button ${folder.isStarred ? 'starred' : ''}`}
+                title={folder.isStarred ? 'Unstar' : 'Star'}
+              >
+                <StarredIcon size={18} color="currentColor" />
+              </button>
+            )}
+            {isOwner && (
+              <button onClick={onDelete} className="icon-button danger" title="Move to Trash">
+                <TrashIcon size={18} color="currentColor" />
+              </button>
+            )}
           </>
         ) : (
           <>
@@ -118,13 +132,14 @@ const FolderItem: React.FC<FolderItemProps> = ({
             <button
               onClick={onPermanentDelete}
               className="icon-button danger"
-              title="Permanently Delete"
+              title="Delete permanently"
             >
               <TrashIcon size={18} color="currentColor" />
             </button>
           </>
         )}
       </ItemActions>
+      )}
       {showMoveModal && (
         <MoveCopyModal
           itemId={folder._id}

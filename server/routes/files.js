@@ -6,6 +6,7 @@ const archiver = require('archiver');
 const auth = require('../middleware/auth');
 const File = require('../models/File');
 const Folder = require('../models/Folder');
+const TeamFolder = require('../models/TeamFolder');
 const User = require('../models/User');
 const FileVersion = require('../models/FileVersion');
 const FileContent = require('../models/FileContent');
@@ -43,6 +44,19 @@ const resolveOwnedParentFolder = async (parentFolder, userId) => {
   if (!parentFolder || parentFolder === 'root') return { id: null };
   const folder = await Folder.findOne({ _id: parentFolder, owner: userId, isTrashed: { $ne: true } }).select('_id').catch(() => null);
   return folder ? { id: folder._id } : { error: 'Folder not found' };
+};
+
+// A restored item goes back to its folder only if that folder still exists, is not in Trash,
+// and is not inside a trashed folder; otherwise it returns to My Files.
+const restorableParent = async (parentId, userId) => {
+  let current = parentId;
+  for (let depth = 0; current && depth < 32; depth += 1) {
+    const folder = await Folder.findOne({ _id: current, owner: userId }).select('isTrashed parentFolder').lean();
+    if (!folder) return Boolean(await TeamFolder.exists({ _id: current })); // Team Space files keep their space
+    if (folder.isTrashed) return false;
+    current = folder.parentFolder;
+  }
+  return Boolean(parentId);
 };
 
 // Configure multer for file uploads
@@ -703,6 +717,7 @@ router.post('/restore/:id', auth, async (req, res) => {
       const { folder } = access;
       folder.isTrashed = false;
       folder.deletedAt = null;
+      if (!(await restorableParent(folder.parentFolder, req.user._id))) folder.parentFolder = null;
       await folder.save();
 
       // Log activity
@@ -718,6 +733,7 @@ router.post('/restore/:id', auth, async (req, res) => {
       const { file } = access;
       file.isTrashed = false;
       file.deletedAt = null;
+      if (!(await restorableParent(file.parentFolder, req.user._id))) file.parentFolder = null;
       await file.save();
 
       // Log activity

@@ -135,10 +135,10 @@ const Sidebar: React.FC<SidebarProps> = ({
         )}
 
         <div className="sidebar-footer">
-          <div className="sidebar-storage-info" aria-label="Storage usage">
-            <p><span>Storage</span>{formatBytes(user?.storageUsed || 0)} of {formatBytes(user?.storageLimit || 0)}</p>
-            <div className="sidebar-storage-bar" role="progressbar" aria-valuenow={Math.round(storagePercent)} aria-valuemin={0} aria-valuemax={100} aria-label="Storage used"><div className="sidebar-storage-bar-fill" style={{ width: `${storagePercent}%` }} /></div>
-          </div>
+          <button className={`sidebar-storage-info ${currentView === 'storage' ? 'active' : ''}`} onClick={() => go('storage')} aria-label="Storage usage" aria-current={currentView === 'storage' ? 'page' : undefined}>
+            <span className="sidebar-storage-text"><span>Storage</span>{formatBytes(user?.storageUsed || 0)} of {formatBytes(user?.storageLimit || 0)}</span>
+            <span className="sidebar-storage-bar" role="progressbar" aria-valuenow={Math.round(storagePercent)} aria-valuemin={0} aria-valuemax={100} aria-label="Storage used"><span className="sidebar-storage-bar-fill" style={{ width: `${storagePercent}%` }} /></span>
+          </button>
           <button className={`nav-item sidebar-settings ${currentView === 'settings' ? 'active' : ''}`} aria-current={currentView === 'settings' ? 'page' : undefined} onClick={() => go('settings')}>
             <SettingsIcon size={18} /><span>Settings</span>
           </button>

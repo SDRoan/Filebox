@@ -6,6 +6,7 @@ import SearchBar from './SearchBar';
 import HomeView from './HomeView';
 import RecentView from './RecentView';
 import SettingsView from './SettingsView';
+import StorageView from './StorageView';
 import TeamFolders from './TeamFolders';
 import FileRequests from './FileRequests';
 import RelationshipGraph from './RelationshipGraph';
@@ -222,6 +223,12 @@ const Dashboard: React.FC = () => {
         )}
         {currentView === 'cloud-backup' && (
           <CloudBackup />
+        )}
+        {currentView === 'storage' && (
+          <StorageView
+            onOpenFolder={(folderId) => setCurrentView('files', { openFolderId: folderId })}
+            onOpenTrash={() => setCurrentView('trash')}
+          />
         )}
         {currentView === 'settings' && (
           <SettingsView onOpenPage={handleViewChange} />

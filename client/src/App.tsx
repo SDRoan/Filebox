@@ -4,6 +4,7 @@ import { useAuth } from './context/AuthContext';
 import Login from './components/Login';
 import Dashboard from './components/Dashboard';
 import FileRequestUpload from './components/FileRequestUpload';
+import SharedLinkPage from './components/SharedLinkPage';
 import { legacyPaths, removedPaths } from './config/workspaceNavigation';
 import './App.css';
 
@@ -27,6 +28,7 @@ const App: React.FC = () => {
           path="/login"
           element={user ? <Navigate to="/" /> : <Login />}
         />
+        <Route path="/s/:shareId" element={<SharedLinkPage />} />
         <Route
           path="/file-request/:requestId"
           element={<FileRequestUpload />}

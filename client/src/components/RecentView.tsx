@@ -30,7 +30,7 @@ const RecentView: React.FC<RecentViewProps> = ({ onOpenFile }) => {
     <div className="overview-page">
       <header className="overview-header">
         <h1>Recent</h1>
-        <p>Files you recently uploaded, opened, edited or downloaded.</p>
+        <p>Files you recently opened, uploaded, edited, downloaded or shared, and files shared with you.</p>
       </header>
 
       {loading && <p className="overview-muted">Loading…</p>}

@@ -4,13 +4,18 @@ import { FileItem as FileItemType } from '../types';
 import { filesAPI } from '../services/api';
 import FilePreview from './FilePreview';
 import MoveCopyModal from './MoveCopyModal';
-import ShareModal from './ShareModal';
+import ShareDialog from './ShareDialog';
+import { useNavigate } from 'react-router-dom';
+import { capabilitiesFor, AccessRole } from '../utils/permissions';
+import { formatRelativeTime } from '../utils/fileDisplay';
+import { shareAPI } from '../services/api';
+import { pagePath } from '../config/workspaceNavigation';
 import FileVersions from './FileVersions';
 import FileComments from './FileComments';
 import FileActivity from './FileActivity';
 import FileRelationships from './FileRelationships';
 import ClassificationBadge from './ClassificationBadge';
-import { ImageIcon, VideoIcon, AudioIcon, DocumentIcon, SummaryIcon, AnalyticsIcon, EyeIcon, PackageIcon, CopyIcon, ShareIcon, ScrollIcon, CommentIcon, DownloadIcon, StarredIcon, TrashIcon, RestoreIcon, LinkIcon, EditIcon } from './Icons';
+import { ImageIcon, VideoIcon, AudioIcon, DocumentIcon, SummaryIcon, AnalyticsIcon, EyeIcon, PackageIcon, CopyIcon, ShareIcon, ScrollIcon, CommentIcon, DownloadIcon, StarredIcon, TrashIcon, RestoreIcon, LinkIcon, EditIcon, AIAssistantIcon } from './Icons';
 import './FileItem.css';
 
 interface FileItemProps {
@@ -50,6 +55,22 @@ const FileItem: React.FC<FileItemProps> = ({
   const [renameValue, setRenameValue] = useState(file.originalName);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const isSavingRef = useRef(false);
+  const navigate = useNavigate();
+  // Files from Shared, Recent and Team Spaces carry the viewer's role; files in My Files are owned.
+  const caps = capabilitiesFor(((file as any).access as AccessRole) || 'owner');
+
+  const copyLink = async () => {
+    try {
+      const { links } = await shareAPI.getFileAccess(file._id);
+      // Reuse a plain, active link instead of creating a new one every time.
+      const reusable = links.find(link => !link.expired && !link.hasPassword && !link.expiresAt && link.allowDownload);
+      const link = reusable || await shareAPI.createLink(file._id);
+      await navigator.clipboard.writeText(`${window.location.origin}${link.url}`);
+      alert('Link copied. Anyone with the link can view this file.');
+    } catch (error: any) {
+      alert(error?.response?.data?.message || 'Could not copy a link for this file.');
+    }
+  };
 
   useEffect(() => {
     if (!isRenaming) {
@@ -259,7 +280,7 @@ const FileItem: React.FC<FileItemProps> = ({
             />
           ) : (
             <div className="file-name" title={file.originalName} onDoubleClick={(e) => {
-              if (!showTrash && !selectionMode) {
+              if (!showTrash && !selectionMode && caps.canRename) {
                 e.stopPropagation();
                 setIsRenaming(true);
                 setRenameValue(file.originalName);
@@ -269,20 +290,19 @@ const FileItem: React.FC<FileItemProps> = ({
             </div>
           )}
           <div className="file-meta">
-            {formatSize(file.size)} • {new Date(file.createdAt).toLocaleDateString()}
-            {showTrash && file.deletedAt && (
+            {formatSize(file.size)} • {showTrash && file.deletedAt ? (
               <span className="recovery-info">
+                Deleted {formatRelativeTime(file.deletedAt)}{((file as any).originalLocation) ? ` · from ${(file as any).originalLocation}` : ''}
                 {(() => {
                   const daysDeleted = Math.floor((Date.now() - new Date(file.deletedAt).getTime()) / (1000 * 60 * 60 * 24));
-                  const recoveryDays = file.recoveryPeriodDays || 30;
-                  const daysRemaining = recoveryDays - daysDeleted;
-                  if (daysRemaining > 0) {
-                    return ` • ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} until permanent deletion`;
-                  } else {
-                    return ' • Will be permanently deleted soon';
-                  }
+                  const daysRemaining = 30 - daysDeleted;
+                  return daysRemaining > 0
+                    ? ` · deleted forever in ${daysRemaining} day${daysRemaining !== 1 ? 's' : ''}`
+                    : ' · will be deleted forever soon';
                 })()}
               </span>
+            ) : (
+              <>{new Date(file.createdAt).toLocaleDateString()}</>
             )}
             {file.dataClassification && (
               <div style={{ marginTop: '4px' }}>
@@ -295,68 +315,91 @@ const FileItem: React.FC<FileItemProps> = ({
           {!showTrash ? (
             <>
               {canPreview() && (
-                <button onClick={() => setShowPreview(true)} className="icon-button" title="Preview">
+                <button onClick={() => setShowPreview(true)} className="icon-button" title="Open">
                   <EyeIcon size={18} color="currentColor" />
                 </button>
               )}
-              <button onClick={() => setShowMoveModal(true)} className="icon-button" title="Move">
-                <PackageIcon size={18} color="currentColor" />
-              </button>
-              <button onClick={() => setShowCopyModal(true)} className="icon-button" title="Copy">
-                <CopyIcon size={18} color="currentColor" />
-              </button>
-              <button onClick={() => setShowShareModal(true)} className="icon-button" title="Share">
-                <ShareIcon size={18} color="currentColor" />
-              </button>
-              <button 
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (!isRenaming) {
-                    setIsRenaming(true);
-                    setRenameValue(file.originalName);
-                  }
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                }}
-                className="icon-button" 
-                title="Rename"
-              >
-                <EditIcon size={18} color="currentColor" />
-              </button>
-              <button onClick={() => setShowVersions(true)} className="icon-button" title="Versions">
-                <ScrollIcon size={18} color="currentColor" />
-              </button>
-              <button onClick={() => setShowComments(true)} className="icon-button" title="Comments">
-                <CommentIcon size={18} color="currentColor" />
-              </button>
-              <button onClick={() => setShowActivity(true)} className="icon-button" title="Activity">
-                <AnalyticsIcon size={18} color="currentColor" />
-              </button>
-              <button onClick={() => setShowRelationships(true)} className="icon-button" title="Connections">
-                <LinkIcon size={18} color="currentColor" />
-              </button>
               <button onClick={handleDownload} className="icon-button" title="Download">
                 <DownloadIcon size={18} color="currentColor" />
               </button>
-              <button
-                onClick={async () => {
-                  try {
-                    await filesAPI.starFile(file._id);
-                    // File will be updated via socket event
-                  } catch (error) {
-                    console.error('Error starring file:', error);
-                  }
-                }}
-                className={`icon-button ${file.isStarred ? 'starred' : ''}`}
-                title="Star"
-              >
-                <StarredIcon size={18} color="currentColor" />
+              {caps.canShare && (
+                <button onClick={() => setShowShareModal(true)} className="icon-button" title="Share">
+                  <ShareIcon size={18} color="currentColor" />
+                </button>
+              )}
+              {caps.canShare && (
+                <button onClick={copyLink} className="icon-button" title="Copy link">
+                  <LinkIcon size={18} color="currentColor" />
+                </button>
+              )}
+              <button onClick={() => navigate(`${pagePath('ai-assistant')}?file=${file._id}`)} className="icon-button" title="Ask File Box AI">
+                <AIAssistantIcon size={18} color="currentColor" />
               </button>
-            <button onClick={onDelete} className="icon-button" title="Delete">
-              <TrashIcon size={18} color="currentColor" />
-            </button>
+              {caps.canRename && (
+                <button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (!isRenaming) {
+                      setIsRenaming(true);
+                      setRenameValue(file.originalName);
+                    }
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="icon-button"
+                  title="Rename"
+                >
+                  <EditIcon size={18} color="currentColor" />
+                </button>
+              )}
+              {caps.canMove && (
+                <button onClick={() => setShowMoveModal(true)} className="icon-button" title="Move">
+                  <PackageIcon size={18} color="currentColor" />
+                </button>
+              )}
+              {caps.canCopy && (
+                <button onClick={() => setShowCopyModal(true)} className="icon-button" title="Make a copy">
+                  <CopyIcon size={18} color="currentColor" />
+                </button>
+              )}
+              {caps.canStar && (
+                <button
+                  onClick={async () => {
+                    try {
+                      await filesAPI.starFile(file._id);
+                    } catch (error) {
+                      console.error('Error starring file:', error);
+                    }
+                  }}
+                  className={`icon-button ${file.isStarred ? 'starred' : ''}`}
+                  title={file.isStarred ? 'Unstar' : 'Star'}
+                >
+                  <StarredIcon size={18} color="currentColor" />
+                </button>
+              )}
+              {caps.canViewVersions && (
+                <button onClick={() => setShowVersions(true)} className="icon-button" title="Version history">
+                  <ScrollIcon size={18} color="currentColor" />
+                </button>
+              )}
+              <button onClick={() => setShowComments(true)} className="icon-button" title="Comments">
+                <CommentIcon size={18} color="currentColor" />
+              </button>
+              {caps.role === 'owner' && (
+                <button onClick={() => setShowActivity(true)} className="icon-button" title="Activity">
+                  <AnalyticsIcon size={18} color="currentColor" />
+                </button>
+              )}
+              {caps.role === 'owner' && (
+                <button onClick={() => setShowRelationships(true)} className="icon-button" title="Connections">
+                  <LinkIcon size={18} color="currentColor" />
+                </button>
+              )}
+              {caps.canTrash && (
+                <button onClick={onDelete} className="icon-button danger" title="Move to Trash">
+                  <TrashIcon size={18} color="currentColor" />
+                </button>
+              )}
             </>
           ) : (
             <>
@@ -366,7 +409,7 @@ const FileItem: React.FC<FileItemProps> = ({
               <button
                 onClick={onPermanentDelete}
                 className="icon-button danger"
-                title="Permanently Delete"
+                title="Delete permanently"
               >
                 <TrashIcon size={18} color="currentColor" />
               </button>
@@ -404,18 +447,13 @@ const FileItem: React.FC<FileItemProps> = ({
         />
       )}
       {showShareModal && (
-        <ShareModal
-          fileId={file._id}
-          fileName={file.originalName}
-          onClose={() => setShowShareModal(false)}
-          onShareCreated={() => {
-            setShowShareModal(false);
-          }}
-        />
+        <ShareDialog fileId={file._id} fileName={file.originalName} onClose={() => setShowShareModal(false)} />
       )}
       {showVersions && (
         <FileVersions
           fileId={file._id}
+          fileName={file.originalName}
+          canRestore={caps.canEdit}
           onClose={() => setShowVersions(false)}
           onUploadNewVersion={() => {
             setShowVersions(false);
@@ -425,10 +463,6 @@ const FileItem: React.FC<FileItemProps> = ({
             input.onchange = async (e: any) => {
               const selectedFile = e.target.files[0];
               if (selectedFile) {
-                const formData = new FormData();
-                formData.append('file', selectedFile);
-                formData.append('isNewVersion', 'true');
-                formData.append('fileId', file._id);
                 try {
                   await filesAPI.uploadFileVersion(file._id, selectedFile);
                   alert('New version uploaded successfully!');
