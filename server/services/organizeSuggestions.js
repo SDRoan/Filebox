@@ -222,7 +222,7 @@ async function applyProposals(userId, { actions = [], confirm = false } = {}) {
         if (String(file.parentFolder || '') === String(target._id)) throw new Error('Already in that folder');
         file.parentFolder = target._id;
         await file.save();
-        await Activity.create({ user: userId, file: file._id, action: 'moved', details: `Organized into ${target.name}` });
+        await Activity.create({ user: userId, file: file._id, action: 'moved', details: `Organized into ${target.name}`, source: 'filebox' });
         Object.assign(result, { success: true, message: `Moved "${file.originalName}" to "${target.name}"`, file });
       } else if (action.type === 'rename') {
         const newStem = cleanFileStem(stem(action.newName || ''));
@@ -231,7 +231,7 @@ async function applyProposals(userId, { actions = [], confirm = false } = {}) {
         const oldName = file.originalName;
         file.originalName = newName;
         await file.save();
-        await Activity.create({ user: userId, file: file._id, action: 'renamed', details: `Renamed from ${oldName}` });
+        await Activity.create({ user: userId, file: file._id, action: 'renamed', details: `Renamed from ${oldName}`, source: 'filebox' });
         Object.assign(result, { success: true, message: `Renamed "${oldName}" to "${newName}"`, file });
       } else {
         throw new Error('Unknown change type');
@@ -244,4 +244,4 @@ async function applyProposals(userId, { actions = [], confirm = false } = {}) {
   return { results, applied: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length };
 }
 
-module.exports = { suggestOrganization, applyProposals, isVagueName };
+module.exports = { suggestOrganization, applyProposals, isVagueName, ruleProposals };

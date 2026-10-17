@@ -151,6 +151,8 @@ const Login: React.FC = () => {
       <div className="login-box">
         <div className="login-header">
           <Logo size="large" showText={true} text="File Box" />
+          <h1 className="login-positioning">A drive that works with you.</h1>
+          <p className="login-subline">Store, organize, understand and act on your files with File Box AI.</p>
           <p>
             {forgotPasswordStep === 'request'
               ? 'Reset your password'

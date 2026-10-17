@@ -1,36 +1,58 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { aiAssistantAPI, filesAPI, searchAPI, shareAPI } from '../services/api';
+import { homeAPI, searchAPI, HomeActivity, HomeOverview, HomeSuggestion } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FileItem, Folder } from '../types';
 import { pagePath } from '../config/workspaceNavigation';
 import { formatRelativeTime } from '../utils/fileDisplay';
 import FileRowList, { FileRowItem } from './FileRowList';
-import { AIAssistantIcon, ArrowRightIcon, FolderIcon, SearchIcon } from './Icons';
+import DuplicateReview from './DuplicateReview';
+import OrganizeReview from './OrganizeReview';
+import { AIAssistantIcon, ArrowRightIcon, CloseIcon, FolderIcon, SearchIcon } from './Icons';
 import './OverviewPages.css';
-
-interface ActivityEntry {
-  _id: string;
-  action: string;
-  details?: string;
-  createdAt: string;
-  file?: { originalName: string } | null;
-  folder?: { name: string } | null;
-}
+import './AIPanels.css';
 
 interface HomeViewProps {
   onOpenFile: (file: FileRowItem) => void;
   onOpenFolder: (folderId: string) => void;
 }
 
-const ACTIVITY_VERBS: Record<string, string> = {
-  uploaded: 'Uploaded', created: 'Created', edited: 'Edited', downloaded: 'Downloaded', deleted: 'Moved to Trash',
-  restored: 'Restored', renamed: 'Renamed', moved: 'Moved', copied: 'Copied', shared: 'Shared',
-  starred: 'Starred', unstarred: 'Unstarred', commented: 'Commented on', version_created: 'Saved a new version of',
-  version_restored: 'Restored a version of',
+const DISMISSED_KEY = 'filebox-dismissed-suggestions';
+const MAX_VISIBLE_SUGGESTIONS = 3;
+
+// Dismissed suggestions stay hidden until what File Box noticed changes (different fingerprint).
+const readDismissed = (): Record<string, string> => {
+  try { return JSON.parse(localStorage.getItem(DISMISSED_KEY) || '{}') || {}; } catch { return {}; }
 };
 
-const AI_STARTERS = ['Find documents about my project', 'Suggest how I could organize my recent files into folders.'];
+const ACTIVITY_VERBS: Record<string, string> = {
+  uploaded: 'uploaded', created: 'created', edited: 'edited', downloaded: 'downloaded', deleted: 'moved to Trash',
+  restored: 'restored', renamed: 'renamed', moved: 'moved', copied: 'copied', shared: 'shared',
+  starred: 'starred', unstarred: 'unstarred', commented: 'commented on', version_created: 'saved a new version of',
+  version_restored: 'restored a version of',
+};
+
+// "You shared Resume.pdf", "File Box organized 4 files into Screenshots"
+function describeActivity(entry: HomeActivity) {
+  const name = entry.fileName || entry.folderName || 'an item';
+  if (entry.source === 'filebox') {
+    if (entry.action === 'moved' && entry.details.startsWith('Organized into ')) {
+      return { who: 'File Box', text: `organized ${entry.count > 1 ? `${entry.count} files` : name} into ${entry.details.replace('Organized into ', '')}` };
+    }
+    const verb = ACTIVITY_VERBS[entry.action] || 'updated';
+    return { who: 'File Box', text: `${verb} ${entry.count > 1 ? `${entry.count} files` : name}` };
+  }
+  const verb = ACTIVITY_VERBS[entry.action] || 'updated';
+  const extra = entry.action === 'shared' && entry.details ? ` ${entry.details.startsWith('with ') ? entry.details : `(${entry.details.toLowerCase()})`}` : '';
+  return { who: 'You', text: `${verb} ${name}${extra}` };
+}
+
+const CHIPS: Array<{ label: string; kind: 'prefill' | 'organize' | 'duplicates' | 'ai'; value?: string }> = [
+  { label: 'Find something', kind: 'prefill', value: 'Find ' },
+  { label: 'Organize my files', kind: 'organize' },
+  { label: 'Summarize documents', kind: 'ai', value: 'Summarize this file' },
+  { label: 'Clean up duplicates', kind: 'duplicates' },
+];
 
 const greeting = () => {
   const hour = new Date().getHours();
@@ -42,46 +64,36 @@ const greeting = () => {
 const HomeView: React.FC<HomeViewProps> = ({ onOpenFile, onOpenFolder }) => {
   const { user, isLocalPreview } = useAuth();
   const navigate = useNavigate();
-  const [recent, setRecent] = useState<FileRowItem[]>([]);
-  const [starred, setStarred] = useState<FileRowItem[]>([]);
-  const [shared, setShared] = useState<FileRowItem[]>([]);
-  const [activity, setActivity] = useState<ActivityEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [aiReady, setAiReady] = useState<boolean | null>(null);
+  const [overview, setOverview] = useState<HomeOverview | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [dismissed, setDismissed] = useState<Record<string, string>>(readDismissed);
+  const [panel, setPanel] = useState<'duplicates' | 'organize' | null>(null);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<{ files: FileItem[]; folders: Folder[] } | null>(null);
   const [searching, setSearching] = useState(false);
-  const searchRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    Promise.allSettled([
-      filesAPI.getRecent(8),
-      filesAPI.getFiles(undefined, false, true),
-      shareAPI.getSharedWithMe(),
-      filesAPI.getUserActivity(),
-    ]).then(([recentResult, starredResult, sharedResult, activityResult]) => {
-      if (cancelled) return;
-      if (recentResult.status === 'fulfilled') setRecent(recentResult.value.files || []);
-      if (starredResult.status === 'fulfilled') setStarred((starredResult.value.files || []).slice(0, 4));
-      if (sharedResult.status === 'fulfilled') setShared((sharedResult.value || []).slice(0, 5));
-      if (activityResult.status === 'fulfilled') setActivity((activityResult.value || []).filter((entry: ActivityEntry) => entry.file || entry.folder).slice(0, 8));
-      setLoading(false);
-    });
-    aiAssistantAPI.getStatus()
-      .then(status => !cancelled && setAiReady(Boolean(status.ready)))
-      .catch(() => !cancelled && setAiReady(false));
-    return () => { cancelled = true; };
+  const load = useCallback(async () => {
+    setLoadError('');
+    try {
+      setOverview(await homeAPI.getOverview());
+    } catch (err: any) {
+      setLoadError(err?.code === 'ERR_NETWORK'
+        ? "Can't reach the File Box server. Check that it's running, then try again."
+        : err?.response?.data?.message || 'Could not load your Home overview.');
+    }
   }, []);
 
-  // Instant local search; never depends on AI being online.
+  useEffect(() => { load(); }, [load]);
+
+  // Instant local search while typing; never depends on File Box AI being online.
   useEffect(() => {
     const q = query.trim();
-    if (!q) { setResults(null); return; }
+    if (!q || q === 'Find') { setResults(null); return; }
     setSearching(true);
     const timer = setTimeout(async () => {
       try {
-        const data = await searchAPI.aiSearch(q);
+        const data = await searchAPI.aiSearch(q.replace(/^find\s+/i, ''));
         setResults({ files: (data.files || []).slice(0, 6), folders: (data.folders || []).slice(0, 3) });
       } catch {
         setResults({ files: [], folders: [] });
@@ -92,28 +104,51 @@ const HomeView: React.FC<HomeViewProps> = ({ onOpenFile, onOpenFolder }) => {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const askAI = (text: string) => navigate(`${pagePath('ai-assistant')}?q=${encodeURIComponent(text)}`);
+  const askFileBox = (text: string) => navigate(`${pagePath('ai-assistant')}?q=${encodeURIComponent(text)}`);
+
+  const runChip = (chip: typeof CHIPS[number]) => {
+    if (chip.kind === 'prefill') { setQuery(chip.value || ''); inputRef.current?.focus(); return; }
+    if (chip.kind === 'organize' || chip.kind === 'duplicates') { setPanel(chip.kind); return; }
+    // Summaries need a file: open File Box AI with the request ready and the file picker available.
+    navigate(`${pagePath('ai-assistant')}?prefill=${encodeURIComponent(chip.value || '')}`);
+  };
+
+  const runSuggestion = (suggestion: HomeSuggestion) => {
+    const { action } = suggestion;
+    if (action.type === 'duplicates' || action.type === 'organize') setPanel(action.type);
+    else navigate(pagePath(action.to || 'home'));
+  };
+
+  const dismiss = (suggestion: HomeSuggestion) => {
+    const next = { ...dismissed, [suggestion.id]: suggestion.fingerprint };
+    setDismissed(next);
+    try { localStorage.setItem(DISMISSED_KEY, JSON.stringify(next)); } catch { /* still hidden for this visit */ }
+  };
+
+  // At most three cards; dismissing one lets the next most useful suggestion take its place.
+  const visibleSuggestions = (overview?.suggestions || []).filter(s => dismissed[s.id] !== s.fingerprint).slice(0, MAX_VISIBLE_SUGGESTIONS);
   const firstName = isLocalPreview ? '' : (user?.name || '').split(' ')[0];
+  const isEmpty = overview && !overview.continueWorking.length && !overview.activity.length && !overview.suggestions.length;
 
   return (
     <div className="overview-page home-view">
       <header className="home-hero">
-        <h1>{greeting()}{firstName ? `, ${firstName}` : ''}</h1>
-        <form
-          className="home-search"
-          role="search"
-          onSubmit={(event) => { event.preventDefault(); if (query.trim()) askAI(query.trim()); }}
-        >
+        <p className="home-greeting">{greeting()}{firstName ? `, ${firstName}` : ''}</p>
+        <h1>Ask File Box</h1>
+        <form className="home-search" role="search" onSubmit={(event) => { event.preventDefault(); if (query.trim()) askFileBox(query.trim()); }}>
           <SearchIcon size={18} />
           <input
-            ref={searchRef}
+            ref={inputRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search your files or ask File Box AI..."
-            aria-label="Search your files or ask File Box AI"
+            placeholder="What do you want to do with your files?"
+            aria-label="What do you want to do with your files?"
           />
-          {query && <kbd>Enter to ask AI</kbd>}
+          {query.trim() && <kbd>Enter to ask File Box</kbd>}
         </form>
+        <div className="home-chips" aria-label="Things File Box can do">
+          {CHIPS.map(chip => <button key={chip.label} onClick={() => runChip(chip)}>{chip.label}</button>)}
+        </div>
 
         {results && (
           <div className="home-search-results" aria-live="polite">
@@ -127,91 +162,106 @@ const HomeView: React.FC<HomeViewProps> = ({ onOpenFile, onOpenFolder }) => {
             ))}
             {!searching && results.files.length > 0 && <FileRowList files={results.files} onOpen={onOpenFile} />}
             {!searching && !results.files.length && !results.folders.length && (
-              <p className="overview-muted">No files match “{query.trim()}”.</p>
+              <p className="overview-muted">No file names or contents match “{query.trim()}”.</p>
             )}
-            <button className="home-ask-ai" onClick={() => askAI(query.trim())} disabled={aiReady === false}>
+            <button className="home-ask-ai" onClick={() => askFileBox(query.trim())}>
               <AIAssistantIcon size={16} />
-              <span>{aiReady === false ? 'File Box AI is offline' : `Ask File Box AI: “${query.trim()}”`}</span>
+              <span>Ask File Box: “{query.trim()}”</span>
               <ArrowRightIcon size={14} />
             </button>
           </div>
         )}
       </header>
 
-      {loading ? (
-        <p className="overview-muted">Loading your files…</p>
-      ) : (
+      {loadError && (
+        <div className="overview-error home-error" role="alert">
+          <span>{loadError}</span>
+          <button className="btn-secondary" onClick={load}>Try again</button>
+        </div>
+      )}
+
+      {!overview && !loadError && (
+        <div className="home-loading" aria-busy="true" aria-label="Loading your overview">
+          {[0, 1, 2].map(i => <div key={i} className="home-skeleton" />)}
+        </div>
+      )}
+
+      {isEmpty && (
+        <section className="home-welcome">
+          <h2>Welcome to File Box</h2>
+          <p>Upload files and File Box will help you find, understand and organize them. Suggestions and recent work will appear here.</p>
+          <button className="btn-primary" onClick={() => navigate(pagePath('files'))}>Go to My Files</button>
+        </section>
+      )}
+
+      {overview && !isEmpty && (
         <div className="home-grid">
           <div className="home-main">
-            {starred.length > 0 && (
-              <section className="overview-section">
-                <div className="overview-section-head"><h2>Suggested</h2><span>Starred files</span></div>
-                <FileRowList files={starred} onOpen={onOpenFile} />
+            {visibleSuggestions.length > 0 && (
+              <section className="overview-section" aria-labelledby="home-suggestions-title">
+                <div className="overview-section-head"><h2 id="home-suggestions-title">File Box suggestions</h2><span>Nothing changes until you choose</span></div>
+                <div className="suggestion-cards">
+                  {visibleSuggestions.map(suggestion => (
+                    <article key={suggestion.id} className="suggestion-card">
+                      <button className="suggestion-dismiss" onClick={() => dismiss(suggestion)} aria-label={`Dismiss: ${suggestion.noticed}`} title="Dismiss"><CloseIcon size={14} /></button>
+                      <h3>{suggestion.noticed}</h3>
+                      <p className="suggestion-why">{suggestion.why}</p>
+                      <p className="suggestion-recommendation">{suggestion.recommendation}</p>
+                      <button className="btn-secondary suggestion-action" onClick={() => runSuggestion(suggestion)}>{suggestion.action.label}</button>
+                    </article>
+                  ))}
+                </div>
               </section>
             )}
 
-            <section className="overview-section">
+            <section className="overview-section" aria-labelledby="home-continue-title">
               <div className="overview-section-head">
-                <h2>Recent</h2>
-                {recent.length > 0 && <button onClick={() => navigate(pagePath('recent'))}>View all</button>}
+                <h2 id="home-continue-title">Continue working</h2>
+                {overview.continueWorking.length > 0 && <button onClick={() => navigate(pagePath('recent'))}>View all recent</button>}
               </div>
-              {recent.length > 0 ? (
-                <FileRowList files={recent} onOpen={onOpenFile} />
+              {overview.continueWorking.length > 0 ? (
+                <FileRowList files={overview.continueWorking} onOpen={onOpenFile} />
               ) : (
-                <div className="overview-empty">
-                  <p>Files you upload, open or edit will show up here.</p>
-                  <button className="btn-primary" onClick={() => navigate(pagePath('files'))}>Go to My Files</button>
-                </div>
+                <p className="overview-muted">Files you open, edit, share or upload in the last 30 days will show up here.</p>
               )}
-            </section>
-
-            <section className="overview-section">
-              <div className="overview-section-head">
-                <h2>Shared with you</h2>
-                {shared.length > 0 && <button onClick={() => navigate(pagePath('shared'))}>View all</button>}
-              </div>
-              {shared.length > 0
-                ? <FileRowList files={shared} onOpen={onOpenFile} detail="owner" />
-                : <p className="overview-muted">Nothing has been shared with you yet.</p>}
             </section>
           </div>
 
           <aside className="home-side">
-            <section className="home-ai-card">
-              <div className="home-ai-card-head">
-                <AIAssistantIcon size={18} />
-                <h2>File Box AI</h2>
-                <span className={`home-ai-dot ${aiReady ? 'online' : ''}`} aria-label={aiReady ? 'Online' : 'Offline'} />
-              </div>
-              {aiReady === false ? (
-                <p>Local AI is offline. Start Ollama on your computer to use it — your files work normally without it.</p>
-              ) : (
-                <>
-                  <p>Ask about your files or tell File Box what to do.</p>
-                  {AI_STARTERS.map(starter => (
-                    <button key={starter} className="home-ai-starter" onClick={() => askAI(starter)}>{starter}</button>
-                  ))}
-                </>
-              )}
-              <button className="home-ai-open" onClick={() => navigate(pagePath('ai-assistant'))}>Open File Box AI <ArrowRightIcon size={13} /></button>
-            </section>
-
-            <section className="overview-section">
-              <div className="overview-section-head"><h2>Activity</h2></div>
-              {activity.length > 0 ? (
+            <section className="overview-section" aria-labelledby="home-activity-title">
+              <div className="overview-section-head"><h2 id="home-activity-title">Recent activity</h2></div>
+              {overview.activity.length > 0 ? (
                 <ul className="activity-list">
-                  {activity.map(entry => (
-                    <li key={entry._id}>
-                      <span>{ACTIVITY_VERBS[entry.action] || 'Updated'} <strong>{entry.file?.originalName || entry.folder?.name}</strong></span>
-                      <time dateTime={entry.createdAt}>{formatRelativeTime(entry.createdAt)}</time>
-                    </li>
-                  ))}
+                  {overview.activity.map(entry => {
+                    const { who, text } = describeActivity(entry);
+                    return (
+                      <li key={entry._id} className={entry.source === 'filebox' ? 'by-filebox' : ''}>
+                        <span><strong className="activity-who">{who}</strong> {text}</span>
+                        <time dateTime={entry.createdAt}>{formatRelativeTime(entry.createdAt)}</time>
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : (
-                <p className="overview-muted">Your recent file activity will appear here.</p>
+                <p className="overview-muted">Uploads, edits, shares and things File Box does for you will appear here.</p>
               )}
             </section>
           </aside>
+        </div>
+      )}
+
+      {panel && (
+        <div className="ai-panel-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPanel(null); }}>
+          <div className="ai-panel-dialog wide" role="dialog" aria-modal="true" aria-labelledby="home-panel-title">
+            <header className="ai-panel-header">
+              <div>
+                <h2 id="home-panel-title"><AIAssistantIcon size={18} /> {panel === 'duplicates' ? 'Clean up duplicates' : 'Let File Box organize this'}</h2>
+                <p>Review each suggestion. Nothing changes until you confirm.</p>
+              </div>
+              <button className="ai-panel-close" onClick={() => { setPanel(null); load(); }} aria-label="Close"><CloseIcon size={18} /></button>
+            </header>
+            {panel === 'duplicates' ? <DuplicateReview onChanged={load} /> : <OrganizeReview onApplied={load} />}
+          </div>
         </div>
       )}
     </div>

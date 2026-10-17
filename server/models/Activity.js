@@ -41,6 +41,12 @@ const activitySchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  // 'filebox' when File Box AI or an approved File Box suggestion did it; 'user' otherwise.
+  source: {
+    type: String,
+    enum: ['user', 'filebox'],
+    default: 'user'
+  },
   createdAt: {
     type: Date,
     default: Date.now

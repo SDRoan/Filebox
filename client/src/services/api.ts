@@ -1110,6 +1110,39 @@ export const signaturesAPI = {
   },
 };
 
+// Home overview (local data only; works when File Box AI is offline)
+export interface HomeSuggestion {
+  id: string;
+  fingerprint: string;
+  noticed: string;
+  why: string;
+  recommendation: string;
+  action: { label: string; type: 'navigate' | 'duplicates' | 'organize'; to?: string };
+}
+export interface HomeActivity {
+  _id: string;
+  action: string;
+  source: 'user' | 'filebox';
+  details: string;
+  fileName: string | null;
+  folderName: string | null;
+  createdAt: string;
+  count: number;
+}
+export interface HomeOverview {
+  continueWorking: any[];
+  suggestions: HomeSuggestion[];
+  suggestionsAvailable: number;
+  activity: HomeActivity[];
+}
+
+export const homeAPI = {
+  getOverview: async (): Promise<HomeOverview> => {
+    const response = await api.get('/home');
+    return response.data;
+  },
+};
+
 // AI Assistant API (local Ollama)
 export type AssistantHistoryMessage = { role: 'user' | 'assistant'; content: string };
 

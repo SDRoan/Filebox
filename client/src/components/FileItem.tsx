@@ -331,7 +331,7 @@ const FileItem: React.FC<FileItemProps> = ({
                   <LinkIcon size={18} color="currentColor" />
                 </button>
               )}
-              <button onClick={() => setShowAIDialog(true)} className="icon-button" title="Ask File Box AI">
+              <button onClick={() => setShowAIDialog(true)} className="icon-button" title="Ask File Box">
                 <AIAssistantIcon size={18} color="currentColor" />
               </button>
               {caps.canRename && (

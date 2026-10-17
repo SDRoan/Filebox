@@ -179,6 +179,15 @@ const AIAssistant: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sending, messages]);
 
+  // Home's "Summarize documents" chip: /ai?prefill=<text> fills the box without sending.
+  useEffect(() => {
+    const prefill = new URLSearchParams(location.search).get('prefill');
+    if (prefill) {
+      setInput(prefill);
+      inputRef.current?.focus();
+    }
+  }, [location.search]);
+
   // "Ask File Box AI" from a file menu: /ai?file=<id> preselects that file.
   useEffect(() => {
     const fileId = new URLSearchParams(location.search).get('file');

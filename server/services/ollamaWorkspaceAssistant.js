@@ -12,6 +12,7 @@ const { chunkText } = require('../utils/chunkText');
 const { searchWorkspace } = require('./workspaceSearch');
 const { readableFileFilter } = require('./permissions');
 const { buildDuplicateSuggestions } = require('./duplicateSuggestions');
+const { logFileBoxAction } = require('./activityLog');
 
 const ACTION_TYPES = [
   'create_relationship',
@@ -781,6 +782,7 @@ Respond to the latest user request now.`,
       userId,
       { selectedFileId: selectedFile?._id?.toString() || null, selectedFile }
     );
+    if (actionResult.success) await logFileBoxAction(userId, type, actionResult.data);
 
     return {
       answer: this.formatActionAnswer(type, actionResult),
@@ -905,6 +907,7 @@ Respond to the latest user request now.`,
         userId,
         actionContext
       );
+      if (actionResult?.success) await logFileBoxAction(userId, planningDecision.toolAction, actionResult.data);
     }
 
     if (planningDecision.intent === 'action' && planningDecision.toolAction === 'none' && isActionRequest) {

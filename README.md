@@ -1,15 +1,18 @@
 # File Box
 
-File Box is an intelligent cloud drive: store, organize, share, protect, search and understand your files.
-Its AI assistant, File Box AI, runs locally through [Ollama](https://ollama.com), so no file content is ever sent to a hosted AI service and nothing requires a paid account.
+**File Box is an intelligent cloud drive that works with your files, with you and for you.**
 
-> **Dropbox stores your files. File Box understands and works with your files.**
+Store, share and protect your files like a traditional cloud drive, while File Box helps you understand, organize and work with them. Its AI, File Box AI, runs locally through [Ollama](https://ollama.com): no file content is sent to a hosted AI service and nothing requires a paid account.
+
+- **Works with your files:** search by meaning, summaries, key points, dates, OCR, questions about a file.
+- **Works with you:** quiet suggestions on Home (duplicates, things to organize, Trash, large or broken files), never pop-ups.
+- **Works for you:** File Box prepares organization, cleanup and file actions; you review and confirm before anything changes.
 
 The current version runs on localhost as a private, local-AI build of the product.
 
 ## What's in the product
 
-- **Home** – search, starred files, recent files, files shared with you, recent activity and a File Box AI entry point
+- **Home** – Ask File Box, Continue working, up to three File Box suggestions, and recent activity (including what File Box did for you)
 - **My Files** – folders, upload, download, rename, move, copy, star, trash, version history, previews
 - **Shared / Recent / Starred / Trash** – real data from file timestamps, access logs and activity
 - **File Box AI** – ask about your files or tell File Box what to do (create folders, rename, move, star, share, trash, file requests, team spaces, backups, summaries)

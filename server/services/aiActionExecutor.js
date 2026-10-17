@@ -609,7 +609,7 @@ class AIActionExecutor {
     return {
       success: true,
       message: `Moved ${deletedFiles.join(', ')} to Trash.`,
-      data: { deletedFiles },
+      data: { deletedFiles, fileIds: files.map((file) => file._id) },
     };
   }
 
@@ -673,7 +673,7 @@ class AIActionExecutor {
     return {
       success: true,
       message: `Starred ${starredFiles.join(', ')}.`,
-      data: { starredFiles },
+      data: { starredFiles, fileIds: files.map((file) => file._id) },
     };
   }
 
@@ -719,6 +719,7 @@ class AIActionExecutor {
         success: true,
         message: `Shared ${sharedFiles.join(', ')} with ${userEmail}.`,
         data: {
+          fileIds: files.map((file) => file._id),
           sharedFiles,
           sharedWith: userEmail,
         },
@@ -743,6 +744,7 @@ class AIActionExecutor {
       success: true,
       message: `Created ${shareLinks.length} share link${shareLinks.length > 1 ? 's' : ''}.`,
       data: {
+        fileIds: files.map((file) => file._id),
         sharedFiles: shareLinks.map((link) => link.fileName),
         shareLinks,
       },
@@ -789,6 +791,7 @@ class AIActionExecutor {
       success: true,
       message: `Moved ${movedFiles.join(', ')} to "${folder.name}".`,
       data: {
+        fileIds: files.map((file) => file._id),
         movedFiles,
         targetFolder: folder.name,
       },
@@ -824,6 +827,7 @@ class AIActionExecutor {
       success: true,
       message: `Renamed "${oldName}" to "${newName}".`,
       data: {
+        fileIds: [file._id],
         oldName,
         newName,
       },

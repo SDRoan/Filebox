@@ -6,6 +6,7 @@ const File = require('../models/File');
 const User = require('../models/User');
 const FileActivity = require('../models/FileActivity');
 const analytics = require('../services/analytics');
+const Activity = require('../models/Activity');
 const { authorizeFile, sendDenied, isActiveShare } = require('../services/permissions');
 const router = express.Router();
 
@@ -104,6 +105,7 @@ router.post('/create', auth, async (req, res) => {
       expiresAt: expiry.date,
     });
 
+    await Activity.create({ user: req.user._id, file: access.file._id, action: 'shared', details: 'Created a link' }).catch(() => {});
     res.status(201).json({ _id: share._id, ...linkSummary(share), file: access.file._id });
   } catch (error) {
     console.error('[Share] Error creating share:', error);
@@ -144,6 +146,9 @@ router.post('/user', auth, async (req, res) => {
     await file.save();
 
     await analytics.recordActivity(file._id, req.user._id, 'share', { sharedWith: userToShare._id, permission });
+    if (!existing) {
+      await Activity.create({ user: req.user._id, file: file._id, action: 'shared', details: `with ${userToShare.name || userToShare.email}` }).catch(() => {});
+    }
 
     const io = req.app.get('io');
     if (io && !existing) {

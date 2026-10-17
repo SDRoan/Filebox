@@ -19,3 +19,4 @@
 
 .workspace-search-ask-ai { display: block; width: 100%; padding: 10px 14px; border: 0; border-top: 1px solid #edf0e8; background: none; color: #3f6543; font-size: 12px; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .workspace-search-ask-ai:hover { background: #f2f5ee; }
+.workspace-search-enter { margin-left: 6px; padding: 1px 6px; border: 1px solid #e2e8da; border-radius: 4px; font-size: 10px; color: #8a967e; }

@@ -154,6 +154,16 @@ Documented and intentionally left for later phases:
 | SMTP (optional) | Email verification and password reset | Free with any mailbox you already have; File Box works without it |
 | Microsoft Teams / Zoom / Slack OAuth (optional) | Integrations page | Free developer apps; not needed for core File Box |
 
+## Home overview (Phase 4A)
+
+`GET /api/home` (`services/homeSummary.js`) returns everything Home shows, computed from local data only. It never calls Ollama, so Home stays fast and works offline.
+
+- **Continue working:** files from the last 30 days scored by interaction type (edited 3, shared with you 2.5, viewed/downloaded/shared/commented/File Box action 2, restored/starred 1.5, uploaded/renamed/copied 1, moved 0.5), each decaying with a one-week half-life. Sources: Activity entries, the file access log, share-entry timestamps and upload times. Results are limited to files the user can still open (`readableFileFilter` + `filterReadable`); trashing is ignored.
+- **Suggestions:** all candidates in priority order (Home shows the first 3 not dismissed, so dismissing reveals the next): files missing from disk, Trash items deleted forever within 3 days, duplicate files (checksum budget 100 files / 64 MB on Home), screenshots or name-prefix groups in My Files (organize rules), Trash ≥ 50 MB or ≥ 20% of usage (min 5 MB), and the five largest files when they hold ≥ 50% of usage (min 10 MB). Each has what File Box noticed, why it matters, a recommendation and one action (open a review dialog or a page). Nothing runs automatically. Dismissals are stored in the browser per suggestion and fingerprint, so a card returns only when what File Box noticed changes.
+- **Recent activity:** the user's Activity entries, with consecutive identical File Box actions grouped ("File Box organized 4 files into Screenshots").
+
+**Schema addition:** `Activity.source` (`'user' | 'filebox'`, default `'user'`). Additive; existing records read as `'user'`. File Box sets it for AI actions and approved organize changes. Sharing (with a person or by link) is now recorded as an Activity entry.
+
 ## Storage page
 
 `services/storageSummary.js` measures real usage from the user's files (active plus Trash), by category (Documents, Images, Videos, Audio, Archives, Other, by MIME type and extension), the largest files, Trash size, files missing from disk, and duplicate files. Duplicates are found by grouping equal sizes and confirming with SHA-256 (capped at 300 files / 1 GB per request). If the account's quota counter has drifted from the measured total, the page says so and offers an explicit recalculation.

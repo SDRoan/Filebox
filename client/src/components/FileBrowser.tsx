@@ -512,7 +512,7 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
         <div className="file-page-heading">
           <div>
             <h1>{showTrash ? 'Trash' : showStarred ? 'Starred' : breadcrumbFolders.length > 0 ? breadcrumbFolders[breadcrumbFolders.length - 1].name : 'Your files'}<span className="page-heading-period">.</span></h1>
-            <p>{showTrash ? 'Items here are deleted forever 30 days after you delete them. Restore anything you still need.' : showStarred ? 'The things you want to keep close.' : 'A home for everything you’re working on.'}</p>
+            <p>{showTrash ? 'Items here are deleted forever 30 days after you delete them. Restore anything you still need.' : showStarred ? 'The things you want to keep close.' : isTeamFolder ? 'Files shared with this Team Space.' : 'Your drive. File Box can help organize it.'}</p>
           </div>
           <div className="file-page-actions">
             {showTrash && files.length + folders.length > 0 && (
@@ -527,7 +527,7 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
             }}>
               <summary aria-label="More file actions" title="More file actions"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></summary>
               <div className="file-more-options">
-                {!showTrash && !showStarred && !isTeamFolder && <button onClick={(event) => { setShowSmartOrg(true); event.currentTarget.closest('details')?.removeAttribute('open'); }}><SmartOrganizeIcon size={16} />Organize with File Box AI</button>}
+                {!showTrash && !showStarred && !isTeamFolder && <button onClick={(event) => { setShowSmartOrg(true); event.currentTarget.closest('details')?.removeAttribute('open'); }}><SmartOrganizeIcon size={16} />Let File Box organize this</button>}
                 <button disabled={files.length + folders.length === 0} onClick={(event) => { setSelectionMode(true); event.currentTarget.closest('details')?.removeAttribute('open'); }}><CheckIcon size={16} />Select items</button>
               </div>
             </details>
@@ -623,7 +623,7 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
           <div className="ai-panel-dialog wide" role="dialog" aria-modal="true" aria-labelledby="organize-title">
             <header className="ai-panel-header">
               <div>
-                <h2 id="organize-title"><AIAssistantIcon size={18} /> Organize with File Box AI</h2>
+                <h2 id="organize-title"><AIAssistantIcon size={18} /> Let File Box organize this</h2>
                 <p>Review each suggestion; nothing changes until you confirm.</p>
               </div>
               <button className="ai-panel-close" onClick={() => setShowSmartOrg(false)} aria-label="Close"><DialogCloseIcon size={18} /></button>

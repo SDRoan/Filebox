@@ -61,6 +61,7 @@ const INTERACTION_LABELS: Record<string, string> = {
   unstarred: 'You unstarred',
   shared: 'You shared',
   shared_with_you: 'Shared with you',
+  filebox: 'File Box updated',
   commented: 'You commented',
   version_created: 'New version',
   version_restored: 'Version restored',
