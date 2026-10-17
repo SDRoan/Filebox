@@ -13,7 +13,6 @@ const DOCUMENT_EXT = ['pdf', 'doc', 'docx', 'odt', 'rtf'];
 const CODE_EXT = ['js', 'jsx', 'ts', 'tsx', 'py', 'java', 'c', 'h', 'cpp', 'hpp', 'cc', 'cs', 'go', 'rs', 'rb', 'php', 'swift', 'kt', 'scala', 'sh', 'bash', 'zsh', 'ps1', 'sql', 'html', 'css', 'scss', 'vue', 'svelte', 'dart', 'lua', 'r', 'm', 'pl', 'yaml', 'yml', 'toml', 'xml', 'json'];
 const TEXT_EXT = ['txt', 'md', 'markdown', 'csv', 'log', 'ini', 'cfg', 'tex'];
 const IMAGE_OCR_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/bmp', 'image/tiff', 'image/webp'];
-const MAX_TEXT = 12000;
 
 const extensionOf = (name = '') => (name.includes('.') ? name.split('.').pop().toLowerCase() : '');
 
@@ -59,6 +58,17 @@ const ACTIONS_BY_KIND = {
 };
 
 const needsOllama = (action) => action !== 'extract_text';
+
+// Which generation profile each action uses (see TASK_PROFILES in ollamaClient).
+const ACTION_TASKS = {
+  summarize: 'summarize',
+  explain_simply: 'summarize',
+  summarize_text: 'summarize',
+  explain_code: 'answer',
+  key_points: 'extract',
+  important_dates: 'extract',
+  find_sections: 'extract',
+};
 
 /** Actions this file supports, with availability given the current Ollama status. */
 async function listActions(file) {
@@ -114,12 +124,12 @@ async function runAction(file, action) {
     }
     const filePath = await assistant.resolveFilePath(file);
     const image = (await fs.readFile(filePath)).toString('base64');
-    const description = await ollamaClient.chatImage({
+    const description = await ollamaClient.chat({
+      task: 'describe',
       model: config.ollama.visionModel,
       system: 'Describe images for a file storage product. Be factual and concise; do not guess names of people.',
       content: 'Describe this image in 2-4 sentences.',
       images: [image],
-      options: { temperature: 0.2 },
     });
     return { action, result: description.trim(), provider: 'ollama', model: config.ollama.visionModel };
   }
@@ -129,13 +139,14 @@ async function runAction(file, action) {
     throw Object.assign(new Error('No readable text was found in this file.'), { status: 422 });
   }
 
-  const result = await ollamaClient.chatText({
+  const { text: result, trimmed } = await ollamaClient.generate({
+    task: ACTION_TASKS[action],
     model: config.ollama.assistantModel,
     system: `You help people understand their files in File Box. ${PROMPTS[action]}`,
-    content: `File name: ${file.originalName}\n\n${text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}\n...[truncated]` : text}`,
-    options: { temperature: 0.2 },
+    content: `File name: ${file.originalName}\n\nFile text:`,
+    context: text,
   });
-  return { action, result: result.trim(), provider: 'ollama', model: config.ollama.assistantModel, truncated: text.length > MAX_TEXT };
+  return { action, result: result.trim(), provider: 'ollama', model: config.ollama.assistantModel, truncated: trimmed };
 }
 
 module.exports = { listActions, runAction, kindOf };

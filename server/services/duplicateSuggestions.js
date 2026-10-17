@@ -110,7 +110,7 @@ async function buildDuplicateSuggestions(userId, { explain = false } = {}) {
         model: config.ollama.assistantModel,
         system: 'Explain duplicate-file cleanup suggestions to a user in 2-4 plain sentences. Do not change the suggestions, do not suggest deleting anything not listed, and remind them nothing is removed until they confirm.',
         content: brief,
-        options: { temperature: 0.2 },
+        task: 'answer',
       })).trim();
     }
   }

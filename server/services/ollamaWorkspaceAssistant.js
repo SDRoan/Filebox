@@ -99,6 +99,11 @@ class OllamaWorkspaceAssistant {
   formatActionAnswer(actionType, actionResult) {
     const safeMessage = this.cleanActionMessage(actionResult?.message || 'The action finished.');
 
+    // A question back to the user (which file? whose email?) is not a failure.
+    if (actionResult?.needsInput) {
+      return safeMessage;
+    }
+
     if (!actionResult?.success) {
       return `I couldn't complete that action. ${safeMessage}`;
     }
@@ -394,10 +399,11 @@ class OllamaWorkspaceAssistant {
 
       if (sourceText.length <= 6500) {
         summary = await ollamaClient.chatText({
+          task: 'summarize',
           model,
           system: 'You summarize files for a cloud storage copilot. Write a short but rich summary in plain English with the document purpose, main points, and why it matters. Stay grounded in the text.',
-          content: `File name: ${file.originalName}\nFile type: ${file.mimeType}\n\nDocument text:\n${sourceText}`,
-          options: { temperature: 0.2 },
+          content: `File name: ${file.originalName}\nFile type: ${file.mimeType}\n\nDocument text:`,
+          context: sourceText,
         });
       } else {
         const chunks = chunkText(sourceText, 4500).slice(0, 8);
@@ -405,10 +411,11 @@ class OllamaWorkspaceAssistant {
 
         for (let index = 0; index < chunks.length; index += 1) {
           const chunkSummary = await ollamaClient.chatText({
+            task: 'summarize',
             model,
             system: 'You summarize one chunk of a larger document. Capture the important facts, arguments, and signals in 5-7 sentences.',
-            content: `File name: ${file.originalName}\nChunk ${index + 1} of ${chunks.length}\n\n${chunks[index]}`,
-            options: { temperature: 0.15 },
+            content: `File name: ${file.originalName}\nChunk ${index + 1} of ${chunks.length}`,
+            context: chunks[index],
           });
 
           if (chunkSummary?.trim()) {
@@ -417,10 +424,11 @@ class OllamaWorkspaceAssistant {
         }
 
         summary = await ollamaClient.chatText({
+          task: 'summarize',
           model,
           system: 'Combine chunk summaries into one coherent file summary for a cloud storage copilot. Explain what the file is, the main points, and why it matters. Use a few short paragraphs.',
-          content: `File name: ${file.originalName}\n\n${chunkSummaries.join('\n\n')}`,
-          options: { temperature: 0.2 },
+          content: `File name: ${file.originalName}`,
+          context: chunkSummaries.join('\n\n'),
         });
       }
 
@@ -637,9 +645,9 @@ JSON shape:
   "clarifyingQuestion": "",
   "reasoning": ""
 }`,
+      task: 'plan',
       content: JSON.stringify(plannerPrompt, null, 2),
       format: 'json',
-      options: { temperature: 0.1 },
     });
 
     return this.normalizePlannerDecision(plannerResponse, question, Boolean(selectedFile));
@@ -697,8 +705,7 @@ ${workspaceSummary}
 ${context ? `Additional UI context:\n${context}\n` : ''}
 
 ${selectedFile ? `Selected file metadata:\nName: ${selectedFile.originalName}\nType: ${selectedFile.mimeType}\nSize: ${formatBytes(selectedFile.size)}\n` : ''}
-
-${fileContext ? `Selected file context:\n${fileContext}\n` : ''}
+{{CONTEXT}}
 
 Tool summary:
 ${toolSummary}
@@ -710,7 +717,9 @@ Latest user request:
 ${question}
 
 Respond to the latest user request now.`,
-      options: { temperature: config.ollama.assistantTemperature },
+      task: 'answer',
+      // File text is the only part that may be trimmed to fit; rules and the request never are.
+      context: fileContext ? `Selected file context:\n${fileContext}` : '',
     });
 
     return response.trim();
@@ -727,13 +736,20 @@ Respond to the latest user request now.`,
   }
 
   async buildConfirmationRequest(actionType, question, userId, actionContext) {
-    const targets = await aiActionExecutor.describeTargets(question, userId, actionContext);
     const reply = {
       provider: 'ollama',
       model: config.ollama.assistantModel,
       fileId: actionContext.selectedFileId,
       timestamp: new Date(),
     };
+
+    // "Share X with Sarah" without an email: ask for it; never fall back to a public link.
+    if (actionType === 'share_file') {
+      const recipientQuestion = aiActionExecutor.shareRecipientQuestion(question);
+      if (recipientQuestion) return { ...reply, answer: recipientQuestion, needsInput: 'email' };
+    }
+
+    const targets = await aiActionExecutor.describeTargets(question, userId, actionContext);
 
     if (!targets.length) {
       return {

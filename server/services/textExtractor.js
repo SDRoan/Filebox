@@ -312,13 +312,11 @@ class TextExtractor {
             continue;
           }
 
-          const pageText = await ollamaClient.chatImage({
+          const pageText = await ollamaClient.chat({
+            task: 'ocr',
             model: config.ollama.ocrModel,
             content: 'Extract all readable text from this document page in natural reading order. Return only the text, with no commentary or markdown fences.',
             images: [base64Image],
-            options: {
-              temperature: 0,
-            },
           });
 
           const cleanText = this.cleanOcrText(pageText);

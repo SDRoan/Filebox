@@ -389,9 +389,15 @@ class AIActionExecutor {
       return { type: 'create_cloud_backup', confidence: 0.88 };
     }
 
+    // Sharing is checked before file connections: "share budget.pdf as a link" is a share-link request.
+    if (match(/\bshare\b/i) && !match(/\b(relationship|relate)\b/i)) {
+      return { type: 'share_file', confidence: 0.86 };
+    }
+
+    // File connections need an explicit word for it; a bare "link" is not enough.
     if (
-      match(/create.*relationship|relate|link|connect.*file|relationship.*between|make.*relationship|add.*relationship/i) ||
-      ((this.extractFileNames(message) || []).length >= 2 && /(relationship|relate|link|connect)/i.test(message))
+      match(/create.*relationship|\brelate\b|connect.*file|relationship.*between|make.*relationship|add.*relationship/i) ||
+      ((this.extractFileNames(message) || []).length >= 2 && /(relationship|\brelate\b|\bconnect\b|\blink\b)/i.test(message))
     ) {
       return { type: 'create_relationship', confidence: 0.9 };
     }
@@ -416,7 +422,7 @@ class AIActionExecutor {
       return { type: 'move_file', confidence: 0.76 };
     }
 
-    if ((/rename|change.*name|call.*file|name.*file/i.test(message) && mentionsFile) || /rename this/i.test(lowerMessage)) {
+    if ((/rename|change.*name|call.*file|name.*file/i.test(message) && mentionsFile) || /rename this/i.test(lowerMessage) || /\brename\s+.+?\s+(?:to|as)\s+\S/i.test(message)) {
       return { type: 'rename_file', confidence: 0.84 };
     }
 
@@ -678,6 +684,11 @@ class AIActionExecutor {
   }
 
   async shareFile(message, userId, context = {}) {
+    const recipientQuestion = this.shareRecipientQuestion(message);
+    if (recipientQuestion) {
+      return { success: false, needsInput: true, message: recipientQuestion };
+    }
+
     const files = await this.resolveFilesFromMessageOrSelection(message, userId, context);
 
     if (!files.length) {
@@ -761,9 +772,11 @@ class AIActionExecutor {
       };
     }
 
-    const folderMatch = message.match(/(?:to|into|in)\s+["'`]?([^"'`]+?)["'`]?(?:[.!?]|$)/i)
+    const quotedTarget = message.match(/\b(?:to|into|in)\s+(?:the\s+|my\s+)?["'`]([^"'`]+)["'`]/i);
+    const folderMatch = quotedTarget
+      || message.match(/(?:to|into|in)\s+["'`]?([^"'`]+?)["'`]?(?:[.!?]|$)/i)
       || message.match(/folder\s+["'`]?([^"'`]+?)["'`]?(?:[.!?]|$)/i);
-    const folderName = this.sanitizeLabel(folderMatch?.[1] || '');
+    const folderName = this.cleanFolderPhrase(folderMatch?.[1] || '');
 
     if (!folderName) {
       return {
@@ -799,7 +812,20 @@ class AIActionExecutor {
   }
 
   async renameFile(message, userId, context = {}) {
-    const files = await this.resolveFilesFromMessageOrSelection(message, userId, context);
+    let files = await this.resolveFilesFromMessageOrSelection(message, userId, context);
+
+    if (!files.length) {
+      const resolved = await this.resolveRenameTarget(message, userId);
+      if (resolved.ambiguous) {
+        return {
+          success: false,
+          needsInput: true,
+          message: `I found ${resolved.ambiguous.length} files matching "${resolved.phrase}": ${resolved.ambiguous.map(n => `"${n}"`).join(', ')}. Which one should I rename? Say its full name or select it first.`,
+          data: { candidates: resolved.ambiguous },
+        };
+      }
+      files = resolved.files;
+    }
 
     if (!files.length) {
       return {
@@ -820,16 +846,19 @@ class AIActionExecutor {
 
     const file = files[0];
     const oldName = file.originalName;
-    file.originalName = newName;
+    // Keep the file type when the new name has no extension ("Resume 2026" -> "Resume 2026.pdf").
+    const oldExt = path.extname(oldName);
+    const finalName = oldExt && !path.extname(newName) ? `${newName}${oldExt}` : newName;
+    file.originalName = finalName;
     await file.save();
 
     return {
       success: true,
-      message: `Renamed "${oldName}" to "${newName}".`,
+      message: `Renamed "${oldName}" to "${finalName}".`,
       data: {
         fileIds: [file._id],
         oldName,
-        newName,
+        newName: finalName,
       },
     };
   }
@@ -1150,6 +1179,46 @@ class AIActionExecutor {
         backupFrequency: backup.backupFrequency,
       },
     };
+  }
+
+  /** "the Taxes 2026 folder" / "my Taxes folder" / '"Taxes 2026"' -> the folder's own name. */
+  cleanFolderPhrase(phrase = '') {
+    let name = this.sanitizeLabel(phrase).replace(/^["'`]+|["'`]+$/g, '');
+    name = name.replace(/^(?:the|my|our|a|an)\s+/i, '').replace(/\s+(?:folder|directory)$/i, '');
+    return name.replace(/^["'`]+|["'`]+$/g, '').trim();
+  }
+
+  /**
+   * Sharing with a person needs their exact email. "Share X with Sarah" gets a question, never a public link.
+   * Returns the question to ask, or null when the request is fine as is.
+   */
+  shareRecipientQuestion(message = '') {
+    if (this.extractEmail(message)) return null;
+    const match = message.match(/\bwith\s+(?!(?:a|the|an)\s+(?:public\s+)?link\b|link\b|everyone\b|anyone\b|anybody\b)([a-z][\w'.-]*(?:\s+[a-z][\w'.-]*)?)/i);
+    if (!match) return null;
+    const name = match[1].replace(/[.,!?]+$/, '').trim();
+    const display = name.charAt(0).toUpperCase() + name.slice(1);
+    return `What's ${display}'s email address? File Box shares only with the exact email of a File Box account, for example "share it with ${name.toLowerCase().replace(/\s+/g, '.')}@example.com".`;
+  }
+
+  /**
+   * Resolve "rename my resume to ..." without an extension: the words between "rename" and "to"
+   * must match exactly one of the user's own files. Several matches -> ask; none -> say so.
+   */
+  async resolveRenameTarget(message, userId) {
+    const phrase = (message.match(/\brename\s+(?:the\s+|my\s+|this\s+|that\s+)?(?:file\s+)?["'`]?(.+?)["'`]?\s+(?:to|as)\s+\S/i) || [])[1];
+    const words = (phrase || '').toLowerCase().replace(/\bfile\b/g, ' ').split(/[^a-z0-9]+/).filter(w => w.length > 1);
+    if (!words.length) return { files: [] };
+
+    const pattern = words.map(w => `(?=.*${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`).join('');
+    const candidates = await File.find({ owner: userId, isTrashed: { $ne: true }, originalName: { $regex: `^${pattern}`, $options: 'i' } })
+      .sort({ updatedAt: -1 }).limit(10);
+    if (candidates.length <= 1) return { files: candidates };
+
+    // Several matches: only an exact name match (ignoring extension and case) is unambiguous.
+    const exact = candidates.filter(f => path.parse(f.originalName).name.toLowerCase() === words.join(' ') || path.parse(f.originalName).name.toLowerCase() === phrase.toLowerCase());
+    if (exact.length === 1) return { files: exact };
+    return { files: [], ambiguous: candidates.map(f => f.originalName), phrase };
   }
 
   /**

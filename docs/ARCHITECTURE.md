@@ -79,6 +79,22 @@ AIAssistant page ─► POST /api/ai-assistant/chat
 - **Summaries** (`/api/summaries`, assistant) use `OLLAMA_SUMMARY_MODEL` on demand. Uploads no longer auto-summarize.
 - **OCR**: scanned PDFs try Ollama's OCR model, then fall back to Tesseract.js. The English language data ships in the repo (`server/eng.traineddata`), so OCR works offline. OCR runs in a guarded worker so a corrupt image can't crash the server.
 
+### Generation settings (Accuracy Steps 1–2)
+
+Every model call goes through `services/ollamaClient.js`; callers pass a `task` and never set temperature.
+
+- **Task profiles** (`TASK_PROFILES`): classify, plan, action, extract, organize, rename, ocr, summarize, answer, describe. All use temperature 0 with a fixed seed (`OLLAMA_SEED`, default 42) and a per-task output cap. Seeded 0.1 still drifted on long summaries, so summaries and answers also use 0.
+- **Context window**: `num_ctx` is always sent (`OLLAMA_CONTEXT_WINDOW`, default 8192). Ollama's default of 4096 silently dropped the start of long prompts.
+- **Prompt budget** (`fitPrompt`): system rules and the request are never trimmed. Only file/document context (passed as `context`) is trimmed, from the end, with a marker, and placed at a `{{CONTEXT}}` slot in the request when one is given. If the rules and request alone do not fit, the call fails with `PROMPT_TOO_LARGE` (413) instead of dropping rules.
+- **Exact-repeat cache**: Ollama reuses its prompt cache between calls, which can change the first long output slightly compared with later identical calls. Text requests are cached in memory (300 entries, 6 hours) by a hash of task, model, prompt, file text and settings, so the same request with the same files gives the same answer. Any change to the request or the file is a new key. Images are not cached. The cache is cleared on restart.
+
+### Assistant parser fixes (Accuracy Step 2)
+
+- "Share X as a link" is a share request (confirmation required), not a file relationship.
+- "Move X into the Taxes 2026 folder" resolves the folder name without "the" or "folder"; quoted names win.
+- "Share X with Sarah" without an email asks for Sarah's email and creates nothing. File Box shares only with an exact account email.
+- "Rename my resume to …" finds the user's own file without an extension when exactly one matches, keeps the original extension, and asks which file when several match.
+
 ### AI search scope (Phase 3)
 
 "Find…" questions search everything the user may read, using the Phase 2 permission module: owned files, active direct shares, and files anywhere inside the user's Team Spaces (`readableFileFilter`). Every result is then re-checked with `getFileRole` (`filterReadable`), labelled with how the user can see it (`source`: owned / shared / team, plus role, owner name or Team Space name), and de-duplicated; a file reachable both by direct share and through a Team Space appears once with the stronger access. Results never include server paths or other recipients. Trash is searched only when the question asks for it, and only the user's own trashed files. The header search stays limited to the user's own files.
@@ -94,7 +110,7 @@ AIAssistant page ─► POST /api/ai-assistant/chat
 | Text (txt, md, csv…) | Summarize, Key points, Find important sections, Important dates |
 | Images | Extract text (local OCR, works offline), Summarize extracted text, Describe image (only if the local vision model `OLLAMA_VISION_MODEL`, default `llama3.2-vision`, is installed) |
 
-"Ask a question about this file" opens the File Box AI chat with the file selected. Prompts are fixed per action and only see the file's own text (first 12,000 characters).
+"Ask a question about this file" opens the File Box AI chat with the file selected. Prompts are fixed per action and only see the file's own text. Text that does not fit the context window is trimmed from the end and the result says `truncated: true`.
 
 ### Duplicate suggestions
 

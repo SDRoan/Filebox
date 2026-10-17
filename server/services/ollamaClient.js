@@ -1,5 +1,90 @@
+const crypto = require('crypto');
 const axios = require('axios');
 const config = require('../config/aiConfig');
+
+/**
+ * One place for how File Box asks the model to generate, by task. Callers name a task;
+ * they don't pick temperatures. Every task uses the fixed seed and the explicit context window,
+ * so the same request with the same files gives the same answer or plan.
+ *
+ *   temperature 0 for every task. A fixed seed alone did not make temperature 0.1 repeatable
+ *   (long summaries drifted between identical runs), and the product goal is the same answer
+ *   for the same request and files. Raise a prose task to at most 0.1 only with that tradeoff in mind.
+ *   maxOutput       - reply budget in tokens; reserved before the prompt budget is computed
+ */
+const TASK_PROFILES = {
+  classify: { temperature: 0, maxOutput: 200 },
+  plan: { temperature: 0, maxOutput: 400 },
+  action: { temperature: 0, maxOutput: 400 },
+  extract: { temperature: 0, maxOutput: 900 },
+  organize: { temperature: 0, maxOutput: 1500 },
+  rename: { temperature: 0, maxOutput: 200 },
+  ocr: { temperature: 0, maxOutput: 2048 },
+  summarize: { temperature: 0, maxOutput: 900 },
+  answer: { temperature: 0, maxOutput: 1000 },
+  describe: { temperature: 0, maxOutput: 400 },
+};
+
+// Conservative estimate (English averages ~4 characters per token for Llama 3).
+const CHARS_PER_TOKEN = 3.2;
+const SAFETY_TOKENS = 256;
+const CONTEXT_SLOT = '{{CONTEXT}}';
+const estimateTokens = (text = '') => Math.ceil(String(text).length / CHARS_PER_TOKEN);
+
+/**
+ * Same request, same files -> same answer. Temperature 0 with a fixed seed is repeatable on its own,
+ * but other requests sharing the local Ollama (other apps, a different context size) can still make
+ * long outputs drift. Exact repeats are answered from this small in-memory cache. Any change to the
+ * request, the file text, the model or the settings is a different key.
+ */
+const RESPONSE_CACHE_LIMIT = 300;
+const RESPONSE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const responseCache = new Map(); // key -> { value, at }
+
+const cacheKey = (payload) => crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+function cacheGet(key) {
+  const hit = responseCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > RESPONSE_CACHE_TTL_MS) { responseCache.delete(key); return null; }
+  responseCache.delete(key); // refresh recency
+  responseCache.set(key, hit);
+  return hit.value;
+}
+function cacheSet(key, value) {
+  responseCache.set(key, { value, at: Date.now() });
+  while (responseCache.size > RESPONSE_CACHE_LIMIT) responseCache.delete(responseCache.keys().next().value);
+}
+
+class PromptTooLargeError extends Error {
+  constructor(message) {
+    super(message);
+    this.status = 413;
+    this.code = 'PROMPT_TOO_LARGE';
+  }
+}
+
+/**
+ * Fit a prompt into the context window. `system` (rules) and `content` (the request and its
+ * instructions) are never trimmed. `context` (file text, retrieved passages) is trimmed first;
+ * if the fixed parts alone don't fit, the request is refused instead of silently dropping rules.
+ */
+function fitPrompt({ system = '', content = '', context = '', contextWindow, maxOutput }) {
+  const budget = contextWindow - maxOutput - SAFETY_TOKENS;
+  const fixedTokens = estimateTokens(system) + estimateTokens(content);
+  if (fixedTokens > budget) {
+    throw new PromptTooLargeError('This request is too large for File Box AI to read at once. Try a shorter question or a smaller selection.');
+  }
+  const contextText = Array.isArray(context) ? context.filter(Boolean).join('\n\n') : String(context || '');
+  // A prompt may mark where the context belongs with {{CONTEXT}}; otherwise it goes after the request.
+  const place = (text) => (content.includes(CONTEXT_SLOT) ? content.replace(CONTEXT_SLOT, text) : `${content}\n\n${text}`.trim());
+  if (!contextText) return { user: place(''), trimmed: false };
+
+  const marker = '\n...[trimmed to fit File Box AI\'s reading limit]';
+  const room = Math.floor((budget - fixedTokens) * CHARS_PER_TOKEN) - marker.length;
+  const trimmed = contextText.length > room;
+  const fitted = trimmed ? `${contextText.slice(0, Math.max(0, room))}${marker}` : contextText;
+  return { user: place(fitted), trimmed };
+}
 
 class OllamaClient {
   getBaseUrl() {
@@ -108,10 +193,20 @@ class OllamaClient {
     }
   }
 
-  async chat({ model, system, content, images, options = {}, format, keepAlive = '5m' }) {
+  /**
+   * Generate with a task profile. `context` is optional trimmable material (file text, passages).
+   * Returns { text, trimmed } so callers can tell the user when only part of a file was read.
+   */
+  async generate({ task = 'answer', model, system, content, context, images, format, keepAlive = '5m' }) {
     if (!this.isEnabled()) {
       throw new Error('Ollama is disabled.');
     }
+    const profile = TASK_PROFILES[task];
+    if (!profile) throw new Error(`Unknown File Box AI task "${task}".`);
+
+    const contextWindow = config.ollama.contextWindow;
+    const { user, trimmed } = fitPrompt({ system, content, context, contextWindow, maxOutput: profile.maxOutput });
+    if (trimmed) console.log(`[Ollama] ${task}: context trimmed to fit ${contextWindow} tokens`);
 
     const client = this.getHttpClient();
     const payload = {
@@ -122,47 +217,53 @@ class OllamaClient {
         ...(system ? [{ role: 'system', content: system }] : []),
         {
           role: 'user',
-          content,
+          content: user,
           ...(images && images.length > 0 ? { images } : {}),
         },
       ],
-      options,
+      options: {
+        temperature: profile.temperature,
+        seed: config.ollama.seed,
+        num_ctx: contextWindow,
+        num_predict: profile.maxOutput,
+      },
     };
 
     if (format) {
       payload.format = format;
     }
 
+    // Images are not cached (large, and descriptions/OCR are already deterministic at temperature 0).
+    const key = images && images.length ? null : cacheKey({ task, ...payload, keep_alive: undefined });
+    const cached = key && cacheGet(key);
+    if (cached) return { ...cached, cached: true };
+
     try {
       const response = await client.post('/chat', payload);
-      return response.data?.message?.content || '';
+      const text = response.data?.message?.content || '';
+      if (key && text.trim()) cacheSet(key, { text, trimmed });
+      return { text, trimmed };
     } catch (error) {
       throw new Error(this.normalizeError(error));
     }
   }
 
-  async chatText({ model, system, content, options, format, keepAlive }) {
-    return this.chat({
-      model,
-      system,
-      content,
-      options,
-      format,
-      keepAlive,
-    });
+  // Reply text only.
+  async chat(args) {
+    return (await this.generate(args)).text;
   }
 
-  async chatImage({ model, system, content, images, options, format, keepAlive }) {
-    return this.chat({
-      model,
-      system,
-      content,
-      images,
-      options,
-      format,
-      keepAlive,
-    });
+  async chatText(args) {
+    return this.chat(args);
+  }
+
+  async chatImage(args) {
+    return this.chat({ task: 'describe', ...args });
   }
 }
 
 module.exports = new OllamaClient();
+module.exports.TASK_PROFILES = TASK_PROFILES;
+module.exports.fitPrompt = fitPrompt;
+module.exports.estimateTokens = estimateTokens;
+module.exports.clearResponseCache = () => responseCache.clear();

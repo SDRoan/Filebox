@@ -14,7 +14,11 @@ module.exports = {
     summaryModel: process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
     assistantModel: process.env.OLLAMA_ASSISTANT_MODEL || process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
     plannerModel: process.env.OLLAMA_ASSISTANT_PLANNER_MODEL || process.env.OLLAMA_ASSISTANT_MODEL || process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
-    assistantTemperature: parseFloat(process.env.OLLAMA_ASSISTANT_TEMPERATURE || '0.25'),
+    // Generation settings are per task in services/ollamaClient.js (TASK_PROFILES).
+    // Explicit context window: Ollama's default (4096 tokens) silently cuts long prompts from the front.
+    contextWindow: parseInt(process.env.OLLAMA_CONTEXT_WINDOW, 10) || 8192,
+    // Fixed seed so the same request with the same files gives the same answer or plan.
+    seed: Number.isFinite(parseInt(process.env.OLLAMA_SEED, 10)) ? parseInt(process.env.OLLAMA_SEED, 10) : 42,
     assistantHistoryTurns: parseInt(process.env.OLLAMA_ASSISTANT_HISTORY_TURNS, 10) || 8,
     assistantMaxFileContextChars: parseInt(process.env.OLLAMA_ASSISTANT_MAX_FILE_CONTEXT_CHARS, 10) || 12000,
     timeoutMs: parseInt(process.env.OLLAMA_TIMEOUT_MS, 10) || 120000,

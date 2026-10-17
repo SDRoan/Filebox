@@ -90,8 +90,8 @@ async function aiProposals(files, folderNames, taken) {
 {"moves":[{"index":0,"folder":"Folder name","reason":"short reason"}],"renames":[{"index":0,"name":"new name without extension","reason":"short reason"}]}
 Rules: suggest a move only when 2 or more files clearly share a topic, using a short folder name (prefer an existing folder). Suggest renames only for files marked vagueName=true, based on their snippet; skip any file you are unsure about. Never invent content. Empty arrays are fine.`,
     content: JSON.stringify({ existingFolders: folderNames.map(f => f.name), files: list }),
+    task: 'organize',
     format: 'json',
-    options: { temperature: 0.1 },
   });
 
   let parsed;
