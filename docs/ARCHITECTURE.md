@@ -145,6 +145,13 @@ Documented and intentionally left for later phases:
 - Duplicate detection covers only the user's own files (others' copies can't be trashed by them), and checks at most 300 same-size files / 1 GB per request.
 - Image description needs the optional local vision model; without it the action is not offered.
 
+### Phase 4A known issues
+
+- Dismissed Home suggestions are remembered per browser (local storage), not per account. A card comes back only when what File Box noticed changes.
+- Shares made before Phase 4A are not in Recent activity (they still count toward Continue working through the share entries).
+- Pressing Enter in the header search hands the text to File Box AI; true command routing (search vs action vs organize) is Phase 4B.
+- The login positioning line is only visible when sign-in is enabled (local preview signs in automatically).
+
 ## External services
 
 | Service | Used for | Cost |
