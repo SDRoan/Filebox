@@ -10,48 +10,27 @@ const ollamaClient = require('./ollamaClient');
 const config = require('../config/aiConfig');
 const { chunkText } = require('../utils/chunkText');
 const { searchWorkspace } = require('./workspaceSearch');
-const { readableFileFilter } = require('./permissions');
+const intentRouter = require('./intentRouter');
+const { cleanPhrase, resolveFile, resolveFolder, fileById, folderById } = require('./fileResolver');
 const { buildDuplicateSuggestions } = require('./duplicateSuggestions');
 const { logFileBoxAction } = require('./activityLog');
-
-const ACTION_TYPES = [
-  'create_relationship',
-  'delete_file',
-  'create_file',
-  'create_folder',
-  'star_file',
-  'share_file',
-  'move_file',
-  'rename_file',
-  'create_file_request',
-  'create_shortcut',
-  'create_secured_link',
-  'create_template',
-  'create_team_folder',
-  'create_cloud_backup',
-  'none',
-];
 
 // Actions that remove or expose files. The assistant describes them and waits for the user to confirm.
 const CONFIRMATION_REQUIRED_ACTIONS = ['delete_file', 'share_file'];
 
-const FIND_HINT_REGEX = /\b(find|search|look for|locate|where is|where's|which (?:file|document|pdf)s?|show me (?:my|the))\b/i;
 const SUMMARY_HINT_REGEX = /(summar(?:ize|y)|what is this|what is in|tell me about this file|explain this file|what does this file say|give me the gist)/i;
-const FILE_CONTEXT_HINT_REGEX = /(\bthis file\b|\bthis document\b|\bselected file\b|\bpdf\b|\bdocx?\b|\bdocument\b|\bresume\b|\breport\b|\bnotes?\b)/i;
 
-const stripFences = (value = '') =>
-  value
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
-
-const safeJsonParse = (value, fallback = null) => {
-  try {
-    return JSON.parse(stripFences(value));
-  } catch (error) {
-    return fallback;
-  }
+// Actions on files the user names. Names are resolved first; several matches always ask.
+const FILE_ACTIONS = {
+  rename_file: { verb: 'rename' },
+  move_file: { verb: 'move' },
+  share_file: { verb: 'share' },
+  delete_file: { verb: 'move to Trash' },
+  star_file: { verb: 'star' },
+  restore_file: { verb: 'restore', trashed: true },
 };
+const FILE_INTENTS = ['summarize', 'explain', 'file_question'];
+const MAX_RESOLVED_IDS = 20;
 
 const truncateText = (value = '', limit = 2400) => {
   if (!value) {
@@ -77,16 +56,8 @@ const formatBytes = (bytes = 0) => {
 };
 
 class OllamaWorkspaceAssistant {
-  questionIsHowTo(question = '') {
-    return /(^|\b)(how do i|how can i|how to|steps|walk me through|guide me|where do i|what do i click|show me how)\b/i.test(question);
-  }
-
-  questionLooksActionable(question = '') {
-    return /\b(create|make|rename|move|delete|remove|trash|share|star|favorite|bookmark|upload|set up|setup|schedule|add|save|generate|turn|convert|relate|link|connect|backup|summarize)\b/i.test(question);
-  }
-
   buildUnsupportedActionAnswer() {
-    return "I couldn't perform that inside File Box yet. I can create, rename, move, star, share and trash files, create folders, file requests, shortcuts, secured links, templates, team spaces and backups.";
+    return "I couldn't tell which change you want. I can create folders and files, and rename, move, star, share, trash or restore a file. Try something like \"Move report.pdf into Archive\".";
   }
 
   cleanActionMessage(message = '') {
@@ -178,30 +149,14 @@ class OllamaWorkspaceAssistant {
     }
   }
 
-  // Files the assistant may read: the shared permission rules (owned, shared with the user, Team Spaces).
-  getAccessibleFileQuery(userId) {
-    return readableFileFilter(userId);
-  }
-
-  questionIsSearch(question = '') {
-    return FIND_HINT_REGEX.test(question);
-  }
-
   extractSearchQuery(question = '') {
     const query = question
       .replace(/^(please\s+)?(can you\s+)?(find|search(?:\s+for)?|look\s+for|locate|show\s+me|where\s+is|where's)\s+/i, '')
-      .replace(/\b(my|the|a|an|all|files?|documents?|that|which|mentions?|mentioning|about|related\s+to|in\s+my\s+drive)\b/gi, ' ')
+      .replace(/\b(my|the|a|an|all|files?|documents?|that|which|mentions?|mentioning|about|related\s+to|in\s+my\s+drive|newest|latest|most\s+recent|recent|oldest|biggest|largest)\b/gi, ' ')
       .replace(/[?.!,]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
     return query || question;
-  }
-
-  // "Find X", "where is X", "find X in Trash" -- but not "find X and delete it".
-  questionIsPlainFind(question = '') {
-    if (!this.questionIsSearch(question) || this.questionNeedsSummary(question)) return false;
-    const withoutTrashScope = question.replace(/\b(in|from)\s+(the\s+)?(trash|bin)\b/gi, ' ');
-    return !this.questionLooksActionable(withoutTrashScope);
   }
 
   questionAsksForTrash(question = '') {
@@ -254,69 +209,6 @@ class OllamaWorkspaceAssistant {
 
   questionNeedsSummary(question = '') {
     return SUMMARY_HINT_REGEX.test(question);
-  }
-
-  questionNeedsFileContext(question = '', hasSelectedFile = false) {
-    return hasSelectedFile || FILE_CONTEXT_HINT_REGEX.test(question) || this.questionNeedsSummary(question);
-  }
-
-  normalizePlannerDecision(rawDecision, question, hasSelectedFile) {
-    const parsed = typeof rawDecision === 'string'
-      ? safeJsonParse(rawDecision, {})
-      : (rawDecision || {});
-
-    const fallbackAction = aiActionExecutor.parseAction(question);
-    const fallbackIsSummary = this.questionNeedsSummary(question);
-    const fallbackNeedsFileContext = this.questionNeedsFileContext(question, hasSelectedFile);
-    const isHowTo = this.questionIsHowTo(question);
-    const isActionRequest = this.questionLooksActionable(question) && !isHowTo && !fallbackIsSummary;
-    const shouldPreferFallbackAction = Boolean(fallbackAction && isActionRequest);
-
-    const parsedToolAction = ACTION_TYPES.includes(parsed.toolAction)
-      ? parsed.toolAction
-      : 'none';
-    const toolAction = parsedToolAction !== 'none'
-      ? parsedToolAction
-      : (fallbackAction?.type || 'none');
-
-    let confidence = typeof parsed.confidence === 'number'
-      ? Math.max(0, Math.min(1, parsed.confidence))
-      : (fallbackAction?.confidence || 0);
-
-    if (toolAction !== 'none' && isActionRequest) {
-      confidence = Math.max(confidence, fallbackAction?.confidence || 0.84);
-    }
-
-    let intent = typeof parsed.intent === 'string' ? parsed.intent : '';
-    if (!intent) {
-      if (fallbackIsSummary) {
-        intent = 'summarize';
-      } else if (isActionRequest) {
-        intent = 'action';
-      } else {
-        intent = 'answer';
-      }
-    } else if (
-      (shouldPreferFallbackAction || isActionRequest) &&
-      !['action', 'mixed', 'clarify', 'summarize'].includes(intent)
-    ) {
-      intent = 'action';
-    }
-
-    return {
-      intent,
-      toolAction,
-      confidence,
-      shouldExecuteAction: shouldPreferFallbackAction
-        ? true
-        : (parsed.shouldExecuteAction !== false && toolAction !== 'none' && isActionRequest),
-      needsFileContext: typeof parsed.needsFileContext === 'boolean'
-        ? parsed.needsFileContext
-        : fallbackNeedsFileContext,
-      responseMode: parsed.responseMode === 'steps' ? 'steps' : 'chat',
-      clarifyingQuestion: typeof parsed.clarifyingQuestion === 'string' ? parsed.clarifyingQuestion.trim() : '',
-      reasoning: typeof parsed.reasoning === 'string' ? parsed.reasoning : '',
-    };
   }
 
   async resolveFilePath(file) {
@@ -499,34 +391,6 @@ class OllamaWorkspaceAssistant {
     };
   }
 
-  async findReferencedFile(userId, fileId, question) {
-    if (fileId) {
-      return File.findOne({
-        _id: fileId,
-        ...(await this.getAccessibleFileQuery(userId)),
-      }).lean();
-    }
-
-    const referencedFiles = aiActionExecutor.extractFileNames(question) || [];
-    if (referencedFiles.length === 0) {
-      return null;
-    }
-
-    for (const fileName of referencedFiles) {
-      const escaped = fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const file = await File.findOne({
-        ...(await this.getAccessibleFileQuery(userId)),
-        originalName: { $regex: escaped, $options: 'i' },
-      }).lean();
-
-      if (file) {
-        return file;
-      }
-    }
-
-    return null;
-  }
-
   formatMemoryContext(memory) {
     if (!memory) {
       return '';
@@ -593,74 +457,13 @@ class OllamaWorkspaceAssistant {
       .join('\n');
   }
 
-  async planTurn({ question, history, workspaceSnapshot, selectedFile, context }) {
-    const plannerPrompt = {
-      question,
-      context: context || '',
-      selectedFile: selectedFile
-        ? {
-            name: selectedFile.originalName,
-            mimeType: selectedFile.mimeType,
-            size: formatBytes(selectedFile.size),
-          }
-        : null,
-      recentConversation: history.slice(-config.ollama.assistantHistoryTurns),
-      workspaceSnapshot,
-      supportedActions: ACTION_TYPES.filter((action) => action !== 'none'),
-    };
-
-    const plannerResponse = await ollamaClient.chatText({
-      model: config.ollama.plannerModel,
-      system: `You are the planning layer for File Box Copilot, a local Ollama-powered assistant inside a cloud storage website.
-
-Return JSON only.
-
-Choose one intent:
-- "answer" for normal ChatGPT-style guidance or explanation
-- "summarize" when the user wants the meaning or summary of a specific file
-- "action" when the user wants you to do something right now in the website
-- "mixed" when you should execute one action and also explain the result
-- "clarify" when you need the user to choose a file or be more specific
-
-Supported toolAction values:
-${ACTION_TYPES.join(', ')}
-
-Rules:
-- For "how do I" questions, do not execute actions.
-- For direct commands like create, rename, move, delete, share, set up, schedule, save, upload, or make, prefer intent "action".
-- Do not turn executable website commands into tutorials or click-by-click guidance.
-- If the action is possible but you need one missing detail, choose intent "clarify".
-- If the request is an action but no supported toolAction fits, still choose intent "action" with toolAction "none".
-- If the user says "this file" or wants a summary but no file is selected, choose intent "clarify".
-- Keep responseMode "steps" for procedural guidance and "chat" for normal answers.
-
-JSON shape:
-{
-  "intent": "answer",
-  "toolAction": "none",
-  "confidence": 0.0,
-  "shouldExecuteAction": false,
-  "needsFileContext": false,
-  "responseMode": "chat",
-  "clarifyingQuestion": "",
-  "reasoning": ""
-}`,
-      task: 'plan',
-      content: JSON.stringify(plannerPrompt, null, 2),
-      format: 'json',
-    });
-
-    return this.normalizePlannerDecision(plannerResponse, question, Boolean(selectedFile));
-  }
-
   async composeAnswer({
     question,
     history,
     workspaceSnapshot,
     selectedFile,
     fileContext,
-    actionResult,
-    planningDecision,
+    route,
     context,
   }) {
     const workspaceSummary = [
@@ -672,13 +475,6 @@ JSON shape:
       `Recent folders: ${workspaceSnapshot.recentFolders.map((folder) => folder.name).join(', ') || 'None'}`,
     ].join('\n');
 
-    const toolSummary = actionResult
-      ? `Tool action attempted: ${planningDecision.toolAction}
-Action success: ${actionResult.success ? 'yes' : 'no'}
-Action message: ${actionResult.message}
-Action data: ${JSON.stringify(actionResult.data || {}, null, 2)}`
-      : 'No action was executed.';
-
     const response = await ollamaClient.chatText({
       model: config.ollama.assistantModel,
       system: `You are File Box Copilot, an Ollama-powered assistant inside a cloud storage website.
@@ -688,16 +484,14 @@ Behave like ChatGPT for this product:
 - stay grounded in the user's actual workspace context
 - help with storage, sharing, file understanding, and website actions
 - act like an AI version of the user across the available website features
-- when a tool action was already executed, explain what happened in plain language
-- never claim an action succeeded unless the tool summary says it did
+- you are only answering; no action was run, so never claim you changed, moved, shared or deleted anything
 - only give steps for explicit how-to questions
 - for direct commands, do the action when available instead of describing manual clicks
 - never tell the user how to click around the UI for an action the website assistant can perform
 - when summarizing a file, explain what it is about and the main points in plain English
 
 Keep answers concise but useful. Prefer short paragraphs. Use bullets only when they help.`,
-      content: `Planning decision:
-${JSON.stringify(planningDecision, null, 2)}
+      content: `Request type: ${route.intent === 'help' ? 'how File Box works' : route.intent === 'file_question' || route.intent === 'explain' ? 'a question about the selected file' : 'general'}
 
 Workspace snapshot:
 ${workspaceSummary}
@@ -706,9 +500,6 @@ ${context ? `Additional UI context:\n${context}\n` : ''}
 
 ${selectedFile ? `Selected file metadata:\nName: ${selectedFile.originalName}\nType: ${selectedFile.mimeType}\nSize: ${formatBytes(selectedFile.size)}\n` : ''}
 {{CONTEXT}}
-
-Tool summary:
-${toolSummary}
 
 Recent conversation:
 ${this.serializeConversation(history) || 'No prior conversation.'}
@@ -735,29 +526,133 @@ Respond to the latest user request now.`,
     };
   }
 
-  async buildConfirmationRequest(actionType, question, userId, actionContext) {
-    const reply = {
-      provider: 'ollama',
-      model: config.ollama.assistantModel,
-      fileId: actionContext.selectedFileId,
-      timestamp: new Date(),
+  // ---------- Replies
+
+  routeMeta(route) {
+    return {
+      intent: route.intent,
+      action: route.action || undefined,
+      source: route.source,
+      rule: route.rule,
+      confidence: route.confidence,
     };
+  }
 
-    // "Share X with Sarah" without an email: ask for it; never fall back to a public link.
-    if (actionType === 'share_file') {
-      const recipientQuestion = aiActionExecutor.shareRecipientQuestion(question);
-      if (recipientQuestion) return { ...reply, answer: recipientQuestion, needsInput: 'email' };
+  reply(route, fields) {
+    return {
+      provider: 'local-rules',
+      fileId: null,
+      timestamp: new Date(),
+      ...fields,
+      route: this.routeMeta(route),
+    };
+  }
+
+  async requireModel() {
+    const status = await this.getStatus();
+    if (!status.reachable) {
+      throw new Error(status.error || `Ollama is unavailable. Start Ollama and pull ${config.ollama.assistantModel}.`);
     }
+  }
 
-    const targets = await aiActionExecutor.describeTargets(question, userId, actionContext);
+  /** Model fallback for routing; only reached when no rule matched. */
+  async classifyIntent(question, options) {
+    await this.requireModel();
+    return intentRouter.classifyWithModel(question, options);
+  }
 
-    if (!targets.length) {
-      return {
-        ...reply,
-        answer: "I couldn't find a file you own that matches. Mention the file name or select the file first.",
-      };
+  /** Several matches: list them and ask. The reply carries what the browser sends back with the choice. */
+  choiceReply(route, { resolution, slot, verb, question, fileId, resolved }) {
+    const { choices, more, phrase } = resolution;
+    const noun = slot === 'folder' ? 'folders' : 'files';
+    const allNamed = choices.every(choice => cleanPhrase(choice.name).toLowerCase().replace(/\.[a-z0-9]{1,6}$/i, '') === phrase.toLowerCase().replace(/\.[a-z0-9]{1,6}$/i, ''));
+    const total = choices.length + (more || 0);
+    let ask = 'Which one do you mean?';
+    if (slot === 'folder') ask = 'Which folder should I move it into?';
+    else if (verb) ask = `Which one should I ${verb}?`;
+    return this.reply(route, {
+      answer: `I found ${total} ${noun} ${allNamed ? 'named' : 'matching'} "${phrase}". ${ask}${more ? ` (Showing ${choices.length}. Add more of the name to narrow it down.)` : ''}`,
+      choices: { slot, key: phrase.toLowerCase(), options: choices },
+      resume: { question, fileId: fileId || null, resolved },
+    });
+  }
+
+  noMatchAnswer(resolution, { level, trashed, verb }) {
+    const { phrase, otherAccess } = resolution;
+    if (trashed) return `I couldn't find "${phrase}" in your Trash.`;
+    if (otherAccess) {
+      return `I couldn't find a file of yours matching "${phrase}". "${otherAccess.name}" (${otherAccess.location}) matches, but only its owner can ${verb || 'change'} it.`;
     }
+    if (level === 'viewer') return `I couldn't find a file matching "${phrase}" in your files, files shared with you, or your Team Spaces.`;
+    return `I couldn't find a file of yours matching "${phrase}".`;
+  }
 
+  /**
+   * The files a request names, each resolved to exactly one permitted file.
+   * Returns { files } or { reply } (a question back to the user).
+   */
+  async resolveTargets(route, question, userId, { fileId, resolved = {}, level, trashed = false, verb }) {
+    const source = route.target || (FILE_INTENTS.includes(route.intent) ? route.normalized : '');
+    const explicit = aiActionExecutor.extractFileNames(source || '') || [];
+    const phrases = explicit.length ? explicit : [route.target || ''];
+    const files = [];
+
+    for (const phrase of phrases) {
+      const key = cleanPhrase(phrase).toLowerCase();
+      const chosenId = resolved.files?.[key];
+      if (chosenId) {
+        const file = await fileById(userId, chosenId, { level, trashed });
+        if (!file) return { reply: this.reply(route, { answer: "That file isn't available to you anymore. Ask again and I'll look it up." }) };
+        files.push(file);
+        continue;
+      }
+
+      // "this", "it", "this PDF" or nothing at all: the file selected in the panel.
+      if (!key || intentRouter.SELF_REFERENCE.test(phrase.trim())) {
+        if (fileId) {
+          const file = await fileById(userId, fileId, { level, trashed });
+          if (file) {
+            files.push(file);
+            continue;
+          }
+          return { reply: this.reply(route, { answer: level === 'owner' ? `Only the file's owner can ${verb || 'change'} it.` : "I can't open the selected file." }) };
+        }
+        return { reply: this.reply(route, { answer: verb ? `Which file should I ${verb}? Mention its name or select it first.` : 'Which file do you mean? Mention its name or select it first.' }) };
+      }
+
+      const resolution = await resolveFile(userId, phrase, { level, trashed });
+      if (resolution.status === 'one') {
+        files.push(resolution.file);
+      } else if (resolution.status === 'many') {
+        return { reply: this.choiceReply(route, { resolution, slot: 'file', verb, question, fileId, resolved }) };
+      } else {
+        return { reply: this.reply(route, { answer: this.noMatchAnswer(resolution, { level, trashed, verb }) }) };
+      }
+    }
+    return { files };
+  }
+
+  /** Destination folder for a move. Returns { folder } or { reply }. */
+  async resolveDestination(route, question, userId, { fileId, resolved = {} }) {
+    if (resolved.folder) {
+      const folder = await folderById(userId, resolved.folder);
+      if (!folder) return { reply: this.reply(route, { answer: "That folder isn't available anymore. Ask again and I'll look it up." }) };
+      return { folder };
+    }
+    if (!route.destination) {
+      return { reply: this.reply(route, { answer: "Which folder should I move it into? For example \"Move report.pdf into Archive\"." }) };
+    }
+    const resolution = await resolveFolder(userId, route.destination);
+    if (resolution.status === 'one') return { folder: resolution.folder };
+    if (resolution.status === 'many') return { reply: this.choiceReply(route, { resolution, slot: 'folder', question, fileId, resolved }) };
+    return { reply: this.reply(route, { answer: `I couldn't find a folder of yours named "${resolution.phrase}".` }) };
+  }
+
+  // ---------- Intents
+
+  buildConfirmationRequest(route, actionType, question, files) {
+    const targets = files.map((file) => file.originalName);
+    const fileIds = files.map((file) => file._id.toString());
     const fileList = targets.map((name) => `"${name}"`).join(', ');
     const email = aiActionExecutor.extractEmail(question);
     let answer;
@@ -769,35 +664,153 @@ Respond to the latest user request now.`,
       answer = `I'm about to create a view-only share link for ${fileList}. Anyone with the link can open ${targets.length > 1 ? 'these files' : 'this file'}.`;
     }
 
-    return {
-      ...reply,
+    return this.reply(route, {
       answer,
-      pendingAction: {
-        type: actionType,
-        question,
-        fileId: actionContext.selectedFileId,
-        targets,
+      provider: 'ollama',
+      model: config.ollama.assistantModel,
+      fileId: fileIds[0],
+      pendingAction: { type: actionType, question, fileId: fileIds[0], fileIds, targets },
+    });
+  }
+
+  async handleAction(route, { userId, question, fileId, resolved }) {
+    const type = route.action;
+    if (!type) {
+      // The model said "do something" but no rule knows what: ask rather than guess an action.
+      return this.reply(route, { answer: this.buildUnsupportedActionAnswer() });
+    }
+
+    if (type === 'share_file') {
+      // "Share X with Sarah" without an email: ask for it; never fall back to a public link.
+      const recipientQuestion = aiActionExecutor.shareRecipientQuestion(question);
+      if (recipientQuestion) return this.reply(route, { answer: recipientQuestion, needsInput: 'email' });
+    }
+
+    const context = { selectedFileId: null, selectedFile: null };
+    if (FILE_ACTIONS[type]) {
+      const { verb, trashed } = FILE_ACTIONS[type];
+      const targets = await this.resolveTargets(route, question, userId, { fileId, resolved, level: 'owner', trashed, verb });
+      if (targets.reply) return targets.reply;
+      if (type === 'rename_file' && targets.files.length > 1) {
+        return this.reply(route, { answer: 'I can rename one file at a time. Which file should I rename first?' });
+      }
+      context.targetFiles = targets.files;
+      context.newName = route.newName;
+
+      if (type === 'move_file') {
+        const destination = await this.resolveDestination(route, question, userId, { fileId, resolved });
+        if (destination.reply) return destination.reply;
+        context.targetFolder = destination.folder;
+      }
+
+      if (CONFIRMATION_REQUIRED_ACTIONS.includes(type)) {
+        return this.buildConfirmationRequest(route, type, question, targets.files);
+      }
+    } else if (fileId) {
+      const selected = await fileById(userId, fileId, { level: 'owner' });
+      context.selectedFileId = selected?._id?.toString() || null;
+      context.selectedFile = selected;
+    }
+
+    const actionResult = await aiActionExecutor.executeAction({ type, confidence: route.confidence }, question, userId, context);
+    if (actionResult?.success) await logFileBoxAction(userId, type, actionResult.data);
+
+    return this.reply(route, {
+      answer: this.formatActionAnswer(type, actionResult),
+      action: {
+        type,
+        success: actionResult.success,
+        data: actionResult.data,
+        error: actionResult.success ? undefined : actionResult.message,
       },
-    };
+      fileId: actionResult?.data?.fileId || actionResult?.data?.fileIds?.[0] || null,
+    });
+  }
+
+  async handleFileRequest(route, { userId, question, fileId, resolved, history, context }) {
+    const verb = { summarize: 'summarize', explain: 'explain' }[route.intent];
+    const targets = await this.resolveTargets(route, question, userId, { fileId, resolved, level: 'viewer', verb });
+    if (targets.reply) return targets.reply;
+    if (targets.files.length > 1) {
+      return this.reply(route, { answer: 'I can work with one file at a time. Ask about each file separately.' });
+    }
+    const [file] = targets.files;
+    await this.requireModel();
+
+    // Summaries and explanations use the same fixed prompts as the file menu.
+    const fileAIActions = require('./fileAIActions');
+    const candidates = route.intent === 'summarize' ? ['summarize', 'summarize_text']
+      : route.intent === 'explain' ? ['explain_code', 'explain_simply'] : [];
+    const action = candidates.find(id => fileAIActions.supports(file, id));
+    if (action) {
+      try {
+        const result = await fileAIActions.runAction(file, action);
+        return this.reply(route, {
+          answer: result.result + (result.truncated ? '\n\n(Only the first part of this long file was read.)' : ''),
+          provider: 'ollama',
+          model: config.ollama.assistantModel,
+          fileId: file._id,
+          truncated: Boolean(result.truncated),
+        });
+      } catch (error) {
+        if (error.status && error.status < 500) return this.reply(route, { answer: error.message, fileId: file._id });
+        throw error;
+      }
+    }
+
+    const fileContext = await this.buildFileContext(userId, file, question);
+    const answer = await this.composeAnswer({
+      question,
+      history,
+      workspaceSnapshot: await this.buildWorkspaceSnapshot(userId),
+      selectedFile: file,
+      fileContext,
+      route,
+      context,
+    });
+    return this.reply(route, { answer, provider: 'ollama', model: config.ollama.assistantModel, fileId: file._id });
+  }
+
+  async handleSearch(route, { userId, question }) {
+    let files = await this.searchForQuestion(userId, question);
+    if (/\b(newest|latest|most\s+recent)\b/i.test(question)) files = [...files].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    else if (/\boldest\b/i.test(question)) files = [...files].sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt));
+    return this.reply(route, { answer: this.findAnswer(question, files), provider: 'local-search', files });
   }
 
   /**
-   * Run an action the user explicitly confirmed. The executor re-checks ownership.
+   * Run an action the user explicitly confirmed. Every file is re-checked as owner; nothing is guessed.
    */
-  async confirmAction({ userId, type, question, fileId }) {
+  async confirmAction({ userId, type, question, fileId, fileIds }) {
     if (!CONFIRMATION_REQUIRED_ACTIONS.includes(type)) {
       throw new Error('This action does not need confirmation.');
     }
+    const failed = (message) => ({
+      answer: message,
+      provider: 'local-rules',
+      action: { type, success: false, error: message },
+      fileId: null,
+      timestamp: new Date(),
+    });
 
-    const selectedFile = fileId
-      ? await File.findOne({ _id: fileId, owner: userId, isTrashed: { $ne: true } }).lean()
-      : null;
-    const actionResult = await aiActionExecutor.executeAction(
-      { type, confidence: 1 },
-      question,
-      userId,
-      { selectedFileId: selectedFile?._id?.toString() || null, selectedFile }
-    );
+    const ids = (Array.isArray(fileIds) && fileIds.length ? fileIds : [fileId]).filter(id => typeof id === 'string' && id).slice(0, MAX_RESOLVED_IDS);
+    let targetFiles = [];
+    if (ids.length) {
+      for (const id of ids) {
+        const file = await fileById(userId, id, { level: 'owner' });
+        if (!file) return failed("I couldn't do that: the file isn't available, or only its owner can do this.");
+        targetFiles.push(file);
+      }
+    } else {
+      // No file chosen: re-read the request by rules only, and act only when every name matches one file.
+      const route = await intentRouter.routeIntent(question, {}, { classify: async () => null });
+      if (route.action !== type) return failed('Ask again so I can check which file you mean.');
+      const targets = await this.resolveTargets(route, question, userId, { level: 'owner', verb: FILE_ACTIONS[type].verb });
+      if (targets.reply) return failed(targets.reply.answer);
+      targetFiles = targets.files;
+    }
+
+    const actionResult = await aiActionExecutor.executeAction({ type, confidence: 1 }, question, userId, { targetFiles });
     if (actionResult.success) await logFileBoxAction(userId, type, actionResult.data);
 
     return {
@@ -810,174 +823,68 @@ Respond to the latest user request now.`,
         data: actionResult.data,
         error: actionResult.success ? undefined : actionResult.message,
       },
-      fileId: selectedFile?._id || null,
+      fileId: targetFiles[0]?._id || null,
       timestamp: new Date(),
     };
   }
 
-  async chat({ userId, question, fileId, history = [], context = '' }) {
-    // Duplicate cleanup is rule-based and review-only: show the groups, never remove anything here.
-    if (/\b(duplicate|duplicates|identical files|same file twice)\b/i.test(question)) {
-      const { groups, reclaimableBytes } = await buildDuplicateSuggestions(userId);
-      return {
-        answer: groups.length
-          ? `I found ${groups.length} group${groups.length === 1 ? '' : 's'} of identical files (${formatBytes(reclaimableBytes)} could be freed). Review them below. Nothing is removed until you confirm.`
-          : "I didn't find any identical files among your files.",
-        provider: 'local-rules',
-        panel: groups.length ? 'duplicates' : undefined,
-        fileId: null,
-        timestamp: new Date(),
-      };
-    }
-
-    // Organizing is always a proposal the user reviews; the panel fetches and applies suggestions.
-    if (/\b(organi[sz]e|tidy( up)?|clean up my (files|drive)|sort (out )?my files)\b/i.test(question) && !/\b(move|rename)\b/i.test(question)) {
-      return {
-        answer: "I'll suggest changes for My Files. Review each one, keep the ones you want, and nothing changes until you confirm.",
-        provider: 'local-rules',
-        panel: 'organize',
-        fileId: null,
-        timestamp: new Date(),
-      };
-    }
-
-    // Plain "find…" questions are answered straight from local search. This needs no model,
-    // so it keeps working when Ollama is offline, and it never invents files.
-    if (this.questionIsPlainFind(question)) {
-      const files = await this.searchForQuestion(userId, question);
-      return {
-        answer: this.findAnswer(question, files),
-        provider: 'local-search',
-        files,
-        fileId: null,
-        timestamp: new Date(),
-      };
-    }
-
-    const status = await this.getStatus();
-    if (!status.reachable) {
-      throw new Error(
-        status.error || `Ollama is unavailable. Start Ollama and pull ${config.ollama.assistantModel}.`
-      );
-    }
-
-    const workspaceSnapshot = await this.buildWorkspaceSnapshot(userId);
-    const selectedFile = await this.findReferencedFile(userId, fileId, question);
-    const planningDecision = await this.planTurn({
+  /**
+   * One chat turn. The request is routed by local rules first (the model only picks an intent when no
+   * rule matched), names are resolved against what the user may access, and the model is used only to
+   * write answers that need it.
+   *
+   * `resolved` carries choices the user made from an earlier list: { files: { "<name>": id }, folder: id }.
+   */
+  async chat({ userId, question, fileId, history = [], context = '', resolved = {} }) {
+    const fileNames = aiActionExecutor.extractFileNames(question) || [];
+    const route = await intentRouter.routeIntent(
       question,
-      history,
-      workspaceSnapshot,
-      selectedFile,
-      context,
-    });
-    const isActionRequest = this.questionLooksActionable(question)
-      && !this.questionIsHowTo(question)
-      && !this.questionNeedsSummary(question);
+      { hasSelectedFile: Boolean(fileId), fileNames },
+      { classify: (q, options) => this.classifyIntent(q, options) }
+    );
+    const turn = { userId, question, fileId, history, context, resolved };
 
-    if (planningDecision.intent === 'clarify') {
-      return {
-        answer: planningDecision.clarifyingQuestion || 'Tell me which file you want me to work with, or select one from the assistant panel.',
-        provider: 'ollama',
-        model: config.ollama.assistantModel,
-        fileId: selectedFile?._id || null,
-        timestamp: new Date(),
-      };
-    }
-
-    if ((planningDecision.intent === 'summarize' || planningDecision.needsFileContext) && !selectedFile && !this.questionIsSearch(question)) {
-      return {
-        answer: 'Pick a file first, or mention the file name in your message, and I can explain or summarize it.',
-        provider: 'ollama',
-        model: config.ollama.assistantModel,
-        fileId: null,
-        timestamp: new Date(),
-      };
-    }
-
-    let fileContext = '';
-    if (selectedFile && planningDecision.needsFileContext) {
-      fileContext = await this.buildFileContext(userId, selectedFile, question);
-    }
-
-    let actionResult = null;
-    const actionContext = {
-      selectedFileId: selectedFile?._id?.toString?.() || fileId || null,
-      selectedFile,
-    };
-    const shouldAct =
-      planningDecision.shouldExecuteAction &&
-      planningDecision.toolAction !== 'none' &&
-      planningDecision.confidence >= 0.68;
-
-    if (shouldAct && CONFIRMATION_REQUIRED_ACTIONS.includes(planningDecision.toolAction)) {
-      return this.buildConfirmationRequest(planningDecision.toolAction, question, userId, actionContext);
-    }
-
-    if (shouldAct) {
-      actionResult = await aiActionExecutor.executeAction(
-        {
-          type: planningDecision.toolAction,
-          confidence: planningDecision.confidence,
-        },
-        question,
-        userId,
-        actionContext
-      );
-      if (actionResult?.success) await logFileBoxAction(userId, planningDecision.toolAction, actionResult.data);
-    }
-
-    if (planningDecision.intent === 'action' && planningDecision.toolAction === 'none' && isActionRequest) {
-      return {
-        answer: this.buildUnsupportedActionAnswer(),
-        provider: 'ollama',
-        model: config.ollama.assistantModel,
-        fileId: selectedFile?._id || fileId || null,
-        timestamp: new Date(),
-      };
-    }
-
-    // Ground "find my..." questions in a real local search instead of the model's guess.
-    let foundFiles;
-    if (!actionResult && this.questionIsSearch(question)) {
-      foundFiles = await this.searchForQuestion(userId, question);
-    }
-    const searchContext = foundFiles
-      ? (foundFiles.length
-        ? `Local search results the user can access (only mention these files):\n${foundFiles
-          .map((file, index) => `${index + 1}. ${file.name} (${file.mimeType}, ${file.source === 'owned' ? 'owned by the user' : file.source === 'team' ? `Team Space file` : `shared by ${file.ownerName || 'someone'}`}, ${file.folder})`)
-          .join('\n')}`
-        : 'Local search found no matching files in the user\'s drive. Say so plainly and suggest other search words.')
-      : '';
-
-    const answer = actionResult
-      ? this.formatActionAnswer(planningDecision.toolAction, actionResult)
-      : await this.composeAnswer({
+    switch (route.intent) {
+      case 'duplicates': {
+        // Duplicate cleanup is rule-based and review-only: show the groups, never remove anything here.
+        const { groups, reclaimableBytes } = await buildDuplicateSuggestions(userId);
+        return this.reply(route, {
+          answer: groups.length
+            ? `I found ${groups.length} group${groups.length === 1 ? '' : 's'} of identical files (${formatBytes(reclaimableBytes)} could be freed). Review them below. Nothing is removed until you confirm.`
+            : "I didn't find any identical files among your files.",
+          panel: groups.length ? 'duplicates' : undefined,
+        });
+      }
+      case 'organize':
+        // Organizing is always a proposal the user reviews; the panel fetches and applies suggestions.
+        return this.reply(route, {
+          answer: "I'll suggest changes for My Files. Review each one, keep the ones you want, and nothing changes until you confirm.",
+          panel: 'organize',
+        });
+      case 'search':
+      case 'smart_search':
+        // Answered from local search: needs no model, works offline, never invents files.
+        return this.handleSearch(route, turn);
+      case 'action':
+        return this.handleAction(route, turn);
+      case 'summarize':
+      case 'explain':
+      case 'file_question':
+        return this.handleFileRequest(route, turn);
+      default: {
+        await this.requireModel();
+        const answer = await this.composeAnswer({
           question,
           history,
-          workspaceSnapshot,
-          selectedFile,
-          fileContext,
-          actionResult,
-          planningDecision,
-          context: [context, searchContext].filter(Boolean).join('\n\n'),
+          workspaceSnapshot: await this.buildWorkspaceSnapshot(userId),
+          selectedFile: null,
+          fileContext: '',
+          route,
+          context,
         });
-
-    return {
-      answer,
-      provider: 'ollama',
-      model: config.ollama.assistantModel,
-      action: actionResult
-        ? {
-            type: planningDecision.toolAction,
-            success: actionResult.success,
-            data: actionResult.data,
-            error: actionResult.success ? undefined : actionResult.message,
-          }
-        : undefined,
-      files: foundFiles,
-      fileId: actionResult?.data?.fileId || selectedFile?._id || fileId || null,
-      timestamp: new Date(),
-    };
+        return this.reply(route, { answer, provider: 'ollama', model: config.ollama.assistantModel });
+      }
+    }
   }
 }
 

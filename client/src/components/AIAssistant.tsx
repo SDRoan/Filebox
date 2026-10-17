@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { aiAssistantAPI, filesAPI, AssistantHistoryMessage, FileAIActionsInfo } from '../services/api';
+import { aiAssistantAPI, filesAPI, AssistantHistoryMessage, AssistantChoice, AssistantResolved, FileAIActionsInfo } from '../services/api';
 import DuplicateReview from './DuplicateReview';
 import OrganizeReview from './OrganizeReview';
 import './AIPanels.css';
@@ -25,7 +25,20 @@ interface PendingAction {
   type: string;
   question: string;
   fileId?: string | null;
+  fileIds?: string[];
   targets: string[];
+}
+
+// "Which one do you mean?": the options, and the original request to continue once one is picked.
+interface ChoiceRequest {
+  slot: 'file' | 'folder';
+  key: string;
+  options: AssistantChoice[];
+}
+interface ResumeRequest {
+  question: string;
+  fileId?: string | null;
+  resolved?: AssistantResolved;
 }
 
 interface Message {
@@ -36,6 +49,9 @@ interface Message {
   pendingAction?: PendingAction;
   actionState?: 'pending' | 'running' | 'done' | 'cancelled';
   panel?: 'duplicates' | 'organize';
+  choices?: ChoiceRequest;
+  resume?: ResumeRequest;
+  chosenId?: string;
   error?: boolean;
 }
 
@@ -140,7 +156,7 @@ const AIAssistant: React.FC = () => {
   const updateMessage = (id: string, patch: Partial<Message>) =>
     setMessages(prev => prev.map(message => message.id === id ? { ...message, ...patch } : message));
 
-  const send = useCallback(async (text: string, fileId?: string) => {
+  const send = useCallback(async (text: string, fileId?: string, resolved?: AssistantResolved, shownAs?: string) => {
     const question = text.trim();
     if (!question || sending) return;
 
@@ -148,17 +164,19 @@ const AIAssistant: React.FC = () => {
       .slice(-10)
       .map(message => ({ role: message.role, content: message.content }));
 
-    appendMessage({ role: 'user', content: question });
-    setInput('');
+    appendMessage({ role: 'user', content: shownAs || question });
+    if (!resolved) setInput('');
     setSending(true);
     try {
-      const response = await aiAssistantAPI.chat(question, fileId || undefined, undefined, history);
+      const response = await aiAssistantAPI.chat(question, fileId || undefined, undefined, history, resolved);
       appendMessage({
         role: 'assistant',
         content: response.answer || 'Done.',
         files: response.files?.length ? response.files : undefined,
         pendingAction: response.pendingAction,
         panel: response.panel,
+        choices: response.choices?.options?.length ? response.choices : undefined,
+        resume: response.resume,
         actionState: response.pendingAction ? 'pending' : undefined,
       });
     } catch (error: any) {
@@ -223,6 +241,23 @@ const AIAssistant: React.FC = () => {
       updateMessage(message.id, { actionState: 'pending' });
       appendMessage({ role: 'assistant', content: error?.response?.data?.message || 'That action could not be completed.', error: true });
     }
+  };
+
+  // Continue the original request with the file or folder the user picked. The server re-checks access.
+  const choose = (message: Message, option: AssistantChoice) => {
+    if (!message.choices || !message.resume || message.chosenId || sending) return;
+    updateMessage(message.id, { chosenId: option.id });
+    const previous = message.resume.resolved || {};
+    const resolved: AssistantResolved = message.choices.slot === 'folder'
+      ? { ...previous, folder: option.id }
+      : { ...previous, files: { ...(previous.files || {}), [message.choices.key]: option.id } };
+    send(message.resume.question, message.resume.fileId || undefined, resolved, `${option.name} — ${option.location}`);
+  };
+
+  const modifiedLabel = (value?: string) => {
+    if (!value) return '';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? '' : `Modified ${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
   // Actions that fit the selected file's type (same list as the file menu's "Ask File Box AI").
@@ -374,6 +409,28 @@ const AIAssistant: React.FC = () => {
                     <li key={file.id}>
                       <button onClick={() => openFile(file)}>
                         <DocumentIcon size={14} /><span>{file.name}</span><small className={`source-${file.trashed ? 'trash' : file.source || 'owned'}`}>{sourceLabel(file)}</small>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {message.choices && (
+                <ul className="filebox-ai-choices" aria-label={message.choices.slot === 'folder' ? 'Choose a folder' : 'Choose a file'}>
+                  {message.choices.options.map(option => (
+                    <li key={option.id}>
+                      <button
+                        className={message.chosenId === option.id ? 'chosen' : ''}
+                        disabled={Boolean(message.chosenId) || sending}
+                        aria-pressed={message.chosenId === option.id}
+                        onClick={() => choose(message, option)}
+                      >
+                        <DocumentIcon size={14} />
+                        <span className="filebox-ai-choice-name">{option.name}</span>
+                        <small>
+                          <span className={`source-${option.source}`}>{option.sourceLabel}</span>
+                          {' · '}{option.location}
+                          {modifiedLabel(option.updatedAt) && <>{' · '}{modifiedLabel(option.updatedAt)}</>}
+                        </small>
                       </button>
                     </li>
                   ))}

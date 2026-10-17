@@ -1145,13 +1145,24 @@ export const homeAPI = {
 
 // AI Assistant API (local Ollama)
 export type AssistantHistoryMessage = { role: 'user' | 'assistant'; content: string };
+// Choices made from a "which one do you mean?" list, sent back with the original request.
+export type AssistantResolved = { files?: Record<string, string>; folder?: string };
+export interface AssistantChoice {
+  id: string;
+  kind: 'file' | 'folder';
+  name: string;
+  location: string;
+  source: 'owned' | 'shared' | 'team';
+  sourceLabel: string;
+  updatedAt?: string;
+}
 
 export const aiAssistantAPI = {
-  chat: async (question: string, fileId?: string, context?: string, history?: AssistantHistoryMessage[]) => {
-    const response = await api.post('/ai-assistant/chat', { question, fileId, context, history });
+  chat: async (question: string, fileId?: string, context?: string, history?: AssistantHistoryMessage[], resolved?: AssistantResolved) => {
+    const response = await api.post('/ai-assistant/chat', { question, fileId, context, history, resolved });
     return response.data;
   },
-  confirmAction: async (action: { type: string; question: string; fileId?: string | null }) => {
+  confirmAction: async (action: { type: string; question: string; fileId?: string | null; fileIds?: string[] }) => {
     const response = await api.post('/ai-assistant/confirm', { ...action, fileId: action.fileId || undefined });
     return response.data;
   },

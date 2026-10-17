@@ -14,6 +14,7 @@ const Template = require('../models/Template');
 const CloudBackup = require('../models/CloudBackup');
 const TeamFolder = require('../models/TeamFolder');
 const cloudBackupService = require('./cloudBackup');
+const { restorableParent } = require('./fileResolver');
 const {
   buildDocxBufferFromHtml,
   buildPdfBytesFromHtml,
@@ -343,90 +344,21 @@ class AIActionExecutor {
     return folder;
   }
 
+  /**
+   * Files an action applies to. File Box AI resolves names first (asking when several match) and passes
+   * the result as context.targetFiles; the name lookup below is only a fallback for other callers.
+   */
   async resolveFilesFromMessageOrSelection(message, userId, context = {}) {
+    if (Array.isArray(context.targetFiles)) {
+      return context.targetFiles;
+    }
+
     const fileNames = this.extractFileNames(message);
     if (fileNames?.length) {
       return this.findFilesByName(fileNames, userId);
     }
 
     return this.getSelectedOwnedFiles(context, userId);
-  }
-
-  /**
-   * Parse user message to detect action intent.
-   */
-  parseAction(message) {
-    const lowerMessage = message.toLowerCase();
-
-    const match = (pattern) => pattern.test(message);
-    const mentionsFile = /(file|document|this)/i.test(message) || Boolean(this.extractFileNames(message));
-
-    if (match(/create.*(?:team\s+(?:folder|space)|teamspace)|make.*(?:team\s+(?:folder|space)|teamspace)|new.*team\s+(?:folder|space)/i)) {
-      return { type: 'create_team_folder', confidence: 0.92 };
-    }
-
-    if (match(/create.*file request|make.*file request|new.*file request/i)) {
-      return { type: 'create_file_request', confidence: 0.9 };
-    }
-
-    if (match(/create.*(?:pdf|docx?|word|text)?\s*file|make.*(?:pdf|docx?|word|text)?\s*file|new.*(?:pdf|docx?|word|text)?\s*file/i)) {
-      return { type: 'create_file', confidence: 0.92 };
-    }
-
-    if (match(/create.*secured link|create.*secure link|add.*secured link|add.*secure link/i)) {
-      return { type: 'create_secured_link', confidence: 0.9 };
-    }
-
-    if (match(/create.*shortcut|add.*shortcut|save.*shortcut|bookmark.*website/i)) {
-      return { type: 'create_shortcut', confidence: 0.88 };
-    }
-
-    if (match(/create.*template|make.*template|turn .* into .*template/i)) {
-      return { type: 'create_template', confidence: 0.87 };
-    }
-
-    if (match(/backup.*desktop|backup.*documents|cloud backup|set up.*backup|create.*backup/i)) {
-      return { type: 'create_cloud_backup', confidence: 0.88 };
-    }
-
-    // Sharing is checked before file connections: "share budget.pdf as a link" is a share-link request.
-    if (match(/\bshare\b/i) && !match(/\b(relationship|relate)\b/i)) {
-      return { type: 'share_file', confidence: 0.86 };
-    }
-
-    // File connections need an explicit word for it; a bare "link" is not enough.
-    if (
-      match(/create.*relationship|\brelate\b|connect.*file|relationship.*between|make.*relationship|add.*relationship/i) ||
-      ((this.extractFileNames(message) || []).length >= 2 && /(relationship|\brelate\b|\bconnect\b|\blink\b)/i.test(message))
-    ) {
-      return { type: 'create_relationship', confidence: 0.9 };
-    }
-
-    if (match(/delete|remove|trash/i) && mentionsFile) {
-      return { type: 'delete_file', confidence: 0.82 };
-    }
-
-    if (match(/create.*folder|make.*folder|new.*folder/i)) {
-      return { type: 'create_folder', confidence: 0.9 };
-    }
-
-    if (match(/share.*file|share.*with|create.*share|share.*link|share this/i)) {
-      return { type: 'share_file', confidence: 0.82 };
-    }
-
-    if ((/star|favorite|bookmark/i.test(message) && mentionsFile) || /star this/i.test(lowerMessage)) {
-      return { type: 'star_file', confidence: 0.8 };
-    }
-
-    if ((/move|transfer|put.*in|move.*to/i.test(message) && /(file|document|this|\.)/i.test(message)) || /move this/i.test(lowerMessage)) {
-      return { type: 'move_file', confidence: 0.76 };
-    }
-
-    if ((/rename|change.*name|call.*file|name.*file/i.test(message) && mentionsFile) || /rename this/i.test(lowerMessage) || /\brename\s+.+?\s+(?:to|as)\s+\S/i.test(message)) {
-      return { type: 'rename_file', confidence: 0.84 };
-    }
-
-    return null;
   }
 
   /**
@@ -772,6 +704,10 @@ class AIActionExecutor {
       };
     }
 
+    if (context.targetFolder) {
+      return this.moveInto(files, context.targetFolder);
+    }
+
     const quotedTarget = message.match(/\b(?:to|into|in)\s+(?:the\s+|my\s+)?["'`]([^"'`]+)["'`]/i);
     const folderMatch = quotedTarget
       || message.match(/(?:to|into|in)\s+["'`]?([^"'`]+?)["'`]?(?:[.!?]|$)/i)
@@ -793,6 +729,10 @@ class AIActionExecutor {
       };
     }
 
+    return this.moveInto(files, folder);
+  }
+
+  async moveInto(files, folder) {
     const movedFiles = [];
     for (const file of files) {
       file.parentFolder = folder._id;
@@ -812,20 +752,7 @@ class AIActionExecutor {
   }
 
   async renameFile(message, userId, context = {}) {
-    let files = await this.resolveFilesFromMessageOrSelection(message, userId, context);
-
-    if (!files.length) {
-      const resolved = await this.resolveRenameTarget(message, userId);
-      if (resolved.ambiguous) {
-        return {
-          success: false,
-          needsInput: true,
-          message: `I found ${resolved.ambiguous.length} files matching "${resolved.phrase}": ${resolved.ambiguous.map(n => `"${n}"`).join(', ')}. Which one should I rename? Say its full name or select it first.`,
-          data: { candidates: resolved.ambiguous },
-        };
-      }
-      files = resolved.files;
-    }
+    const files = await this.resolveFilesFromMessageOrSelection(message, userId, context);
 
     if (!files.length) {
       return {
@@ -835,7 +762,7 @@ class AIActionExecutor {
     }
 
     const newNameMatch = message.match(/(?:to|as|named|call)\s+["'`]?([^"'`]+?)["'`]?(?:[.!?]|$)/i);
-    const newName = this.sanitizeLabel(newNameMatch?.[1] || '');
+    const newName = this.sanitizeLabel(context.newName || newNameMatch?.[1] || '');
 
     if (!newName) {
       return {
@@ -860,6 +787,37 @@ class AIActionExecutor {
         oldName,
         newName: finalName,
       },
+    };
+  }
+
+  /** Bring the user's own files back from Trash, to their folder when it still exists. */
+  async restoreFile(message, userId, context = {}) {
+    const files = Array.isArray(context.targetFiles) ? context.targetFiles : [];
+    if (!files.length) {
+      return {
+        success: false,
+        message: 'Tell me which file to restore from Trash.',
+      };
+    }
+
+    const restoredFiles = [];
+    for (const file of files) {
+      if (String(file.owner?._id || file.owner) !== String(userId) || !file.isTrashed) continue;
+      file.isTrashed = false;
+      file.deletedAt = null;
+      if (!(await restorableParent(file.parentFolder, userId))) file.parentFolder = null;
+      await file.save();
+      restoredFiles.push(file);
+    }
+
+    if (!restoredFiles.length) {
+      return { success: false, message: 'That file is not in your Trash.' };
+    }
+
+    return {
+      success: true,
+      message: `Restored ${restoredFiles.map((file) => file.originalName).join(', ')} from Trash.`,
+      data: { restoredFiles: restoredFiles.map((file) => file.originalName), fileIds: restoredFiles.map((file) => file._id) },
     };
   }
 
@@ -1201,34 +1159,6 @@ class AIActionExecutor {
     return `What's ${display}'s email address? File Box shares only with the exact email of a File Box account, for example "share it with ${name.toLowerCase().replace(/\s+/g, '.')}@example.com".`;
   }
 
-  /**
-   * Resolve "rename my resume to ..." without an extension: the words between "rename" and "to"
-   * must match exactly one of the user's own files. Several matches -> ask; none -> say so.
-   */
-  async resolveRenameTarget(message, userId) {
-    const phrase = (message.match(/\brename\s+(?:the\s+|my\s+|this\s+|that\s+)?(?:file\s+)?["'`]?(.+?)["'`]?\s+(?:to|as)\s+\S/i) || [])[1];
-    const words = (phrase || '').toLowerCase().replace(/\bfile\b/g, ' ').split(/[^a-z0-9]+/).filter(w => w.length > 1);
-    if (!words.length) return { files: [] };
-
-    const pattern = words.map(w => `(?=.*${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`).join('');
-    const candidates = await File.find({ owner: userId, isTrashed: { $ne: true }, originalName: { $regex: `^${pattern}`, $options: 'i' } })
-      .sort({ updatedAt: -1 }).limit(10);
-    if (candidates.length <= 1) return { files: candidates };
-
-    // Several matches: only an exact name match (ignoring extension and case) is unambiguous.
-    const exact = candidates.filter(f => path.parse(f.originalName).name.toLowerCase() === words.join(' ') || path.parse(f.originalName).name.toLowerCase() === phrase.toLowerCase());
-    if (exact.length === 1) return { files: exact };
-    return { files: [], ambiguous: candidates.map(f => f.originalName), phrase };
-  }
-
-  /**
-   * Names of the owned files an action would touch, so the assistant can ask for confirmation first.
-   */
-  async describeTargets(message, userId, context = {}) {
-    const files = await this.resolveFilesFromMessageOrSelection(message, userId, context);
-    return files.map((file) => file.originalName);
-  }
-
   async executeAction(action, message, userId, context = {}) {
     try {
       switch (action.type) {
@@ -1246,6 +1176,8 @@ class AIActionExecutor {
           return this.moveFile(message, userId, context);
         case 'rename_file':
           return this.renameFile(message, userId, context);
+        case 'restore_file':
+          return this.restoreFile(message, userId, context);
         case 'create_file_request':
           return this.createFileRequest(message, userId);
         case 'create_file':

@@ -18,6 +18,19 @@ const sanitizeHistory = (history = []) =>
     }))
     .filter((message) => message.content);
 
+const isId = (value) => typeof value === 'string' && /^[a-f0-9]{24}$/i.test(value);
+
+// Choices the user made from an earlier list. Only ids; the assistant re-checks access to each one.
+const sanitizeResolved = (resolved) => {
+  const files = {};
+  if (resolved && typeof resolved.files === 'object' && resolved.files) {
+    Object.entries(resolved.files).slice(0, 20).forEach(([name, id]) => {
+      if (typeof name === 'string' && name.length <= 200 && isId(id)) files[name.toLowerCase()] = id;
+    });
+  }
+  return { files, folder: isId(resolved?.folder) ? resolved.folder : undefined };
+};
+
 const sendAssistantError = (res, error) => {
   const message = error.message || 'The AI assistant could not complete this request.';
   const offline = /ollama|connect|unavailable|ECONNREFUSED|model/i.test(message);
@@ -77,6 +90,7 @@ router.post('/chat', auth, async (req, res) => {
       fileId,
       history,
       context,
+      resolved: sanitizeResolved(req.body?.resolved),
     });
 
     res.json(result);
@@ -91,6 +105,7 @@ router.post('/confirm', auth, async (req, res) => {
     const type = typeof req.body?.type === 'string' ? req.body.type : '';
     const question = typeof req.body?.question === 'string' ? req.body.question.trim() : '';
     const fileId = typeof req.body?.fileId === 'string' && req.body.fileId.trim() ? req.body.fileId.trim() : undefined;
+    const fileIds = Array.isArray(req.body?.fileIds) ? req.body.fileIds.filter(isId).slice(0, 20) : undefined;
 
     if (!type || !question) {
       return res.status(400).json({ message: 'Action type and original request are required.' });
@@ -101,6 +116,7 @@ router.post('/confirm', auth, async (req, res) => {
       type,
       question,
       fileId,
+      fileIds,
     });
     res.json(result);
   } catch (error) {

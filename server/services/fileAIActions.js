@@ -149,4 +149,7 @@ async function runAction(file, action) {
   return { action, result: result.trim(), provider: 'ollama', model: config.ollama.assistantModel, truncated: trimmed };
 }
 
-module.exports = { listActions, runAction, kindOf };
+/** Whether an action exists for this file's type (summarize, explain_code, ...). */
+const supports = (file, action) => ACTIONS_BY_KIND[kindOf(file)].includes(action);
+
+module.exports = { listActions, runAction, kindOf, supports };

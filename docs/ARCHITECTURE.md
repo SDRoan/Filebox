@@ -64,15 +64,17 @@ File Box has no hosted dependencies. Storage, sharing, search and backups never 
 ```text
 AIAssistant page ─► POST /api/ai-assistant/chat
                        └─ ollamaWorkspaceAssistant
-                            ├─ planTurn()       Ollama picks intent + action (JSON)
-                            ├─ workspaceSearch  local search for "find…" questions
-                            ├─ aiActionExecutor runs the action, scoped to files the user owns
-                            └─ composeAnswer()  Ollama writes the reply
+                            ├─ intentRouter     local rules decide the intent; Ollama only picks one
+                            │                   fixed intent when no rule matches
+                            ├─ fileResolver     names -> one permitted file/folder, or "which one?"
+                            ├─ workspaceSearch  local search for search requests
+                            ├─ aiActionExecutor runs the action on the resolved files
+                            └─ composeAnswer()  Ollama writes answers that need it
                  ─► POST /api/ai-assistant/confirm   trash/share after the user confirms
                  ─► GET  /api/ai-assistant/status    Ollama reachability + installed models
 ```
 
-- **Permissions**: file lookups in the executor always filter by `owner: userId` and `isTrashed != true`. Reading for summaries/questions also allows files shared with the user. The confirm endpoint re-runs the same scoped lookup, so a forged request cannot touch another user's files.
+- **Permissions**: names are resolved by `fileResolver` using the Phase 2 permission module. Actions that change a file (rename, move, share, trash, star, restore) only consider the user's own files; summaries, explanations and questions consider everything the user may read (own files, active shares, Team Spaces). File ids chosen in the browser and the ids in a confirmation are re-checked with `authorizeFile` / `authorizeFolder`, so a forged id cannot touch another user's files.
 - **Confirmation**: `delete_file` (move to Trash) and `share_file` never run directly from chat; the assistant returns a `pendingAction` that the UI shows with *Move to Trash / Share* and *Cancel*.
 - **Not available to AI**: permanent deletion, custom backup paths, student features.
 - **Offline**: the status check has a 3-second timeout. Questions that need the model and AI file actions return `503` with `code: "AI_OFFLINE"`; the UI shows the offline banner and re-checks every 15 seconds. Finding files, duplicate checks, rule-based organization suggestions and OCR text extraction keep working without Ollama.
@@ -94,6 +96,27 @@ Every model call goes through `services/ollamaClient.js`; callers pass a `task` 
 - "Move X into the Taxes 2026 folder" resolves the folder name without "the" or "folder"; quoted names win.
 - "Share X with Sarah" without an email asks for Sarah's email and creates nothing. File Box shares only with an exact account email.
 - "Rename my resume to …" finds the user's own file without an extension when exactly one matches, keeps the original extension, and asks which file when several match.
+
+### Intent routing (Accuracy Step 3)
+
+`services/intentRouter.js` classifies every chat request before any model call. Intents: `search`, `smart_search`, `summarize`, `explain`, `file_question`, `organize`, `duplicates`, `action` (create folder/file, rename, move, star, share, trash, restore, and the other create actions), `help`, `chat`.
+
+- **Rules first.** Politeness is stripped ("please", "can you") and "find X and delete it" becomes "delete X". Then the rules run in order: greetings, how-to questions, duplicates, actions (the verb has to lead the request), organize, summarize, explain, questions that name their file, search questions, questions about the selected file, and short keyword searches. Rules also pull out the names a request refers to (target, destination, new name).
+- **Model fallback.** Only when no rule matches does Ollama classify, using the `classify` task (temperature 0, fixed seed) with schema-constrained output that must be one of the intents. Invalid output becomes `chat`. A model-routed `action` without a rule-known action type gets a clarifying answer and never a guessed action.
+- **The model never overrides a rule.** When a rule matches, the model is not called.
+- **Debugging.** Every chat reply includes `route: { intent, action, source: "rule" | "model", rule, confidence }`.
+- **Offline.** Search, duplicates, organize, choices and rule-routed actions (including confirmations) work without Ollama. Summaries, explanations, file questions, help, chat and model fallback return `AI_OFFLINE`.
+- The JSON planner (`planTurn`) and the keyword parser (`parseAction`) were removed.
+
+### Ask instead of guessing (Accuracy Step 4)
+
+`services/fileResolver.js` turns a typed name into exactly one file or folder:
+
+- Matching runs in tiers: exact name, then exact name without extension, then every word present. The first non-empty tier wins, so "report.pdf" is exact even when "report.docx" exists.
+- **One permitted match**: proceed. **None**: say so. For an owner-only action, if only a shared file matches, the answer says that only its owner can change it. **Several**: the reply lists them (`choices`) with name, location (folder path, Team Space, or "Shared by …" without revealing the owner's folders), modified date and Yours / Shared with you / Team Space. Nothing is picked automatically.
+- Choices are sorted by name, location, date and id, never by database order. At most 8 are shown; when there are more, the reply asks for more of the name.
+- **Resuming.** A choice reply carries `resume: { question, fileId, resolved }`. Picking an option sends the original request again with `resolved.files[<name>] = id` or `resolved.folder = id`. Routing is deterministic, so the same request is rebuilt, and the chosen id is re-authorized. A move can ask for the file and then the folder.
+- Trash and share still end in the usual confirmation. `pendingAction.fileIds` holds the chosen files, and `/confirm` acts only on those ids after re-checking ownership. A confirm without ids re-resolves by rules only and refuses when a name is not unambiguous.
 
 ### AI search scope (Phase 3)
 
@@ -160,6 +183,14 @@ Documented and intentionally left for later phases:
 - AI organization suggestions vary between runs (model output); every proposal is reviewed by the user, and rule-based ones are stable.
 - Duplicate detection covers only the user's own files (others' copies can't be trashed by them), and checks at most 300 same-size files / 1 GB per request.
 - Image description needs the optional local vision model; without it the action is not offered.
+
+### Accuracy Steps 3–4 known issues
+
+- Follow-ups that use a pronoun after a search ("share the second one", "move it") are not linked to the previous results. The user names the file, selects it, or picks from the choices.
+- Matching is by file name only; "Delete the old report" looks for names containing "old" and "report".
+- Move destinations are the user's own folders, as before. Moving into a Team Space or to the My Files root from chat is not supported.
+- File relationships ("relate a.pdf and b.pdf") still use the older first-match name lookup.
+- Rules are English-only.
 
 ### Phase 4A known issues
 

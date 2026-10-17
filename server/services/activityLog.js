@@ -10,6 +10,7 @@ const ACTION_FOR_TYPE = {
   share_file: 'shared',
   move_file: 'moved',
   rename_file: 'renamed',
+  restore_file: 'restored',
 };
 
 async function logFileBoxAction(userId, type, data = {}) {
