@@ -122,6 +122,8 @@ Every model call goes through `services/ollamaClient.js`; callers pass a `task` 
 
 "Find…" questions search everything the user may read, using the Phase 2 permission module: owned files, active direct shares, and files anywhere inside the user's Team Spaces (`readableFileFilter`). Every result is then re-checked with `getFileRole` (`filterReadable`), labelled with how the user can see it (`source`: owned / shared / team, plus role, owner name or Team Space name), and de-duplicated; a file reachable both by direct share and through a Team Space appears once with the stronger access. Results never include server paths or other recipients. Trash is searched only when the question asks for it, and only the user's own trashed files. The header search stays limited to the user's own files.
 
+Chat searches prefer names: when some file names contain every search word, only those are shown ("Find my resume" means a resume, not a file that mentions resumes), and the answer says how many other files mention the word. Questions about contents ("Which files mention…", "about", "contains") and searches with no name match use content matches as before. The header search is unchanged.
+
 ### File-type actions
 
 `GET/POST /api/ai-assistant/file-actions/:fileId` (viewer access, file not in Trash). Actions depend on the file type and on what can actually run:

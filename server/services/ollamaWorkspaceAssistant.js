@@ -163,12 +163,18 @@ class OllamaWorkspaceAssistant {
     return /\b(trash|trashed|deleted|bin)\b/i.test(question);
   }
 
+  // "Which file mentions MongoDB?" is about contents; "Find my resume" is about what the file is.
+  questionAsksAboutContent(question = '') {
+    return /\b(mention(?:s|ed|ing)?|about|contain(?:s|ed|ing)?|says?|talks?\s+about|refers?\s+to|discuss(?:es|ing)?|includ(?:es|ing)|related\s+to|regarding|inside|in\s+it|text|word|phrase)\b/i.test(question);
+  }
+
   // Search everything the user may read (owned, shared with them, Team Spaces), using the shared permission rules.
   async searchForQuestion(userId, question) {
     const includeTrash = this.questionAsksForTrash(question);
     const query = this.extractSearchQuery(question).replace(/\b(in\s+)?(the\s+)?(trash|trashed|deleted|bin)\b/gi, ' ').replace(/\s+/g, ' ').trim() || question;
-    const { files } = await searchWorkspace(userId, query, { limit: 8, scope: 'accessible', includeTrash });
-    return files.map((file) => {
+    const preferNames = !this.questionAsksAboutContent(question);
+    const { files: found, stats } = await searchWorkspace(userId, query, { limit: 8, scope: 'accessible', includeTrash, preferNames });
+    const files = found.map((file) => {
       const { source, role, teamName } = file.access;
       const ownerName = file.owner?.name;
       let location = file.folderName || 'My Files';
@@ -191,9 +197,10 @@ class OllamaWorkspaceAssistant {
         updatedAt: file.updatedAt,
       };
     });
+    return { files, hiddenContentMatches: stats.hiddenContentMatches || 0 };
   }
 
-  findAnswer(question, files) {
+  findAnswer(question, files, hiddenContentMatches = 0) {
     const query = this.extractSearchQuery(question);
     if (!files.length) {
       return `I couldn't find any files matching "${query}" in your files, files shared with you, or your Team Spaces.`;
@@ -204,7 +211,11 @@ class OllamaWorkspaceAssistant {
     const labels = { owned: 'yours', shared: 'shared with you', team: 'in Team Spaces' };
     const breakdown = counts.map(([source, n]) => `${n} ${labels[source]}`).join(', ');
     const trashed = files.filter(f => f.trashed).length;
-    return `I found ${files.length} file${files.length === 1 ? '' : 's'} matching "${query}"${breakdown ? ` (${breakdown}${trashed ? `, ${trashed} in Trash` : ''})` : trashed ? ' in Trash' : ''}. Select one to open it, or ask me about it.`;
+    const matching = hiddenContentMatches ? (files.length === 1 ? 'whose name matches' : 'whose names match') : 'matching';
+    const hint = hiddenContentMatches
+      ? ` ${hiddenContentMatches} other file${hiddenContentMatches === 1 ? ' mentions' : 's mention'} "${query}" in ${hiddenContentMatches === 1 ? 'its' : 'their'} text. Ask "Which files mention ${query}?" to see ${hiddenContentMatches === 1 ? 'it' : 'them'}.`
+      : '';
+    return `I found ${files.length} file${files.length === 1 ? '' : 's'} ${matching} "${query}"${breakdown ? ` (${breakdown}${trashed ? `, ${trashed} in Trash` : ''})` : trashed ? ' in Trash' : ''}. Select one to open it, or ask me about it.${hint}`;
   }
 
   questionNeedsSummary(question = '') {
@@ -772,10 +783,11 @@ Respond to the latest user request now.`,
   }
 
   async handleSearch(route, { userId, question }) {
-    let files = await this.searchForQuestion(userId, question);
+    const found = await this.searchForQuestion(userId, question);
+    let { files } = found;
     if (/\b(newest|latest|most\s+recent)\b/i.test(question)) files = [...files].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
     else if (/\boldest\b/i.test(question)) files = [...files].sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt));
-    return this.reply(route, { answer: this.findAnswer(question, files), provider: 'local-search', files });
+    return this.reply(route, { answer: this.findAnswer(question, files, found.hiddenContentMatches), provider: 'local-search', files });
   }
 
   /**
