@@ -70,12 +70,18 @@ async function ensureIndexed(fileIds, { limit = 10 } = {}) {
  * The passages that best match a question, from the given files only (the caller decides access).
  * Returns [{ file, index, text, score }], best first, at most `perFile` from one file.
  */
-async function searchPassages(fileIds, question, { k = 6, perFile = 3 } = {}) {
+async function searchPassages(fileIds, question, { k = 6, perFile = 3, fileScores } = {}) {
   if (!fileIds.length) return [];
   const [query] = await ollamaClient.embed([`search_query: ${question}`]);
   const chunks = await FileChunk.find({ file: { $in: fileIds }, embedding: { $exists: true } }).select('file index text embedding').lean();
   const scored = chunks
-    .map(chunk => ({ file: chunk.file.toString(), index: chunk.index, text: chunk.text, score: cosine(query, chunk.embedding) }))
+    .map((chunk) => {
+      const file = chunk.file.toString();
+      const passage = cosine(query, chunk.embedding);
+      // A passage in the file the question is clearly about beats a stray match in an unrelated file.
+      const score = fileScores?.has(file) ? 0.6 * passage + 0.4 * fileScores.get(file) : passage;
+      return { file, index: chunk.index, text: chunk.text, score };
+    })
     .sort((a, b) => b.score - a.score || a.file.localeCompare(b.file) || a.index - b.index);
   const perFileCount = new Map();
   const picked = [];

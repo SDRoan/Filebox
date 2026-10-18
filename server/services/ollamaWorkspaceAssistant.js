@@ -36,6 +36,8 @@ const FILE_ACTIONS = {
 };
 const FILE_INTENTS = ['summarize', 'explain', 'file_question'];
 const MAX_RESOLVED_IDS = 20;
+// Files within this much of the best file's relevance are read when answering questions across files.
+const FOCUS_MARGIN = 0.06;
 
 const truncateText = (value = '', limit = 2400) => {
   if (!value) {
@@ -929,10 +931,15 @@ Respond to the latest user request now.`,
    */
   async handleDriveQuestion(route, { userId, question, history, onToken }) {
     await this.requireModel();
-    const ranked = await rankReadableFiles(userId, question, { limit: 8 });
+    const allRanked = await rankReadableFiles(userId, question, { limit: 8 });
+    // Read passages only from the files that clearly lead (what each file IS ranks files reliably; single
+    // passages of unrelated files can look similar to almost any question).
+    const best = allRanked[0]?.score || 0;
+    const ranked = allRanked.filter(r => r.score >= best - FOCUS_MARGIN).slice(0, 3);
     const fileIds = ranked.map(r => r.file._id);
-    await ensureIndexed(fileIds, { limit: 4 });
-    const passages = await searchPassages(fileIds, question, { k: 6, perFile: 3 });
+    await ensureIndexed(fileIds, { limit: 3 });
+    const fileScores = new Map(ranked.map(r => [r.file._id.toString(), r.score]));
+    const passages = await searchPassages(fileIds, question, { k: 5, perFile: 4, fileScores });
 
     const byId = new Map(ranked.map(r => [r.file._id.toString(), r.file]));
     const usedIds = [...new Set([...passages.map(p => p.file), ...ranked.slice(0, 3).map(r => r.file._id.toString())])];

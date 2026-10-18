@@ -14,8 +14,9 @@ const { indexFile, needsIndex, removeOrphans } = require('./fileIndex');
 
 const PROFILE_VERSION = 3;
 const BATCH = 1;
-// Ollama answers one request at a time; the profiler waits while someone is using File Box AI.
-const QUIET_MS = 30 * 1000;
+// Ollama answers one request at a time and keeps only the latest prompt cached, so the profiler waits until
+// File Box AI has been idle for 2 minutes: reading a file in between questions would make the next one slow.
+const QUIET_MS = 2 * 60 * 1000;
 const INTERVAL_MS = 30 * 1000;
 const HEAD_CHARS = 2500;
 const SAMPLE_CHARS = 700;

@@ -42,72 +42,69 @@ const SCHEMA = {
   required: ['intent', 'action', 'file', 'destination', 'newName', 'searchTerms', 'lookFor'],
 };
 
-const SYSTEM = `You are the understanding step of File Box AI, an assistant inside a personal file storage app.
-Read the user's latest message (and the recent conversation for context) and return JSON describing what they want.
+// Kept short on purpose: Ollama re-reads the whole prompt whenever its cache was used for something else,
+// and on a laptop every 1,000 prompt tokens cost about 8 seconds.
+const SYSTEM = `You read requests for File Box AI in a personal file storage app. Return JSON.
+intent:
+- search / smart_search: find files (which, where, do I have, show me my X). lookFor "what_the_file_is" for a kind of file, "words_inside_files" for files that mention words.
+- summarize, explain: one file.
+- file_question: a question about what one named or selected file says ("does my resume mention X").
+- drive_question: asks for a fact written in their files (a date, amount, grade, course) without naming a file.
+- duplicates: anything about duplicate or identical copies, including cleaning them up.
+- organize: tidy or group files into folders (not about duplicates).
+- action: one change now. help: how File Box works. chat: anything else.
+action (only for intent action): create_folder, create_file, rename_file, move_file, share_file (also "as a link"), delete_file (trash/delete/remove), star_file, restore_file, create_file_request, create_template, create_team_folder, create_cloud_backup, create_shortcut / create_secured_link (website URLs). Otherwise "none".
+file: the file meant, in the user's words without filler; "${SELECTED}" for "this/it" when a file is selected; for "it" after "[Files shown: X]" copy X.
+destination: folder for move_file. newName: new name for rename_file, or the name for create_folder/create_file. searchTerms: words for search.
+"How do I" is always help. Use "" for fields that do not apply.`;
 
-Fields:
-- intent: one of
-  search (a few words to look up a file), smart_search (asks to find files or which/where a file is),
-  summarize, explain, file_question (a question about what is written inside one specific file the user names or selected),
-  drive_question (asks for a fact written inside their files - a date, amount, grade, name, number - without
-  naming a file: "When is my electricity bill due?", "What grade did I get in calculus?").
-  Asking WHICH file, WHETHER they have a file, or WHERE a file is, is smart_search, not drive_question,
-  organize (the user wants File Box to suggest how to tidy or group their files, with no specific file and folder named),
-  duplicates (find or clean up duplicate files),
-  action (make one specific change now, such as moving a named file into a named folder),
-  help (how File Box works), chat (anything else).
-- action: when intent is action, the change: create_folder, create_file, rename_file, move_file, share_file,
-  delete_file (trash, delete, remove or move a file to Trash), star_file, restore_file (from Trash),
-  create_file_request, create_template, create_team_folder, create_cloud_backup,
-  create_shortcut (save a website URL), create_secured_link (save a website URL behind a password).
-  Sharing a file, including "as a link" or "with a link", is always share_file. Otherwise "none".
-- file: the file the message is about, in the user's own words without filler (for example "budget.pdf",
-  "resume", "old report"). If they mean the file they have selected ("this", "it", "this PDF") and a file is
-  selected, use "${SELECTED}". If "it", "that one" or "the first one" refers to a file listed earlier in the
-  conversation (after "[Files shown: ...]"), copy that file's exact name from the list. Empty when no file is meant.
-- destination: for move_file, the folder to move into, in the user's words without "the" or "folder".
-- newName: for rename_file, the new name exactly as given; for create_folder or create_file, the name to create.
-- searchTerms: for search and smart_search, the few words that describe the file they want. When the whole
-  message is just a few words like "resume" or "budget.pdf", those words.
-- lookFor: for search and smart_search, "what_the_file_is" when they want a file that IS something
-  (my resume, my tax return, the budget), or "words_inside_files" when they ask which files mention or contain
-  some words. Otherwise "none".
-
-"How do I ..." questions are help, never actions. Use empty strings for fields that do not apply.`;
-
-// Worked examples, given to the model as earlier turns (small models follow these more reliably).
-const blank = { intent: 'chat', action: 'none', file: '', destination: '', newName: '', searchTerms: '', lookFor: 'none' };
+// Worked examples, given to the model as earlier turns (followed more reliably than a list in the prompt).
+// Only the fields that matter are written out; the rest default to empty.
 const example = (message, answer, extra = {}) => ({
-  user: JSON.stringify({ recentConversation: extra.history || [], fileSelected: Boolean(extra.selected), message }),
-  assistant: JSON.stringify({ ...blank, ...answer }),
+  user: JSON.stringify({ c: extra.history || [], sel: Boolean(extra.selected), m: message }),
+  assistant: JSON.stringify({ intent: 'chat', action: 'none', file: '', destination: '', newName: '', searchTerms: '', lookFor: 'none', ...answer }),
 });
 const EXAMPLES = [
   example('Move report into Archive', { intent: 'action', action: 'move_file', file: 'report', destination: 'Archive' }),
+  example('Put the photo in Pictures', { intent: 'action', action: 'move_file', file: 'photo', destination: 'Pictures' }),
   example('Trash report', { intent: 'action', action: 'delete_file', file: 'report' }),
   example('Create a folder called Trips', { intent: 'action', action: 'create_folder', newName: 'Trips' }),
   example('rename notes.txt to ideas.txt', { intent: 'action', action: 'rename_file', file: 'notes.txt', newName: 'ideas.txt' }),
   example('Share the plan with ana@example.com', { intent: 'action', action: 'share_file', file: 'plan' }),
-  example('share it as a link', { intent: 'action', action: 'share_file', file: 'trip.pdf' }, { history: [{ role: 'assistant', content: 'I found 1 file.\n[Files shown: trip.pdf]' }] }),
+  example('share it as a link', { intent: 'action', action: 'share_file', file: 'trip.pdf' }, { history: [{ role: 'assistant', content: '[Files shown: trip.pdf]' }] }),
   example('Organize my screenshots', { intent: 'organize' }),
   example('Find duplicate files', { intent: 'duplicates' }),
-  example('Find my resume', { intent: 'smart_search', searchTerms: 'resume', lookFor: 'what_the_file_is' }),
+  example('Clean up the duplicates in my drive', { intent: 'duplicates' }),
+  example('Show me my receipts', { intent: 'smart_search', searchTerms: 'receipts', lookFor: 'what_the_file_is' }),
   example('Which files mention Kubernetes?', { intent: 'smart_search', searchTerms: 'Kubernetes', lookFor: 'words_inside_files' }),
   example('Do I have a passport scan?', { intent: 'smart_search', searchTerms: 'passport scan', lookFor: 'what_the_file_is' }),
-  example('Show me my receipts', { intent: 'smart_search', searchTerms: 'receipts', lookFor: 'what_the_file_is' }),
-  example('invoice', { intent: 'search', searchTerms: 'invoice', lookFor: 'what_the_file_is' }),
   example('Does my cover letter mention Java?', { intent: 'file_question', file: 'cover letter' }),
   example('What does this say about refunds?', { intent: 'file_question', file: SELECTED }, { selected: true }),
   example('When is my rent due?', { intent: 'drive_question' }),
-  example('How much did I pay for internet in May?', { intent: 'drive_question' }),
-  example('Do I have a tax return?', { intent: 'smart_search', searchTerms: 'tax return', lookFor: 'what_the_file_is' }),
-  example('Which file mentions the Q3 budget?', { intent: 'smart_search', searchTerms: 'Q3 budget', lookFor: 'words_inside_files' }),
-  example('Put the photo in Pictures', { intent: 'action', action: 'move_file', file: 'photo', destination: 'Pictures' }),
   example('Summarize the lease', { intent: 'summarize', file: 'lease' }),
   example('How do I restore a file?', { intent: 'help' }),
   example('hi there', { intent: 'chat' }),
 ];
 
 const clean = (value) => String(value || '').replace(/\s+/g, ' ').trim().slice(0, 200);
+
+/**
+ * When the model's fields contradict the label it chose, the fields win. This never reads the user's words
+ * for meaning; it only keeps the model consistent with what it extracted itself.
+ */
+function reconcile(parsed, question) {
+  const file = clean(parsed.file);
+  const destination = clean(parsed.destination);
+  // A specific file and a destination folder is a move ("Move report into Archive"), not tidying up.
+  if (file && destination && parsed.action !== 'move_file' && !['help', 'duplicates'].includes(parsed.intent)) {
+    return { intent: 'action', action: 'move_file' };
+  }
+  // Shortcuts and secured links save website addresses; for a file with no address, sharing is meant.
+  if (['create_secured_link', 'create_shortcut'].includes(parsed.action) && file && !/https?:\/\/|www\.|\.[a-z]{2,6}\//i.test(question)) {
+    return { intent: 'action', action: 'share_file' };
+  }
+  return { intent: parsed.intent, action: parsed.action };
+}
 
 /**
  * Returns a route: { intent, action?, target, destination, newName, searchTerms, lookFor, source: 'model' }.
@@ -120,9 +117,9 @@ async function understandRequest(question, { hasSelectedFile = false, history = 
     system: SYSTEM,
     examples: EXAMPLES,
     content: JSON.stringify({
-      recentConversation: history.slice(-6).map(m => ({ role: m.role, content: String(m.content || '').slice(0, 600) })),
-      fileSelected: hasSelectedFile,
-      message: question,
+      c: history.slice(-4).map(m => ({ role: m.role, content: String(m.content || '').slice(0, 300) })),
+      sel: hasSelectedFile,
+      m: question,
     }),
     format: SCHEMA,
   });
@@ -133,6 +130,7 @@ async function understandRequest(question, { hasSelectedFile = false, history = 
     return { intent: 'chat', source: 'model', rule: 'model:invalid-output', confidence: 0.3, target: '', normalized: question };
   }
 
+  ({ intent: parsed.intent, action: parsed.action } = reconcile(parsed, question));
   const action = parsed.intent === 'action' && ACTIONS.includes(parsed.action) && parsed.action !== 'none' ? parsed.action : undefined;
   let target = clean(parsed.file);
   if (target === SELECTED) target = hasSelectedFile ? 'this' : '';
