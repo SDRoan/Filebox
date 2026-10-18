@@ -11,6 +11,7 @@ const { chunkText } = require('../utils/chunkText');
  */
 
 const CHUNK_CHARS = 900;
+const KEYWORD_WEIGHT = 0.5;
 const MAX_CHUNKS_PER_FILE = 200; // ~180,000 characters; the rest of very long files is not searched
 
 const cosine = (a, b) => {
@@ -24,6 +25,35 @@ const cosine = (a, b) => {
   }
   return na && nb ? dot / Math.sqrt(na * nb) : 0;
 };
+
+// Words that say nothing about which file or passage is meant.
+const STOP_WORDS = new Set(('a an and are as at be been by can could did do does for from had has have how i if in into is it its '
+  + 'me my mine of on or our so than that the their them then there these they this those to was we were what when where which '
+  + 'who whom whose why will with would you your about many much any some all tell show give find please').split(' '));
+
+/** The words of a question worth matching exactly: names, numbers, rare terms ("Critters", "2026"). */
+const questionTerms = (question = '') => [...new Set((question.toLowerCase().match(/[a-z0-9][a-z0-9'&.-]*[a-z0-9]|[a-z0-9]/g) || [])
+  .map(word => word.replace(/'s$/, ''))
+  .filter(word => (word.length >= 3 || /\d/.test(word)) && !STOP_WORDS.has(word)))];
+
+/**
+ * Exact-word evidence, 0..1: how much of the question's (rarity-weighted) wording appears in each text.
+ * Embeddings match meaning but not names; a company or course name in the question that appears in only
+ * one file is strong evidence that file is meant. Words in no text at all are ignored.
+ */
+function keywordScores(question, texts) {
+  const terms = questionTerms(question);
+  if (!terms.length || !texts.length) return texts.map(() => 0);
+  const lowered = texts.map(text => ` ${(text || '').toLowerCase()} `);
+  const has = (text, term) => new RegExp(`[^a-z0-9]${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:s|es)?[^a-z0-9]`).test(text);
+  const weights = terms.map((term) => {
+    const df = lowered.filter(text => has(text, term)).length;
+    return df ? Math.log(1 + texts.length / df) : 0;
+  });
+  const total = weights.reduce((a, b) => a + b, 0);
+  if (!total) return texts.map(() => 0);
+  return lowered.map(text => terms.reduce((sum, term, i) => sum + (weights[i] && has(text, term) ? weights[i] : 0), 0) / total);
+}
 
 /** True when the file's passages are missing or older than its text. */
 async function needsIndex(fileContent) {
@@ -74,10 +104,12 @@ async function searchPassages(fileIds, question, { k = 6, perFile = 3, fileScore
   if (!fileIds.length) return [];
   const [query] = await ollamaClient.embed([`search_query: ${question}`]);
   const chunks = await FileChunk.find({ file: { $in: fileIds }, embedding: { $exists: true } }).select('file index text embedding').lean();
+  const exact = keywordScores(question, chunks.map(chunk => chunk.text));
   const scored = chunks
-    .map((chunk) => {
+    .map((chunk, i) => {
       const file = chunk.file.toString();
-      const passage = cosine(query, chunk.embedding);
+      // Meaning plus exact wording: "Sentinel Biotech" finds the passage that names it.
+      const passage = cosine(query, chunk.embedding) + KEYWORD_WEIGHT * exact[i];
       // A passage in the file the question is clearly about beats a stray match in an unrelated file.
       const score = fileScores?.has(file) ? 0.6 * passage + 0.4 * fileScores.get(file) : passage;
       return { file, index: chunk.index, text: chunk.text, score };
@@ -105,4 +137,4 @@ async function removeOrphans() {
   return orphans.length;
 }
 
-module.exports = { indexFile, ensureIndexed, needsIndex, searchPassages, removeOrphans };
+module.exports = { indexFile, ensureIndexed, needsIndex, searchPassages, removeOrphans, keywordScores, KEYWORD_WEIGHT };

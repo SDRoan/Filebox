@@ -97,7 +97,18 @@ const OFFLINE_RECHECK_MS = 15000;
 const readHistory = (key: string): Message[] => {
   try {
     const saved = JSON.parse(localStorage.getItem(key) || '[]');
-    return Array.isArray(saved) ? saved : [];
+    const messages: Message[] = Array.isArray(saved) ? saved : [];
+    // A question left without a reply (the page was reloaded or closed while File Box was working).
+    const last = messages[messages.length - 1];
+    if (last?.role === 'user') {
+      messages.push({
+        id: `${last.id}-unanswered`,
+        role: 'assistant',
+        content: "This question didn't get an answer because the page was closed or reloaded while File Box was working on it. Ask it again.",
+        error: true,
+      });
+    }
+    return messages;
   } catch {
     return [];
   }
@@ -114,6 +125,14 @@ const AIAssistant: React.FC = () => {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [streaming, setStreaming] = useState(false);
+  // Seconds since the question was sent, shown while File Box is working on it.
+  const [waited, setWaited] = useState(0);
+  useEffect(() => {
+    if (!sending) { setWaited(0); return undefined; }
+    const started = Date.now();
+    const timer = setInterval(() => setWaited(Math.round((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(timer);
+  }, [sending]);
   const [fileOptions, setFileOptions] = useState<FileOption[]>([]);
   const [selectedFileId, setSelectedFileId] = useState('');
   const [fileActions, setFileActions] = useState<FileAIActionsInfo | null>(null);
@@ -224,6 +243,7 @@ const AIAssistant: React.FC = () => {
         choices: response.choices?.options?.length ? response.choices : undefined,
         resume: response.resume,
         offline: response.route?.mode === 'offline',
+        error: response.error === true,
         actionState: response.pendingAction ? 'pending' : undefined,
         question,
         route: response.route ? { intent: response.route.intent, action: response.route.action, phrase: response.route.phrase } : undefined,
@@ -616,7 +636,11 @@ const AIAssistant: React.FC = () => {
               )}
             </article>
           ))}
-          {sending && !streaming && <div className="filebox-ai-message assistant thinking">Thinking…</div>}
+          {sending && !streaming && (
+            <div className="filebox-ai-message assistant thinking" role="status">
+              {waited < 4 ? 'Thinking…' : `Reading your files… ${waited}s`}
+            </div>
+          )}
           <div ref={endRef} />
         </section>
       )}

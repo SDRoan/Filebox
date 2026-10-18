@@ -14,7 +14,7 @@ const intentRouter = require('./intentRouter');
 const { understandRequest } = require('./requestUnderstanding');
 const { findFiles, rankReadableFiles } = require('./aiFileFinder');
 const { noteActivity } = require('./fileProfiler');
-const { ensureIndexed, searchPassages } = require('./fileIndex');
+const { ensureIndexed, searchPassages, keywordScores, KEYWORD_WEIGHT } = require('./fileIndex');
 const { correctionsFor } = require('./aiFeedback');
 const { filterReadable } = require('./permissions');
 const { cleanPhrase, phraseWords, resolveFile, resolveFolder, fileById, folderById } = require('./fileResolver');
@@ -934,7 +934,16 @@ Respond to the latest user request now.`,
    */
   async handleDriveQuestion(route, { userId, question, history, onToken, onReset }) {
     await this.requireModel();
-    let allRanked = await rankReadableFiles(userId, question, { limit: 8 });
+    // Rank by meaning plus exact wording, so a company, course or person named in the question finds the
+    // file that names it even when another file is closer in general meaning.
+    let allRanked = await rankReadableFiles(userId, question, { limit: 50 });
+    const texts = new Map((await FileContent.find({ file: { $in: allRanked.map(r => r.file._id) } }).select('file extractedText').lean())
+      .map(c => [c.file.toString(), c.extractedText || '']));
+    const exact = keywordScores(question, allRanked.map(r => texts.get(r.file._id.toString()) || ''));
+    allRanked = allRanked
+      .map((r, i) => ({ ...r, score: r.score + KEYWORD_WEIGHT * exact[i] }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 8);
     // Files the person said were right for a question like this one come first; ones they said were wrong go.
     const { include, exclude } = await correctionsFor(userId, question);
     if (include.length || exclude.length) {
@@ -1003,6 +1012,19 @@ Respond to the latest user request now.`,
       }
     }
 
+    // The model sometimes names the wrong file. Cite the file whose text actually supports the answer best.
+    const support = this.quoteSources(answer, usedIds, byId, passages, profiles, { withPoints: true });
+    const strongest = support.sort((a, b) => b.points - a.points)[0];
+    if (strongest) {
+      for (const id of usedIds) {
+        const name = byId.get(id).originalName;
+        const cited = support.find(sup => sup.fileId === id);
+        if (id !== strongest.fileId && answer.includes(name) && (!cited || cited.points < strongest.points)) {
+          answer = answer.split(name).join(strongest.name);
+        }
+      }
+    }
+
     // Show the files the answer names (or the most relevant ones when it names none).
     const named = usedIds.filter(id => answer.toLowerCase().includes(byId.get(id).originalName.toLowerCase()));
     const shown = (named.length ? named : usedIds.slice(0, 3)).map(id => byId.get(id));
@@ -1018,7 +1040,7 @@ Respond to the latest user request now.`,
   }
 
   /** For each file, the line of its text (or noted fact) that shares the most with the answer. */
-  quoteSources(answer, ids, byId, passages, profiles) {
+  quoteSources(answer, ids, byId, passages, profiles, { withPoints = false } = {}) {
     const words = (text) => (text.toLowerCase().match(/[a-z0-9][a-z0-9.,$%-]*[a-z0-9%]|[a-z0-9]/g) || []).filter(w => w.length > 1 || /\d/.test(w));
     const wanted = new Set(words(answer.replace(/\([^)]*\)/g, ' ')));
     const score = (line) => words(line).reduce((sum, w) => sum + (wanted.has(w) ? (/\d/.test(w) ? 3 : 1) : 0), 0);
@@ -1029,7 +1051,7 @@ Respond to the latest user request now.`,
         .filter(line => line.length > 3);
       const best = lines.map(line => ({ line, points: score(line) })).sort((a, b) => b.points - a.points)[0];
       if (!best || !best.points) return null;
-      return { fileId: id, name: byId.get(id).originalName, quote: best.line.slice(0, 220) };
+      return { fileId: id, name: byId.get(id).originalName, quote: best.line.slice(0, 220), ...(withPoints ? { points: best.points } : {}) };
     }).filter(Boolean);
   }
 
@@ -1040,7 +1062,8 @@ Respond to the latest user request now.`,
       onToken,
       model,
       system: `You answer questions about a person's own files inside File Box, a file storage app.
-Use only the file excerpts given. After each fact, name the file it came from in parentheses, for example (electric-bill-oct.pdf).
+Use only the file excerpts given. After each fact, put the file name it came from in parentheses, exactly as written after "File:" (for example (electric-bill-oct.pdf)), never a company or person.
+For questions about how long, when or how much, first state the dates or numbers written in the file, then the result (for example: "April 2024 to July 2024, about 3 months").
 If the excerpts do not contain the answer, reply with one sentence like "I couldn't find that in your files." and do not point to unrelated files. Never guess or use outside knowledge for facts about the person.
 Be brief and direct.`,
       content: `Recent conversation:\n${this.serializeConversation(history) || 'None.'}\n\nExcerpts from the person's files:\n{{CONTEXT}}\n\nQuestion: ${question}`,
@@ -1125,12 +1148,17 @@ Be brief and direct.`,
     const hasSelectedFile = Boolean(fileId);
     const status = await this.getStatus();
     if (status.reachable) {
-      try {
-        return { ...(await understandRequest(question, { hasSelectedFile, history })), mode: 'ai' };
-      } catch (error) {
-        console.error('[File Box AI] Understanding failed, using offline rules:', error.message);
+      // Ollama is running: never fall back to guessing. Try twice, then say File Box AI is busy.
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        try {
+          return { ...(await understandRequest(question, { hasSelectedFile, history })), mode: 'ai' };
+        } catch (error) {
+          console.error(`[File Box AI] Understanding failed (attempt ${attempt}):`, error.message);
+        }
       }
+      return { intent: 'busy', source: 'model', rule: 'model:timeout', confidence: 0, mode: 'ai', normalized: question };
     }
+    // Offline rules only when Ollama is not running at all.
     const fileNames = aiActionExecutor.extractFileNames(question) || [];
     return { ...intentRouter.routeIntent(question, { hasSelectedFile, fileNames }), mode: 'offline' };
   }
@@ -1146,6 +1174,11 @@ Be brief and direct.`,
     const turn = { userId, question, fileId, history, context, resolved, onToken, onReset };
 
     switch (route.intent) {
+      case 'busy':
+        return this.reply(route, {
+          answer: 'File Box AI is taking too long to respond right now (your computer may be busy). Please ask again in a moment.',
+          error: true,
+        });
       case 'duplicates': {
         // Duplicate cleanup is rule-based and review-only: show the groups, never remove anything here.
         const { groups, reclaimableBytes } = await buildDuplicateSuggestions(userId);

@@ -15,7 +15,8 @@ const config = require('../config/aiConfig');
  */
 const TASK_PROFILES = {
   classify: { temperature: 0, maxOutput: 600, timeoutMs: 90000 },
-  plan: { temperature: 0, maxOutput: 400, timeoutMs: 90000 },
+  // Understanding replies are ~60 tokens; a low cap stops runaway JSON whitespace from taking minutes.
+  plan: { temperature: 0, maxOutput: 200, timeoutMs: 60000 },
   action: { temperature: 0, maxOutput: 400 },
   // Reading a file (profiles, key points) can take minutes on a busy laptop.
   extract: { temperature: 0, maxOutput: 900, timeoutMs: 300000 },
