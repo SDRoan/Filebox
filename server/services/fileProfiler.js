@@ -152,7 +152,8 @@ async function runOnce() {
         if (health.embeddingModelAvailable && await needsIndex(fileContent)) await indexFile(file, fileContent, { background: true });
         done += 1;
       } catch (error) {
-        console.error('[File profile] Could not read file:', error.message);
+        // Paused because the user asked something; this file is read again on a later pass.
+        if (error.code !== 'YIELDED') console.error('[File profile] Could not read file:', error.message);
         return done;
       }
     }

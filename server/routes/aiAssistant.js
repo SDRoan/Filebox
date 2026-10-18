@@ -11,6 +11,7 @@ const { buildDuplicateSuggestions } = require('../services/duplicateSuggestions'
 const { suggestOrganization, applyProposals } = require('../services/organizeSuggestions');
 const { INTENTS } = require('../services/intentRouter');
 const { ACTIONS } = require('../services/requestUnderstanding');
+const { noteActivity } = require('../services/fileProfiler');
 
 const sanitizeHistory = (history = []) =>
   (Array.isArray(history) ? history : [])
@@ -53,11 +54,10 @@ const sanitizeRoute = (route) => {
   };
 };
 
-const sendAssistantError = (res, error) => {
+const assistantErrorBody = (error) => {
   const message = error.message || 'The AI assistant could not complete this request.';
   const offline = /ollama|connect|unavailable|ECONNREFUSED|model/i.test(message);
-
-  res.status(offline ? 503 : 500).json({
+  return { status: offline ? 503 : 500, body: {
     code: offline ? 'AI_OFFLINE' : 'AI_ERROR',
     message,
     answer: offline
@@ -66,7 +66,12 @@ const sendAssistantError = (res, error) => {
     provider: 'ollama',
     model: config.ollama.assistantModel,
     timestamp: new Date(),
-  });
+  } };
+};
+
+const sendAssistantError = (res, error) => {
+  const { status, body } = assistantErrorBody(error);
+  res.status(status).json(body);
 };
 
 // Assistant health and model status
@@ -106,19 +111,41 @@ router.post('/chat', auth, async (req, res) => {
       });
     }
 
-    const result = await ollamaWorkspaceAssistant.chat({
+    const turn = {
       userId: req.user._id,
       question,
       fileId,
       history,
       context,
       resolved: sanitizeResolved(req.body?.resolved),
-    });
+    };
 
-    res.json(result);
+    // Streaming: one JSON object per line - { type: 'token', text } while the answer is written,
+    // then { type: 'done', reply } or { type: 'error', status, body }.
+    if (req.body?.stream === true) {
+      res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.flushHeaders?.();
+      const send = (event) => res.write(`${JSON.stringify(event)}\n`);
+      try {
+        const reply = await ollamaWorkspaceAssistant.chat({ ...turn, onToken: (text) => send({ type: 'token', text }) });
+        send({ type: 'done', reply });
+      } catch (error) {
+        send({ type: 'error', ...assistantErrorBody(error) });
+      }
+      return res.end();
+    }
+
+    res.json(await ollamaWorkspaceAssistant.chat(turn));
   } catch (error) {
     sendAssistantError(res, error);
   }
+});
+
+// The File Box AI page is open: background file reading stays paused so questions are answered first.
+router.post('/presence', auth, (req, res) => {
+  noteActivity();
+  res.json({ ok: true });
 });
 
 // Run a destructive or exposing action (trash, share) after the user confirmed it in the UI

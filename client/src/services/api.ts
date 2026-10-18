@@ -24,12 +24,17 @@ const getLocalSession = () => {
   return localSessionRequest;
 };
 
-// Ensure a real session exists before sending any workspace request.
-api.interceptors.request.use(async (config) => {
+const currentToken = async (url = '') => {
   let token = LOCAL_PREVIEW_ENABLED ? sessionStorage.getItem('filebox-local-token') : localStorage.getItem('token');
-  if (LOCAL_PREVIEW_ENABLED && !token && !config.url?.startsWith('/auth/')) {
+  if (LOCAL_PREVIEW_ENABLED && !token && !url.startsWith('/auth/')) {
     token = (await getLocalSession()).token;
   }
+  return token;
+};
+
+// Ensure a real session exists before sending any workspace request.
+api.interceptors.request.use(async (config) => {
+  const token = await currentToken(config.url);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -1161,6 +1166,45 @@ export const aiAssistantAPI = {
   chat: async (question: string, fileId?: string, context?: string, history?: AssistantHistoryMessage[], resolved?: AssistantResolved) => {
     const response = await api.post('/ai-assistant/chat', { question, fileId, context, history, resolved });
     return response.data;
+  },
+  /**
+   * Same as chat, but the answer arrives piece by piece (onToken) while File Box AI writes it.
+   * Resolves with the full reply; errors carry `response.data` like axios errors.
+   */
+  chatStream: async (
+    body: { question: string; fileId?: string; history?: AssistantHistoryMessage[]; resolved?: AssistantResolved },
+    onToken: (text: string) => void,
+  ) => {
+    const token = await currentToken('/ai-assistant/chat');
+    const response = await fetch(`${API_URL}/ai-assistant/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ ...body, stream: true }),
+    });
+    const fail = (status: number, data: any) => Object.assign(new Error(data?.message || 'File Box AI could not answer.'), { response: { status, data } });
+    if (!response.ok || !response.body) throw fail(response.status, await response.json().catch(() => ({})));
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.type === 'token') onToken(event.text);
+        else if (event.type === 'done') return event.reply;
+        else if (event.type === 'error') throw fail(event.status, event.body);
+      }
+    }
+    throw fail(500, { message: 'File Box AI stopped before finishing the answer.' });
+  },
+  presence: async () => {
+    await api.post('/ai-assistant/presence');
   },
   confirmAction: async (action: { type: string; question: string; fileId?: string | null; fileIds?: string[] }) => {
     const response = await api.post('/ai-assistant/confirm', { ...action, fileId: action.fileId || undefined });

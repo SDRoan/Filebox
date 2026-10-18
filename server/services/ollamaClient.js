@@ -45,6 +45,13 @@ const responseCache = new Map(); // key -> { value, at }
 
 // When interactive work (chat, organize, file actions) last used the model; background work waits for quiet.
 let lastForegroundAt = 0;
+// Background requests in flight. Ollama answers one request at a time, so a question from the user
+// cancels them instead of waiting behind them; the background job tries again later.
+const backgroundRequests = new Set();
+const yieldToForeground = () => {
+  backgroundRequests.forEach(controller => controller.abort());
+  backgroundRequests.clear();
+};
 
 const cacheKey = (payload) => crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 function cacheGet(key) {
@@ -205,7 +212,11 @@ class OllamaClient {
    * Generate with a task profile. `context` is optional trimmable material (file text, passages).
    * Returns { text, trimmed } so callers can tell the user when only part of a file was read.
    */
-  async generate({ background = false, task = 'answer', model, system, content, context, images, format, keepAlive = '5m' }) {
+  /**
+   * examples: [{ user, assistant }] shown to the model as earlier turns (small models follow these better).
+   * onToken: called with each piece of the reply as it is written (the reply still resolves in full).
+   */
+  async generate({ background = false, task = 'answer', model, system, content, context, images, format, examples = [], onToken, keepAlive = '5m' }) {
     if (!this.isEnabled()) {
       throw new Error('Ollama is disabled.');
     }
@@ -216,7 +227,10 @@ class OllamaClient {
     const { user, trimmed } = fitPrompt({ system, content, context, contextWindow, maxOutput: profile.maxOutput });
     if (trimmed) console.log(`[Ollama] ${task}: context trimmed to fit ${contextWindow} tokens`);
 
-    if (!background) lastForegroundAt = Date.now();
+    if (!background) {
+      lastForegroundAt = Date.now();
+      yieldToForeground();
+    }
     const client = this.getHttpClient(profile.timeoutMs);
     const payload = {
       model,
@@ -224,6 +238,7 @@ class OllamaClient {
       keep_alive: keepAlive,
       messages: [
         ...(system ? [{ role: 'system', content: system }] : []),
+        ...examples.flatMap(example => [{ role: 'user', content: example.user }, { role: 'assistant', content: example.assistant }]),
         {
           role: 'user',
           content: user,
@@ -245,16 +260,52 @@ class OllamaClient {
     // Images are not cached (large, and descriptions/OCR are already deterministic at temperature 0).
     const key = images && images.length ? null : cacheKey({ task, ...payload, keep_alive: undefined });
     const cached = key && cacheGet(key);
-    if (cached) return { ...cached, cached: true };
+    if (cached) {
+      if (onToken) onToken(cached.text);
+      return { ...cached, cached: true };
+    }
 
+    const controller = new AbortController();
+    if (background) backgroundRequests.add(controller);
     try {
-      const response = await client.post('/chat', payload);
-      const text = response.data?.message?.content || '';
+      let text = onToken
+        ? await this.streamChat(client, { ...payload, stream: true }, onToken, controller.signal)
+        : (await client.post('/chat', payload, { signal: controller.signal })).data?.message?.content || '';
+      // Ollama occasionally returns an empty reply (for example right after loading a model): ask once more.
+      if (!text.trim() && !onToken) {
+        text = (await client.post('/chat', payload, { signal: controller.signal })).data?.message?.content || '';
+      }
       if (key && text.trim()) cacheSet(key, { text, trimmed });
       return { text, trimmed };
     } catch (error) {
+      if (controller.signal.aborted) throw Object.assign(new Error('Paused for a request from the user.'), { code: 'YIELDED' });
       throw new Error(this.normalizeError(error));
+    } finally {
+      backgroundRequests.delete(controller);
     }
+  }
+
+  /** Read Ollama's streamed reply (one JSON object per line), passing each piece to onToken. */
+  async streamChat(client, payload, onToken, signal) {
+    const response = await client.post('/chat', payload, { responseType: 'stream', signal });
+    let text = '';
+    let buffer = '';
+    for await (const chunk of response.data) {
+      buffer += chunk.toString('utf8');
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const part = JSON.parse(line);
+        if (part.error) throw new Error(part.error);
+        const piece = part.message?.content || '';
+        if (piece) {
+          text += piece;
+          onToken(piece);
+        }
+      }
+    }
+    return text;
   }
 
   // Reply text only.

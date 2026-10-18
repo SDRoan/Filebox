@@ -188,8 +188,9 @@ class OllamaWorkspaceAssistant {
    * the files the user may read.
    */
   async aiSearchFiles(userId, route, question) {
-    const query = route.searchTerms || route.target || this.extractSearchQuery(question);
     const includeTrash = this.questionAsksForTrash(question);
+    const query = (route.searchTerms || route.target || this.extractSearchQuery(question))
+      .replace(/\b(in\s+|from\s+)?(the\s+|my\s+)?(trash|trashed|deleted|bin)\b/gi, ' ').replace(/\s+/g, ' ').trim() || this.extractSearchQuery(question);
     if (route.lookFor === 'words_inside_files') {
       const { files } = await searchWorkspace(userId, query, { limit: 8, scope: 'accessible', includeTrash });
       return { files: files.map(file => this.searchItem(file)), query };
@@ -371,7 +372,7 @@ class OllamaWorkspaceAssistant {
         summary = await ollamaClient.chatText({
           task: 'summarize',
           model,
-          system: 'You summarize files for a cloud storage copilot. Write a short but rich summary in plain English with the document purpose, main points, and why it matters. Stay grounded in the text.',
+          system: 'You summarize files for File Box, a file storage app. Write a short but rich summary in plain English with the document purpose, main points, and why it matters. Stay grounded in the text.',
           content: `File name: ${file.originalName}\nFile type: ${file.mimeType}\n\nDocument text:`,
           context: sourceText,
         });
@@ -396,7 +397,7 @@ class OllamaWorkspaceAssistant {
         summary = await ollamaClient.chatText({
           task: 'summarize',
           model,
-          system: 'Combine chunk summaries into one coherent file summary for a cloud storage copilot. Explain what the file is, the main points, and why it matters. Use a few short paragraphs.',
+          system: 'Combine chunk summaries into one coherent file summary for File Box. Explain what the file is, the main points, and why it matters. Use a few short paragraphs.',
           content: `File name: ${file.originalName}`,
           context: chunkSummaries.join('\n\n'),
         });
@@ -568,6 +569,7 @@ class OllamaWorkspaceAssistant {
     fileContext,
     route,
     context,
+    onToken,
   }) {
     const workspaceSummary = [
       `Files: ${workspaceSnapshot.fileCount}`,
@@ -580,7 +582,7 @@ class OllamaWorkspaceAssistant {
 
     const response = await ollamaClient.chatText({
       model: config.ollama.assistantModel,
-      system: `You are File Box Copilot, an Ollama-powered assistant inside a cloud storage website.
+      system: `You are File Box AI, a local assistant inside File Box, a file storage app.
 
 Behave like ChatGPT for this product:
 - answer naturally and clearly
@@ -612,6 +614,7 @@ ${question}
 
 Respond to the latest user request now.`,
       task: 'answer',
+      onToken,
       // File text is the only part that may be trimmed to fit; rules and the request never are.
       context: fileContext ? `Selected file context:\n${fileContext}` : '',
     });
@@ -730,8 +733,9 @@ Respond to the latest user request now.`,
         return { reply: this.reply(route, { answer: verb ? `Which file should I ${verb}? Mention its name or select it first.` : 'Which file do you mean? Mention its name or select it first.' }) };
       }
 
-      // A typed file name ("budget.pdf") means that file: matched by name, never inferred.
-      const byName = route.mode === 'offline' || /\.[a-z0-9]{1,6}$/i.test(phrase.trim());
+      // A typed file name ("budget.pdf", "q3-report_v2") means that file: matched by name, never inferred.
+      const looksLikeName = /\.[a-z0-9]{1,6}$/i.test(phrase.trim()) || (/^\S+$/.test(phrase.trim()) && /[-_]/.test(phrase) && /\d/.test(phrase));
+      const byName = route.mode === 'offline' || looksLikeName;
       const resolution = byName
         ? await resolveFile(userId, phrase, { level, trashed })
         : await this.findWithAI(userId, phrase, { level, trashed });
@@ -874,7 +878,7 @@ Respond to the latest user request now.`,
     });
   }
 
-  async handleFileRequest(route, { userId, question, fileId, resolved, history, context }) {
+  async handleFileRequest(route, { userId, question, fileId, resolved, history, context, onToken }) {
     const verb = { summarize: 'summarize', explain: 'explain' }[route.intent];
     const targets = await this.resolveTargets(route, question, userId, { fileId, resolved, level: 'viewer', verb });
     if (targets.reply) return targets.reply;
@@ -914,6 +918,7 @@ Respond to the latest user request now.`,
       fileContext,
       route,
       context,
+      onToken,
     });
     return this.reply(route, { answer, provider: 'ollama', model: config.ollama.assistantModel, fileId: file._id });
   }
@@ -922,7 +927,7 @@ Respond to the latest user request now.`,
    * A question answered from what is written in the user's files ("When is my electricity bill due?").
    * Only files the user may read are searched; the answer names the file each fact came from.
    */
-  async handleDriveQuestion(route, { userId, question, history }) {
+  async handleDriveQuestion(route, { userId, question, history, onToken }) {
     await this.requireModel();
     const ranked = await rankReadableFiles(userId, question, { limit: 8 });
     const fileIds = ranked.map(r => r.file._id);
@@ -946,16 +951,7 @@ Respond to the latest user request now.`,
       return this.reply(route, { answer: "I couldn't find anything in your files that answers that.", provider: 'ollama' });
     }
 
-    const answer = (await ollamaClient.chatText({
-      task: 'answer',
-      model: config.ollama.assistantModel,
-      system: `You answer questions about a person's own files inside File Box, a file storage app.
-Use only the file excerpts given. After each fact, name the file it came from in parentheses, for example (electric-bill-oct.pdf).
-If the excerpts do not contain the answer, say in one sentence that you couldn't find it in their files; do not point to unrelated files. Never guess or use outside knowledge for facts about the person.
-Be brief and direct.`,
-      content: `Recent conversation:\n${this.serializeConversation(history) || 'None.'}\n\nExcerpts from the person's files:\n{{CONTEXT}}\n\nQuestion: ${question}`,
-      context: sources.join('\n\n'),
-    })).trim();
+    const answer = await this.answerFromSources({ question, sources, history, onToken });
 
     // Show the files the answer names (or the most relevant ones when it names none).
     const named = usedIds.filter(id => answer.toLowerCase().includes(byId.get(id).originalName.toLowerCase()));
@@ -967,6 +963,21 @@ Be brief and direct.`,
       model: config.ollama.assistantModel,
       files: couldNotFind ? [] : await this.withKinds(await this.annotateFiles(userId, shown)),
     });
+  }
+
+  /** Answer a question using only the given excerpts from the person's files (named in the answer). */
+  async answerFromSources({ question, sources, history = [], onToken, model = config.ollama.assistantModel }) {
+    return (await ollamaClient.chatText({
+      task: 'answer',
+      onToken,
+      model,
+      system: `You answer questions about a person's own files inside File Box, a file storage app.
+Use only the file excerpts given. After each fact, name the file it came from in parentheses, for example (electric-bill-oct.pdf).
+If the excerpts do not contain the answer, reply with one sentence like "I couldn't find that in your files." and do not point to unrelated files. Never guess or use outside knowledge for facts about the person.
+Be brief and direct.`,
+      content: `Recent conversation:\n${this.serializeConversation(history) || 'None.'}\n\nExcerpts from the person's files:\n{{CONTEXT}}\n\nQuestion: ${question}`,
+      context: sources.join('\n\n'),
+    })).trim();
   }
 
   async handleSearch(route, { userId, question }) {
@@ -1062,9 +1073,9 @@ Be brief and direct.`,
    *
    * `resolved` carries choices the user made from an earlier list: { files: { "<name>": id }, folder: id }.
    */
-  async chat({ userId, question, fileId, history = [], context = '', resolved = {} }) {
+  async chat({ userId, question, fileId, history = [], context = '', resolved = {}, onToken }) {
     const route = await this.understand({ question, fileId, history, resolved });
-    const turn = { userId, question, fileId, history, context, resolved };
+    const turn = { userId, question, fileId, history, context, resolved, onToken };
 
     switch (route.intent) {
       case 'duplicates': {
@@ -1105,6 +1116,7 @@ Be brief and direct.`,
           fileContext: '',
           route,
           context,
+          onToken,
         });
         return this.reply(route, { answer, provider: 'ollama', model: config.ollama.assistantModel });
       }

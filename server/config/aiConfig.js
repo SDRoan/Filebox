@@ -11,6 +11,10 @@ module.exports = {
     ocrModel: process.env.OLLAMA_OCR_MODEL || 'glm-ocr',
     // Used for "Describe image" only when this model is installed locally.
     visionModel: process.env.OLLAMA_VISION_MODEL || 'llama3.2-vision',
+    // Reads each chat request (a short JSON reply). Defaults to the assistant model so only one language
+    // model is loaded: on a 16 GB laptop a second model pushed everything into swap and made answers slower.
+    // With memory to spare, OLLAMA_UNDERSTANDING_MODEL=llama3.2:3b reads requests about 2.5x faster.
+    understandingModel: process.env.OLLAMA_UNDERSTANDING_MODEL || process.env.OLLAMA_ASSISTANT_PLANNER_MODEL || process.env.OLLAMA_ASSISTANT_MODEL || 'llama3.1:8b',
     // Local embedding model: File Box AI matches requests to files by meaning ("my CV" -> a resume).
     embeddingModel: process.env.OLLAMA_EMBEDDING_MODEL || 'nomic-embed-text',
     summaryModel: process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',

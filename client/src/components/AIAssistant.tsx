@@ -101,6 +101,7 @@ const AIAssistant: React.FC = () => {
   const [messages, setMessages] = useState<Message[]>(() => readHistory(historyKey));
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const [fileOptions, setFileOptions] = useState<FileOption[]>([]);
   const [selectedFileId, setSelectedFileId] = useState('');
   const [fileActions, setFileActions] = useState<FileAIActionsInfo | null>(null);
@@ -131,6 +132,15 @@ const AIAssistant: React.FC = () => {
     return () => clearInterval(timer);
   }, [status, checkStatus]);
 
+  // While this page is open, File Box keeps background file reading paused so questions come first.
+  useEffect(() => {
+    if (!status?.ready) return undefined;
+    const ping = () => { if (document.visibilityState === 'visible') aiAssistantAPI.presence().catch(() => {}); };
+    ping();
+    const timer = setInterval(ping, 20000);
+    return () => clearInterval(timer);
+  }, [status?.ready]);
+
   useEffect(() => {
     filesAPI.getRecent(50)
       .then(data => setFileOptions(data.files || []))
@@ -149,8 +159,8 @@ const AIAssistant: React.FC = () => {
     endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
   }, [messages.length]);
 
-  const appendMessage = (message: Omit<Message, 'id'>) => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const appendMessage = (message: Omit<Message, 'id'>, id = newId()) => {
     if (message.panel) livePanelIds.current.add(id);
     setMessages(prev => [...prev, { ...message, id }]);
   };
@@ -173,9 +183,20 @@ const AIAssistant: React.FC = () => {
     appendMessage({ role: 'user', content: shownAs || question });
     if (!resolved) setInput('');
     setSending(true);
+    // The answer shows up word by word while File Box AI writes it.
+    const streamId = newId();
+    let streamed = '';
     try {
-      const response = await aiAssistantAPI.chat(question, fileId || undefined, undefined, history, resolved);
-      appendMessage({
+      const response = await aiAssistantAPI.chatStream(
+        { question, fileId: fileId || undefined, history, resolved },
+        (piece) => {
+          if (!streamed) appendMessage({ role: 'assistant', content: piece }, streamId);
+          streamed += piece;
+          if (streamed !== piece) updateMessage(streamId, { content: streamed });
+          setStreaming(true);
+        },
+      );
+      const reply: Omit<Message, 'id'> = {
         role: 'assistant',
         content: response.answer || 'Done.',
         files: response.files?.length ? response.files : undefined,
@@ -185,19 +206,24 @@ const AIAssistant: React.FC = () => {
         resume: response.resume,
         offline: response.route?.mode === 'offline',
         actionState: response.pendingAction ? 'pending' : undefined,
-      });
+      };
+      if (streamed) {
+        if (reply.panel) livePanelIds.current.add(streamId);
+        updateMessage(streamId, reply);
+      } else {
+        appendMessage(reply);
+      }
     } catch (error: any) {
       const data = error?.response?.data;
       if (data?.code === 'AI_OFFLINE') {
         setStatus({ reachable: false, ready: false });
       }
-      appendMessage({
-        role: 'assistant',
-        content: data?.answer || data?.message || 'File Box AI could not answer right now. Please try again.',
-        error: true,
-      });
+      const failed = { role: 'assistant' as const, content: data?.answer || data?.message || 'File Box AI could not answer right now. Please try again.', error: true };
+      if (streamed) updateMessage(streamId, failed);
+      else appendMessage(failed);
     } finally {
       setSending(false);
+      setStreaming(false);
       inputRef.current?.focus();
     }
     // `messages` is read for history only.
@@ -473,7 +499,7 @@ const AIAssistant: React.FC = () => {
               )}
             </article>
           ))}
-          {sending && <div className="filebox-ai-message assistant thinking">Thinking…</div>}
+          {sending && !streaming && <div className="filebox-ai-message assistant thinking">Thinking…</div>}
           <div ref={endRef} />
         </section>
       )}

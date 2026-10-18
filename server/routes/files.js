@@ -16,6 +16,7 @@ const StudyGroup = require('../models/StudyGroup');
 const FileMemory = require('../models/FileMemory');
 const { assertAvailable } = require('../utils/optionalModule');
 const { authorizeFile, authorizeFolder, sendDenied, capabilitiesFor, getFileRole, readableFileFilter } = require('../services/permissions');
+const { extractInBackground } = require('../services/backgroundExtraction');
 const { restorableParent } = require('../services/fileResolver');
 const { snapshotCurrentVersion, replaceFileContents, newLivePath } = require('../services/fileVersions');
 const { purgeFile, purgeFolderTree, purgeTrash, trashSize, RECOVERY_DAYS } = require('../services/trash');
@@ -378,44 +379,8 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
     // Send response before background processing
     res.status(201).json(file);
 
-    // Extract text in background (non-blocking)
-    setImmediate(async () => {
-      try {
-        const textExtractor = require('../services/textExtractor');
-        const FileContent = require('../models/FileContent');
-        const aiSearch = require('../services/aiSearch');
-
-        if (textExtractor.isSupported(file.mimeType)) {
-          console.log(`[Extraction] Starting extraction for: ${file.originalName}`);
-          const extractedText = await textExtractor.extractText(file.path, file.mimeType);
-          console.log(`[Extraction] Extracted ${extractedText.length} characters from ${file.originalName}`);
-
-          if (extractedText && extractedText.length > 0) {
-            console.log(`[Extraction] Generating embedding for: ${file.originalName}`);
-            const embedding = await aiSearch.generateEmbedding(extractedText);
-            console.log(`[Extraction] Generated embedding (length: ${embedding.length}) for: ${file.originalName}`);
-
-            const fileContent = new FileContent({
-              file: file._id,
-              extractedText,
-              embedding,
-              extractionStatus: 'completed'
-            });
-
-            // Summaries are generated on demand by File Box AI (Ollama), not on upload.
-            await fileContent.save();
-            console.log(`[Extraction] ✅ Completed: ${file.originalName}`);
-          } else {
-            console.log(`[Extraction] ⚠️ No text extracted from: ${file.originalName}`);
-          }
-        } else {
-          console.log(`[Extraction] ⏭️ Skipping unsupported type: ${file.mimeType} (${file.originalName})`);
-        }
-      } catch (error) {
-        console.error('Background text extraction error:', error);
-        // Don't fail the upload if extraction fails
-      }
-    });
+    // Read the file's text in the background so File Box AI can search and answer from it.
+    extractInBackground(file);
   } catch (error) {
     console.error('Upload error:', error);
     // Clean up uploaded file if it exists

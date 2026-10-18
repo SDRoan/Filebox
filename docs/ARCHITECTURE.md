@@ -120,6 +120,12 @@ When Ollama is running, the local model reads every chat request (`services/requ
    - If judging fails or times out, File Box falls back to name matching.
 5. "Which files mention …" (`lookFor: words_inside_files`) is a literal text search with `workspaceSearch`.
 
+### Speed
+
+- **Streaming.** `POST /api/ai-assistant/chat` with `stream: true` answers with one JSON object per line: `{type:"token",text}` while the answer is written, then `{type:"done",reply}` or `{type:"error",status,body}`. The File Box AI page shows the answer word by word.
+- **Small model for understanding.** Requests are read by `OLLAMA_UNDERSTANDING_MODEL` (default `llama3.2:3b`, with worked examples given as earlier turns). On a busy M3 it took about 3.3 s per request versus about 8.9 s for `llama3.1:8b`, and got 18 of 19 test requests right versus 17. Answers are still written by `OLLAMA_ASSISTANT_MODEL` (`llama3.1:8b`). Both stay loaded together, so switching between them costs nothing.
+- **Background reading steps aside.** A request from the user cancels any background file read in progress (`ollamaClient` aborts it), which is retried later. While the File Box AI page is open it sends `POST /api/ai-assistant/presence` every 20 seconds, and background reading stays paused.
+
 ### Reading files and answering from them
 
 - **What each file is.** `services/fileProfiler.js` reads each file's text once per version: the beginning, plus samples from the middle and end of long files. It stores a broad category (homework, transcript, bill, certificate, work document, …) in `FileContent.aiCategory`, a specific kind in `aiType`, a description in `aiDescription`, and up to 6 key facts in `aiFacts` (amount due, due date, grade, issuer, …, copied from the text). `aiProfileVersion` lets older notes be re-read. It runs in the background while Ollama is idle.

@@ -3,7 +3,7 @@ const FileContent = require('../models/FileContent');
 const ollamaClient = require('./ollamaClient');
 const config = require('../config/aiConfig');
 const { readableFileFilter } = require('./permissions');
-const { cleanPhrase, describeFile, compareChoices } = require('./fileResolver');
+const { cleanPhrase, phraseWords, describeFile, compareChoices } = require('./fileResolver');
 const { profileDocument, textDocument } = require('./fileProfiler');
 
 /**
@@ -43,6 +43,34 @@ async function scopeFilter(userId, { level, trashed }) {
   if (trashed) return { owner: userId, isTrashed: true };
   if (level === 'owner') return { owner: userId, isTrashed: { $ne: true } };
   return readableFileFilter(userId);
+}
+
+const norm = (value = '') => value.toLowerCase().replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim();
+const stem = (name = '') => name.replace(/\.[a-z0-9]{1,6}$/i, '');
+const singular = (word) => (word.length > 3 && word.endsWith('s') ? word.slice(0, -1) : word);
+
+/**
+ * Files whose name is what the user typed: the exact name, the name without its extension, or a name
+ * containing every word they typed. Several such files are a real choice for the user, not for the model.
+ */
+function namedFiles(files, phrase) {
+  const wanted = norm(phrase);
+  const exact = files.filter(file => norm(file.originalName) === wanted);
+  if (exact.length) return exact;
+  const byStem = files.filter(file => norm(stem(file.originalName)) === wanted);
+  if (byStem.length) return byStem;
+  const words = phraseWords(phrase).map(singular);
+  if (!words.length) return [];
+  return files.filter((file) => {
+    const name = norm(file.originalName);
+    return words.every(word => name.includes(word));
+  });
+}
+
+/** Which files File Box has read (profile-based vector) and which only have a name/text vector so far. */
+async function profiledIds(files) {
+  const rows = await FileContent.find({ file: { $in: files.map(f => f._id) }, aiEmbeddingSource: 'profile' }).select('file').lean();
+  return new Set(rows.map(r => r.file.toString()));
 }
 
 /** A meaning vector for every file, computing (and saving) the ones that are missing. */
@@ -88,7 +116,7 @@ async function vectorsFor(files) {
 }
 
 /** Ask the language model which of a few close candidates are what the user is looking for. */
-async function judge(request, candidates) {
+async function judge(request, candidates, { model = config.ollama.plannerModel } = {}) {
   const contents = await FileContent.find({ file: { $in: candidates.map(f => f._id) } }).select('file aiType aiCategory aiDescription aiFacts extractedText').lean();
   const byFile = new Map(contents.map(c => [c.file.toString(), c]));
   const list = candidates.map((file, index) => {
@@ -106,7 +134,7 @@ async function judge(request, candidates) {
 
   const raw = await ollamaClient.chat({
     task: 'classify',
-    model: config.ollama.plannerModel,
+    model,
     system: `You help a person find files in their own drive. You get what they are looking for and a numbered list of their files (name, kind, short description).
 First write "wanted": the kind of file they want in a few words. Then for EVERY file give "match".
 Decide by what the file IS (its name and kind): a list of startup ideas that mentions invoices is not an invoice.
@@ -151,8 +179,11 @@ async function rankReadableFiles(userId, question, { limit = 8 } = {}) {
 async function matchByMeaning(phrase, files) {
   const scored = await scoreByMeaning(phrase, files);
 
+  // A clear winner needs no judging, but only when File Box has read that file: a vector built from raw
+  // text can favour a file that merely mentions the words.
   const [top, second] = scored;
-  if (top && top.score >= CLEAR_SCORE && (!second || top.score - second.score >= CLEAR_MARGIN)) return [top.file];
+  if (top && top.score >= CLEAR_SCORE && (!second || top.score - second.score >= CLEAR_MARGIN)
+    && (await profiledIds([top.file])).has(top.file._id.toString())) return [top.file];
   const close = scored.slice(0, JUDGE_TOP).filter(s => s.score >= MIN_SCORE).map(s => s.file);
   if (!close.length) return [];
   return (await judge(phrase, close)).map(i => close[i]);
@@ -168,9 +199,9 @@ async function findFiles(userId, request, { level = 'viewer', trashed = false } 
     ? await File.find(await scopeFilter(userId, { level, trashed })).sort({ originalName: 1, _id: 1 }).limit(MAX_FILES)
     : [];
 
-  // A file named exactly what the user typed needs no judgement.
-  const exact = files.filter(file => file.originalName.toLowerCase() === phrase.toLowerCase());
-  const matched = exact.length ? exact : (files.length ? await matchByMeaning(phrase, files) : []);
+  // Files named what the user typed need no judgement (several of them become a question for the user).
+  const named = namedFiles(files, phrase);
+  const matched = named.length ? named : (files.length ? await matchByMeaning(phrase, files) : []);
 
   const cache = new Map();
   const described = [];
@@ -199,4 +230,4 @@ async function findFiles(userId, request, { level = 'viewer', trashed = false } 
   return { status: 'none', phrase, files: [], choices: [] };
 }
 
-module.exports = { findFiles, rankReadableFiles };
+module.exports = { findFiles, rankReadableFiles, judge };

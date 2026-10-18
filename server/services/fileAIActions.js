@@ -127,6 +127,7 @@ async function runAction(file, action) {
     const description = await ollamaClient.chat({
       task: 'describe',
       model: config.ollama.visionModel,
+      keepAlive: '30s', // a large model only needed for this one request
       system: 'Describe images for a file storage product. Be factual and concise; do not guess names of people.',
       content: 'Describe this image in 2-4 sentences.',
       images: [image],
