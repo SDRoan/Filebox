@@ -17,7 +17,8 @@ const TASK_PROFILES = {
   classify: { temperature: 0, maxOutput: 600, timeoutMs: 90000 },
   plan: { temperature: 0, maxOutput: 400, timeoutMs: 90000 },
   action: { temperature: 0, maxOutput: 400 },
-  extract: { temperature: 0, maxOutput: 900 },
+  // Reading a file (profiles, key points) can take minutes on a busy laptop.
+  extract: { temperature: 0, maxOutput: 900, timeoutMs: 300000 },
   organize: { temperature: 0, maxOutput: 1500 },
   rename: { temperature: 0, maxOutput: 200 },
   ocr: { temperature: 0, maxOutput: 2048 },
