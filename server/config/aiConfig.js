@@ -11,6 +11,8 @@ module.exports = {
     ocrModel: process.env.OLLAMA_OCR_MODEL || 'glm-ocr',
     // Used for "Describe image" only when this model is installed locally.
     visionModel: process.env.OLLAMA_VISION_MODEL || 'llama3.2-vision',
+    // Local embedding model: File Box AI matches requests to files by meaning ("my CV" -> a resume).
+    embeddingModel: process.env.OLLAMA_EMBEDDING_MODEL || 'nomic-embed-text',
     summaryModel: process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
     assistantModel: process.env.OLLAMA_ASSISTANT_MODEL || process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
     plannerModel: process.env.OLLAMA_ASSISTANT_PLANNER_MODEL || process.env.OLLAMA_ASSISTANT_MODEL || process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',

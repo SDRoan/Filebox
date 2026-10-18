@@ -201,6 +201,9 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`🌐 Frontend App: http://localhost:${CLIENT_PORT}`);
   console.log('═'.repeat(70));
   
+  // File Box AI notes what each file is in the background (local Ollama only, skipped when it is off).
+  require('./services/fileProfiler').start();
+
   // The learning library is a student feature; only refresh it when those features are enabled.
   if (STUDENT_FEATURES_ENABLED) {
     try {

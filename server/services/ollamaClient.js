@@ -11,10 +11,11 @@ const config = require('../config/aiConfig');
  *   (long summaries drifted between identical runs), and the product goal is the same answer
  *   for the same request and files. Raise a prose task to at most 0.1 only with that tradeoff in mind.
  *   maxOutput       - reply budget in tokens; reserved before the prompt budget is computed
+ *   timeoutMs       - interactive steps give up sooner, so chat can fall back instead of hanging
  */
 const TASK_PROFILES = {
-  classify: { temperature: 0, maxOutput: 200 },
-  plan: { temperature: 0, maxOutput: 400 },
+  classify: { temperature: 0, maxOutput: 600, timeoutMs: 90000 },
+  plan: { temperature: 0, maxOutput: 400, timeoutMs: 90000 },
   action: { temperature: 0, maxOutput: 400 },
   extract: { temperature: 0, maxOutput: 900 },
   organize: { temperature: 0, maxOutput: 1500 },
@@ -40,6 +41,9 @@ const estimateTokens = (text = '') => Math.ceil(String(text).length / CHARS_PER_
 const RESPONSE_CACHE_LIMIT = 300;
 const RESPONSE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const responseCache = new Map(); // key -> { value, at }
+
+// When interactive work (chat, organize, file actions) last used the model; background work waits for quiet.
+let lastForegroundAt = 0;
 
 const cacheKey = (payload) => crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
 function cacheGet(key) {
@@ -148,7 +152,9 @@ class OllamaClient {
       assistantModel: config.ollama.assistantModel,
       plannerModel: config.ollama.plannerModel,
       visionModel: config.ollama.visionModel,
+      embeddingModel: config.ollama.embeddingModel,
       visionModelAvailable: false,
+      embeddingModelAvailable: false,
       ocrModelAvailable: false,
       summaryModelAvailable: false,
       assistantModelAvailable: false,
@@ -184,6 +190,7 @@ class OllamaClient {
         assistantModelAvailable: this.isModelAvailable(installedModels, config.ollama.assistantModel),
         plannerModelAvailable: this.isModelAvailable(installedModels, config.ollama.plannerModel),
         visionModelAvailable: this.isModelAvailable(installedModels, config.ollama.visionModel),
+        embeddingModelAvailable: this.isModelAvailable(installedModels, config.ollama.embeddingModel),
       };
     } catch (error) {
       return {
@@ -197,7 +204,7 @@ class OllamaClient {
    * Generate with a task profile. `context` is optional trimmable material (file text, passages).
    * Returns { text, trimmed } so callers can tell the user when only part of a file was read.
    */
-  async generate({ task = 'answer', model, system, content, context, images, format, keepAlive = '5m' }) {
+  async generate({ background = false, task = 'answer', model, system, content, context, images, format, keepAlive = '5m' }) {
     if (!this.isEnabled()) {
       throw new Error('Ollama is disabled.');
     }
@@ -208,7 +215,8 @@ class OllamaClient {
     const { user, trimmed } = fitPrompt({ system, content, context, contextWindow, maxOutput: profile.maxOutput });
     if (trimmed) console.log(`[Ollama] ${task}: context trimmed to fit ${contextWindow} tokens`);
 
-    const client = this.getHttpClient();
+    if (!background) lastForegroundAt = Date.now();
+    const client = this.getHttpClient(profile.timeoutMs);
     const payload = {
       model,
       stream: false,
@@ -267,3 +275,21 @@ module.exports.TASK_PROFILES = TASK_PROFILES;
 module.exports.fitPrompt = fitPrompt;
 module.exports.estimateTokens = estimateTokens;
 module.exports.clearResponseCache = () => responseCache.clear();
+
+/**
+ * Embed texts with the local embedding model. Returns one vector per text (same order).
+ * Embeddings are deterministic, so they need no seed or cache.
+ */
+module.exports.embed = async (texts, { background = false } = {}) => {
+  if (!texts.length) return [];
+  if (!background) lastForegroundAt = Date.now();
+  const client = module.exports.getHttpClient(60000);
+  const vectors = [];
+  for (let i = 0; i < texts.length; i += 32) {
+    const response = await client.post('/embed', { model: config.ollama.embeddingModel, input: texts.slice(i, i + 32) });
+    vectors.push(...(response.data?.embeddings || []));
+  }
+  if (vectors.length !== texts.length) throw new Error('The embedding model returned an unexpected result.');
+  return vectors;
+};
+module.exports.lastForegroundAt = () => lastForegroundAt;

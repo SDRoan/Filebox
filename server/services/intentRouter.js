@@ -1,14 +1,9 @@
-const ollamaClient = require('./ollamaClient');
-const config = require('../config/aiConfig');
-
 /**
- * Decides what a File Box AI request is before any model is involved.
+ * Offline understanding for File Box AI. When Ollama is running, the local model reads every request
+ * (services/requestUnderstanding.js). When it is not, these simple rules stand in so search, choices and
+ * plain commands keep working; replies are marked offline.
  *
- * Local rules classify the request first. Only when no rule is confident is the model asked, and then
- * it may only pick one of INTENTS (schema-constrained output, temperature 0, fixed seed). A clear rule
- * is never sent to the model, so the model cannot override it.
- *
- * Every route carries debug metadata: { intent, action?, source: 'rule' | 'model', rule, confidence }.
+ * Every route carries debug metadata: { intent, action?, source: 'rule' | 'offline', rule, confidence }.
  */
 
 const INTENTS = [
@@ -17,25 +12,13 @@ const INTENTS = [
   'summarize',
   'explain',
   'file_question', // a question about one file's contents
+  'drive_question', // a question answered from what is written in the user's files, no file named
   'organize',
   'duplicates',
   'action', // one specific change: create folder, rename, move, star, share, trash, restore, ...
   'help', // how File Box works
   'chat',
 ];
-
-const INTENT_DESCRIPTIONS = {
-  search: 'a few keywords to look up a file by name',
-  smart_search: 'asks which file, where a file is, or to find files by meaning or content',
-  summarize: 'wants a summary of a file',
-  explain: 'wants a file explained',
-  file_question: 'asks a question about the contents of one specific file',
-  organize: 'wants files tidied, grouped or sorted into folders',
-  duplicates: 'wants duplicate files found or cleaned up',
-  action: 'wants one change made now: create a folder, rename, move, star, share, trash or restore a file',
-  help: 'asks how File Box or one of its features works',
-  chat: 'anything else, such as greetings or general questions',
-};
 
 // Phrases that only point at "the file I'm looking at" rather than naming one.
 const SELF_REFERENCE = /^(?:(?:this|that|it|the selected|the current|the open|selected)(?:\s+(?:one|file|document|doc|pdf|code|script|image|photo|picture|screenshot|spreadsheet|sheet|resume|cv|report|presentation|deck|note|notes|text))?)$/i;
@@ -181,34 +164,12 @@ function routeByRules(question, { hasSelectedFile = false, fileNames = [] } = {}
   return null;
 }
 
-/** Model fallback: pick exactly one intent from the fixed list. */
-async function classifyWithModel(question, { hasSelectedFile = false } = {}) {
-  const raw = await ollamaClient.chat({
-    task: 'classify',
-    model: config.ollama.plannerModel,
-    system: `You route requests inside File Box, a file storage app. Choose exactly one intent for the user's request.
-Intents:
-${INTENTS.map(intent => `- ${intent}: ${INTENT_DESCRIPTIONS[intent]}`).join('\n')}
-Return JSON {"intent": "<one intent>"} and nothing else.`,
-    content: JSON.stringify({ request: question, fileSelected: hasSelectedFile }),
-    format: { type: 'object', properties: { intent: { type: 'string', enum: INTENTS } }, required: ['intent'] },
-  });
-  let intent = '';
-  try { intent = JSON.parse(raw).intent; } catch { intent = ''; }
-  return INTENTS.includes(intent) ? intent : null;
-}
-
-/**
- * Route a request. `classify` can be replaced in tests; it is only called when no rule matched.
- */
-async function routeIntent(question, options = {}, { classify = classifyWithModel } = {}) {
+/** Route a request by rules. Requests no rule understands come back as offline general chat. */
+function routeIntent(question, options = {}) {
   const q = normalize(question);
   const byRule = routeByRules(question, options);
   if (byRule) return { ...byRule, ...extractTargets(byRule.intent, byRule.action, q), normalized: q };
-
-  const intent = await classify(question, options);
-  if (!intent) return { intent: 'chat', source: 'model', rule: 'model:invalid-output', confidence: 0.3, target: '', normalized: q };
-  return { intent, source: 'model', rule: `model:${intent}`, confidence: 0.6, ...extractTargets(intent, null, q), normalized: q };
+  return { intent: 'chat', source: 'offline', rule: 'offline:no-rule', confidence: 0, target: '', normalized: q };
 }
 
 module.exports = {
@@ -218,5 +179,4 @@ module.exports = {
   routeByRules,
   routeIntent,
   extractTargets,
-  classifyWithModel,
 };

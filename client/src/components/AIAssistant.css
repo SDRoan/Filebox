@@ -79,3 +79,5 @@
 .filebox-ai-choices small { grid-column: 2; color: #7d8a72; font-size: 11px; overflow-wrap: anywhere; }
 .filebox-ai-choices .source-shared { color: #5f7fa3; }
 .filebox-ai-choices .source-team { color: #7a6aa0; }
+.filebox-ai-mode { margin: 8px 0 0; font-size: 11px; color: #a0745a; }
+.filebox-ai-files small.filebox-ai-kind { padding: 1px 6px; border-radius: 4px; background: #eef3e8; color: #4f6b43; white-space: nowrap; }

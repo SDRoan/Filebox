@@ -58,6 +58,47 @@ const FileContentSchema = new mongoose.Schema({
   summaryModel: {
     type: String,
     default: ''
+  },
+  // What the file is, written once by the local model (services/fileProfiler.js) so File Box AI can
+  // find "my resume" even when the name and text never say "resume".
+  aiType: {
+    type: String,
+    default: ''
+  },
+  aiDescription: {
+    type: String,
+    default: ''
+  },
+  aiProfiledAt: {
+    type: Date
+  },
+  aiProfileModel: {
+    type: String,
+    default: ''
+  },
+  // Broad category (homework, transcript, bill, certificate, ...) and key facts read from the text,
+  // e.g. [{ label: 'Amount due', value: '$84.20' }]. aiProfileVersion lets File Box re-read older notes.
+  aiCategory: {
+    type: String,
+    default: ''
+  },
+  aiFacts: {
+    type: [{ label: String, value: String, _id: false }],
+    default: undefined
+  },
+  aiProfileVersion: {
+    type: Number,
+    default: 0
+  },
+  // Meaning vector from the local embedding model, built from the profile ('profile') or, until a profile
+  // exists, from the name and opening text ('text').
+  aiEmbedding: {
+    type: [Number],
+    default: undefined
+  },
+  aiEmbeddingSource: {
+    type: String,
+    default: ''
   }
 }, {
   timestamps: true

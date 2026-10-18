@@ -220,6 +220,9 @@ async function restorableParent(parentId, userId) {
 
 module.exports = {
   cleanPhrase,
+  phraseWords,
+  describeFile,
+  compareChoices,
   resolveFile,
   resolveFolder,
   fileById,

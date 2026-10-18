@@ -551,8 +551,8 @@ class AIActionExecutor {
     };
   }
 
-  async createFolder(message, userId) {
-    const folderName = this.extractFolderName(message);
+  async createFolder(message, userId, context = {}) {
+    const folderName = this.sanitizeLabel(context.newName || '') || this.extractFolderName(message);
 
     if (!folderName) {
       return {
@@ -1167,7 +1167,7 @@ class AIActionExecutor {
         case 'delete_file':
           return this.deleteFile(message, userId, context);
         case 'create_folder':
-          return this.createFolder(message, userId);
+          return this.createFolder(message, userId, context);
         case 'star_file':
           return this.starFile(message, userId, context);
         case 'share_file':

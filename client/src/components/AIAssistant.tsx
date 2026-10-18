@@ -19,6 +19,7 @@ interface FoundFile {
   ownerName?: string;
   teamName?: string;
   trashed?: boolean;
+  kind?: string;
 }
 
 interface PendingAction {
@@ -52,6 +53,7 @@ interface Message {
   choices?: ChoiceRequest;
   resume?: ResumeRequest;
   chosenId?: string;
+  offline?: boolean;
   error?: boolean;
 }
 
@@ -160,9 +162,13 @@ const AIAssistant: React.FC = () => {
     const question = text.trim();
     if (!question || sending) return;
 
+    // Files shown in earlier answers go along, so "share it" or "move that one" can refer to them.
     const history: AssistantHistoryMessage[] = messages
       .slice(-10)
-      .map(message => ({ role: message.role, content: message.content }));
+      .map(message => {
+        const shown = [...(message.files || []), ...(message.choices?.options || [])].map(file => file.name);
+        return { role: message.role, content: shown.length ? `${message.content}\n[Files shown: ${shown.join(', ')}]` : message.content };
+      });
 
     appendMessage({ role: 'user', content: shownAs || question });
     if (!resolved) setInput('');
@@ -177,6 +183,7 @@ const AIAssistant: React.FC = () => {
         panel: response.panel,
         choices: response.choices?.options?.length ? response.choices : undefined,
         resume: response.resume,
+        offline: response.route?.mode === 'offline',
         actionState: response.pendingAction ? 'pending' : undefined,
       });
     } catch (error: any) {
@@ -403,12 +410,15 @@ const AIAssistant: React.FC = () => {
           {messages.map(message => (
             <article key={message.id} className={`filebox-ai-message ${message.role} ${message.error ? 'error' : ''}`}>
               <div className="filebox-ai-message-body">{message.content}</div>
+              {message.offline && <p className="filebox-ai-mode">Offline mode: basic matching until File Box AI is running.</p>}
               {message.files && (
                 <ul className="filebox-ai-files">
                   {message.files.map(file => (
                     <li key={file.id}>
                       <button onClick={() => openFile(file)}>
-                        <DocumentIcon size={14} /><span>{file.name}</span><small className={`source-${file.trashed ? 'trash' : file.source || 'owned'}`}>{sourceLabel(file)}</small>
+                        <DocumentIcon size={14} /><span>{file.name}</span>
+                        {file.kind && <small className="filebox-ai-kind">{file.kind.charAt(0).toUpperCase() + file.kind.slice(1)}</small>}
+                        <small className={`source-${file.trashed ? 'trash' : file.source || 'owned'}`}>{sourceLabel(file)}</small>
                       </button>
                     </li>
                   ))}

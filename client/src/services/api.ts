@@ -1146,7 +1146,7 @@ export const homeAPI = {
 // AI Assistant API (local Ollama)
 export type AssistantHistoryMessage = { role: 'user' | 'assistant'; content: string };
 // Choices made from a "which one do you mean?" list, sent back with the original request.
-export type AssistantResolved = { files?: Record<string, string>; folder?: string };
+export type AssistantResolved = { files?: Record<string, string>; folder?: string; route?: Record<string, unknown> };
 export interface AssistantChoice {
   id: string;
   kind: 'file' | 'folder';

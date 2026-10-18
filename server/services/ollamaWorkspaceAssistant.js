@@ -11,7 +11,12 @@ const config = require('../config/aiConfig');
 const { chunkText } = require('../utils/chunkText');
 const { searchWorkspace } = require('./workspaceSearch');
 const intentRouter = require('./intentRouter');
-const { cleanPhrase, resolveFile, resolveFolder, fileById, folderById } = require('./fileResolver');
+const { understandRequest } = require('./requestUnderstanding');
+const { findFiles, rankReadableFiles } = require('./aiFileFinder');
+const { noteActivity } = require('./fileProfiler');
+const { ensureIndexed, searchPassages } = require('./fileIndex');
+const { filterReadable } = require('./permissions');
+const { cleanPhrase, phraseWords, resolveFile, resolveFolder, fileById, folderById } = require('./fileResolver');
 const { buildDuplicateSuggestions } = require('./duplicateSuggestions');
 const { logFileBoxAction } = require('./activityLog');
 
@@ -174,34 +179,96 @@ class OllamaWorkspaceAssistant {
     const query = this.extractSearchQuery(question).replace(/\b(in\s+)?(the\s+)?(trash|trashed|deleted|bin)\b/gi, ' ').replace(/\s+/g, ' ').trim() || question;
     const preferNames = !this.questionAsksAboutContent(question);
     const { files: found, stats } = await searchWorkspace(userId, query, { limit: 8, scope: 'accessible', includeTrash, preferNames });
-    const files = found.map((file) => {
-      const { source, role, teamName } = file.access;
-      const ownerName = file.owner?.name;
-      let location = file.folderName || 'My Files';
-      if (source === 'team') location = teamName ? `Team Space: ${teamName}` : 'Team Space';
-      if (source === 'shared') location = ownerName ? `Shared by ${ownerName}` : 'Shared with you';
-      if (file.isTrashed) location = 'Trash';
-      return {
-        id: file._id.toString(),
-        name: file.originalName,
-        mimeType: file.mimeType,
-        size: file.size,
-        source,
-        role,
-        ownerName: source === 'owned' ? undefined : ownerName,
-        teamName,
-        trashed: Boolean(file.isTrashed),
-        folder: location,
-        // Only meaningful for the user's own files; used to open the folder in My Files.
-        parentFolder: source === 'owned' && !file.isTrashed ? (file.parentFolder?.toString() || null) : null,
-        updatedAt: file.updatedAt,
-      };
-    });
-    return { files, hiddenContentMatches: stats.hiddenContentMatches || 0 };
+    return { files: found.map(file => this.searchItem(file)), hiddenContentMatches: stats.hiddenContentMatches || 0 };
   }
 
-  findAnswer(question, files, hiddenContentMatches = 0) {
-    const query = this.extractSearchQuery(question);
+  /**
+   * Search when File Box AI is running. The model already said what is wanted: a file that mentions some
+   * words is a literal text search; a file that IS something ("my resume") is judged by the model among
+   * the files the user may read.
+   */
+  async aiSearchFiles(userId, route, question) {
+    const query = route.searchTerms || route.target || this.extractSearchQuery(question);
+    const includeTrash = this.questionAsksForTrash(question);
+    if (route.lookFor === 'words_inside_files') {
+      const { files } = await searchWorkspace(userId, query, { limit: 8, scope: 'accessible', includeTrash });
+      return { files: files.map(file => this.searchItem(file)), query };
+    }
+    // Files named with the search words are always shown; the model adds files it recognises
+    // ("SR profile.txt" for "resume") and leaves out files that only mention the words.
+    const named = await this.literalNameMatches(userId, query, includeTrash);
+    const found = await findFiles(userId, query, { level: 'viewer' });
+    const trashed = includeTrash ? (await findFiles(userId, query, { level: 'owner', trashed: true })).files : [];
+    const seen = new Set();
+    const files = [...named, ...found.files, ...trashed].filter(file => (seen.has(file._id.toString()) ? false : seen.add(file._id.toString())));
+    return { files: (await this.annotateFiles(userId, files)).slice(0, 8), query };
+  }
+
+  /** Files whose name has the search words (or some of them, with the rest in the text). */
+  async literalNameMatches(userId, query, includeTrash) {
+    const words = phraseWords(query).map(word => (word.length > 3 && word.endsWith('s') ? word.slice(0, -1) : word));
+    if (!words.length) return [];
+    const { files } = await searchWorkspace(userId, query, { limit: 20, scope: 'accessible', includeTrash });
+    const texts = new Map((await FileContent.find({ file: { $in: files.map(f => f._id) } }).select('file extractedText').lean())
+      .map(c => [c.file.toString(), (c.extractedText || '').toLowerCase()]));
+    const ids = files.filter((file) => {
+      const name = (file.originalName || '').toLowerCase().replace(/[_\-.]+/g, ' ');
+      const inName = words.filter(word => name.includes(word));
+      if (inName.length === words.length) return true;
+      const text = texts.get(file._id.toString()) || '';
+      // No text to check (not extracted, or an image): the name match stands.
+      return inName.length > 0 && (!text || words.every(word => name.includes(word) || text.includes(word)));
+    }).map(file => file._id);
+    return ids.length ? File.find({ _id: { $in: ids } }) : [];
+  }
+
+  /** Label files for the results list exactly like local search does (who can see it, and where it is). */
+  async annotateFiles(userId, files) {
+    if (!files.length) return [];
+    await File.populate(files, { path: 'owner', select: 'name email' });
+    const readable = await filterReadable(files, userId);
+    const parentIds = [...new Set(readable.map(({ file }) => file.parentFolder?.toString()).filter(Boolean))];
+    const parentNames = new Map((await Folder.find({ _id: { $in: parentIds } }).select('name').lean()).map(f => [f._id.toString(), f.name]));
+    return readable.map(({ file, access }) => this.searchItem({
+      ...file.toObject(),
+      folderName: file.parentFolder ? parentNames.get(file.parentFolder.toString()) || null : null,
+      access,
+    }));
+  }
+
+  /** Add what File Box read each file to be ("electricity bill", "calculus homework") to result items. */
+  async withKinds(items) {
+    if (!items?.length) return items;
+    const kinds = new Map((await FileContent.find({ file: { $in: items.map(item => item.id) } }).select('file aiType').lean())
+      .map(c => [c.file.toString(), c.aiType]));
+    return items.map(item => (kinds.get(item.id) ? { ...item, kind: kinds.get(item.id) } : item));
+  }
+
+  searchItem(file) {
+    const { source, role, teamName } = file.access;
+    const ownerName = file.owner?.name;
+    let location = file.folderName || 'My Files';
+    if (source === 'team') location = teamName ? `Team Space: ${teamName}` : 'Team Space';
+    if (source === 'shared') location = ownerName ? `Shared by ${ownerName}` : 'Shared with you';
+    if (file.isTrashed) location = 'Trash';
+    return {
+      id: file._id.toString(),
+      name: file.originalName,
+      mimeType: file.mimeType,
+      size: file.size,
+      source,
+      role,
+      ownerName: source === 'owned' ? undefined : ownerName,
+      teamName,
+      trashed: Boolean(file.isTrashed),
+      folder: location,
+      // Only meaningful for the user's own files; used to open the folder in My Files.
+      parentFolder: source === 'owned' && !file.isTrashed ? (file.parentFolder?.toString() || null) : null,
+      updatedAt: file.updatedAt,
+    };
+  }
+
+  findAnswer(question, files, hiddenContentMatches = 0, query = this.extractSearchQuery(question)) {
     if (!files.length) {
       return `I couldn't find any files matching "${query}" in your files, files shared with you, or your Team Spaces.`;
     }
@@ -431,8 +498,7 @@ class OllamaWorkspaceAssistant {
     const fileContent = await this.ensureExtractedContent(file);
     const memory = await FileMemory.findOne({ file: file._id, owner: userId }).lean();
     const extractedText = fileContent?.extractedText?.trim() || '';
-    const shouldSummarize = this.questionNeedsSummary(question) || extractedText.length > 5000;
-    const cachedOrGeneratedSummary = shouldSummarize
+    const cachedOrGeneratedSummary = this.questionNeedsSummary(question)
       ? await this.summarizeDocument(file, fileContent)
       : (fileContent.summary?.trim() || '');
 
@@ -441,13 +507,19 @@ class OllamaWorkspaceAssistant {
       `Type: ${file.mimeType}`,
       `Size: ${formatBytes(file.size)}`,
     ];
+    if (fileContent?.aiType) {
+      sections.push(`What File Box read this file to be: ${[fileContent.aiCategory, fileContent.aiType].filter(Boolean).join(', ')}. ${fileContent.aiDescription || ''}`);
+    }
+    if (fileContent?.aiFacts?.length) {
+      sections.push(`Key facts noted from the file:\n${fileContent.aiFacts.map(f => `- ${f.label}: ${f.value}`).join('\n')}`);
+    }
 
     if (cachedOrGeneratedSummary) {
       sections.push(`Summary:\n${cachedOrGeneratedSummary}`);
     }
 
     if (extractedText) {
-      sections.push(`Excerpt:\n${truncateText(extractedText, config.ollama.assistantMaxFileContextChars)}`);
+      sections.push(await this.relevantText(file, extractedText, question));
     }
 
     const memoryContext = this.formatMemoryContext(memory);
@@ -456,6 +528,26 @@ class OllamaWorkspaceAssistant {
     }
 
     return sections.join('\n\n');
+  }
+
+  /**
+   * The parts of a file that matter for a question: the whole text when it is short, otherwise its
+   * beginning plus the passages closest in meaning to the question.
+   */
+  async relevantText(file, extractedText, question) {
+    const limit = config.ollama.assistantMaxFileContextChars;
+    if (extractedText.length <= limit) return `Text:\n${extractedText}`;
+    try {
+      await ensureIndexed([file._id], { limit: 1 });
+      const passages = await searchPassages([file._id], question, { k: 6, perFile: 6 });
+      if (passages.length) {
+        const ordered = [...passages].sort((a, b) => a.index - b.index);
+        return `Beginning of the file:\n${extractedText.slice(0, 1500)}\n\nParts of the file most related to the question:\n${ordered.map(p => `[part ${p.index + 1}] ${p.text}`).join('\n\n')}`;
+      }
+    } catch (error) {
+      console.error('[File Box AI] Passage search failed, using the beginning of the file:', error.message);
+    }
+    return `Excerpt:\n${truncateText(extractedText, limit)}`;
   }
 
   serializeConversation(history = []) {
@@ -546,6 +638,7 @@ Respond to the latest user request now.`,
       source: route.source,
       rule: route.rule,
       confidence: route.confidence,
+      mode: route.mode,
     };
   }
 
@@ -566,12 +659,6 @@ Respond to the latest user request now.`,
     }
   }
 
-  /** Model fallback for routing; only reached when no rule matched. */
-  async classifyIntent(question, options) {
-    await this.requireModel();
-    return intentRouter.classifyWithModel(question, options);
-  }
-
   /** Several matches: list them and ask. The reply carries what the browser sends back with the choice. */
   choiceReply(route, { resolution, slot, verb, question, fileId, resolved }) {
     const { choices, more, phrase } = resolution;
@@ -584,8 +671,14 @@ Respond to the latest user request now.`,
     return this.reply(route, {
       answer: `I found ${total} ${noun} ${allNamed ? 'named' : 'matching'} "${phrase}". ${ask}${more ? ` (Showing ${choices.length}. Add more of the name to narrow it down.)` : ''}`,
       choices: { slot, key: phrase.toLowerCase(), options: choices },
-      resume: { question, fileId: fileId || null, resolved },
+      // The interpretation travels with the choice, so picking continues exactly what was understood.
+      resume: { question, fileId: fileId || null, resolved: { ...resolved, route: this.portableRoute(route) } },
     });
+  }
+
+  portableRoute(route) {
+    const { intent, action, target, destination, newName, searchTerms, lookFor, source, rule, confidence, mode } = route;
+    return { intent, action, target, destination, newName, searchTerms, lookFor, source, rule, confidence, mode };
   }
 
   noMatchAnswer(resolution, { level, trashed, verb }) {
@@ -604,7 +697,13 @@ Respond to the latest user request now.`,
    */
   async resolveTargets(route, question, userId, { fileId, resolved = {}, level, trashed = false, verb }) {
     const source = route.target || (FILE_INTENTS.includes(route.intent) ? route.normalized : '');
-    const explicit = aiActionExecutor.extractFileNames(source || '') || [];
+    let explicit = aiActionExecutor.extractFileNames(source || '') || [];
+    if (explicit.length && route.intent === 'action' && route.action !== 'rename_file') {
+      // "Trash a.txt and b.txt": every file name in the request, except a destination folder's name.
+      const notTargets = `${route.destination || ''} ${route.newName || ''}`.toLowerCase();
+      const all = (aiActionExecutor.extractFileNames(route.normalized || question) || []).filter(name => !notTargets.includes(name.toLowerCase()));
+      if (all.length > explicit.length) explicit = all;
+    }
     const phrases = explicit.length ? explicit : [route.target || ''];
     const files = [];
 
@@ -631,8 +730,17 @@ Respond to the latest user request now.`,
         return { reply: this.reply(route, { answer: verb ? `Which file should I ${verb}? Mention its name or select it first.` : 'Which file do you mean? Mention its name or select it first.' }) };
       }
 
-      const resolution = await resolveFile(userId, phrase, { level, trashed });
+      // A typed file name ("budget.pdf") means that file: matched by name, never inferred.
+      const byName = route.mode === 'offline' || /\.[a-z0-9]{1,6}$/i.test(phrase.trim());
+      const resolution = byName
+        ? await resolveFile(userId, phrase, { level, trashed })
+        : await this.findWithAI(userId, phrase, { level, trashed });
       if (resolution.status === 'one') {
+        // A change the model inferred ("rename my resume" -> "SR profile.txt") is checked with the user first,
+        // unless the name plainly matches. Trash and share confirm with the file name anyway.
+        if (resolution.inferred && level === 'owner' && !CONFIRMATION_REQUIRED_ACTIONS.includes(route.action) && !resolution.nameMatches) {
+          return { reply: this.confirmChoiceReply(route, { resolution, verb, question, fileId, resolved }) };
+        }
         files.push(resolution.file);
       } else if (resolution.status === 'many') {
         return { reply: this.choiceReply(route, { resolution, slot: 'file', verb, question, fileId, resolved }) };
@@ -641,6 +749,35 @@ Respond to the latest user request now.`,
       }
     }
     return { files };
+  }
+
+  async findWithAI(userId, phrase, options) {
+    let found;
+    try {
+      found = await findFiles(userId, phrase, options);
+    } catch (error) {
+      // The model did not answer in time: fall back to plain name matching rather than failing.
+      console.error('[File Box AI] File finder failed, using name matching:', error.message);
+      return resolveFile(userId, phrase, options);
+    }
+    const words = phraseWords(phrase);
+    const name = (found.files[0]?.originalName || '').toLowerCase().replace(/[_\-.]+/g, ' ');
+    return {
+      ...found,
+      file: found.files[0],
+      inferred: true,
+      nameMatches: words.length > 0 && words.every(word => name.includes(word.length > 3 && word.endsWith('s') ? word.slice(0, -1) : word)),
+    };
+  }
+
+  /** One inferred match for a change: show it and let the user confirm by picking it. */
+  confirmChoiceReply(route, { resolution, verb, question, fileId, resolved }) {
+    const [choice] = resolution.choices;
+    return this.reply(route, {
+      answer: `I think you mean "${choice.name}" (${choice.location}). Is that the one you want me to ${verb}? Select it to continue.`,
+      choices: { slot: 'file', key: resolution.phrase.toLowerCase(), options: [choice] },
+      resume: { question, fileId: fileId || null, resolved: { ...resolved, route: this.portableRoute(route) } },
+    });
   }
 
   /** Destination folder for a move. Returns { folder } or { reply }. */
@@ -697,7 +834,7 @@ Respond to the latest user request now.`,
       if (recipientQuestion) return this.reply(route, { answer: recipientQuestion, needsInput: 'email' });
     }
 
-    const context = { selectedFileId: null, selectedFile: null };
+    const context = { selectedFileId: null, selectedFile: null, newName: route.newName };
     if (FILE_ACTIONS[type]) {
       const { verb, trashed } = FILE_ACTIONS[type];
       const targets = await this.resolveTargets(route, question, userId, { fileId, resolved, level: 'owner', trashed, verb });
@@ -706,7 +843,6 @@ Respond to the latest user request now.`,
         return this.reply(route, { answer: 'I can rename one file at a time. Which file should I rename first?' });
       }
       context.targetFiles = targets.files;
-      context.newName = route.newName;
 
       if (type === 'move_file') {
         const destination = await this.resolveDestination(route, question, userId, { fileId, resolved });
@@ -782,12 +918,71 @@ Respond to the latest user request now.`,
     return this.reply(route, { answer, provider: 'ollama', model: config.ollama.assistantModel, fileId: file._id });
   }
 
+  /**
+   * A question answered from what is written in the user's files ("When is my electricity bill due?").
+   * Only files the user may read are searched; the answer names the file each fact came from.
+   */
+  async handleDriveQuestion(route, { userId, question, history }) {
+    await this.requireModel();
+    const ranked = await rankReadableFiles(userId, question, { limit: 8 });
+    const fileIds = ranked.map(r => r.file._id);
+    await ensureIndexed(fileIds, { limit: 4 });
+    const passages = await searchPassages(fileIds, question, { k: 6, perFile: 3 });
+
+    const byId = new Map(ranked.map(r => [r.file._id.toString(), r.file]));
+    const usedIds = [...new Set([...passages.map(p => p.file), ...ranked.slice(0, 3).map(r => r.file._id.toString())])];
+    const profiles = new Map((await FileContent.find({ file: { $in: usedIds } }).select('file aiType aiCategory aiDescription aiFacts').lean())
+      .map(c => [c.file.toString(), c]));
+    const sources = usedIds.map((id, i) => {
+      const file = byId.get(id);
+      const profile = profiles.get(id) || {};
+      const facts = (profile.aiFacts || []).map(f => `${f.label}: ${f.value}`).join('; ');
+      const text = passages.filter(p => p.file === id).sort((a, b) => a.index - b.index).map(p => p.text).join('\n...\n');
+      return `[${i + 1}] File: ${file.originalName}${profile.aiType ? ` (${[profile.aiCategory, profile.aiType].filter(Boolean).join(', ')})` : ''}`
+        + `${profile.aiDescription ? `\nAbout: ${profile.aiDescription}` : ''}${facts ? `\nKey facts: ${facts}` : ''}${text ? `\nText:\n${text}` : ''}`;
+    });
+
+    if (!sources.length) {
+      return this.reply(route, { answer: "I couldn't find anything in your files that answers that.", provider: 'ollama' });
+    }
+
+    const answer = (await ollamaClient.chatText({
+      task: 'answer',
+      model: config.ollama.assistantModel,
+      system: `You answer questions about a person's own files inside File Box, a file storage app.
+Use only the file excerpts given. After each fact, name the file it came from in parentheses, for example (electric-bill-oct.pdf).
+If the excerpts do not contain the answer, say you couldn't find it in their files and suggest what to upload or search for. Never guess or use outside knowledge for facts about the person.
+Be brief and direct.`,
+      content: `Recent conversation:\n${this.serializeConversation(history) || 'None.'}\n\nExcerpts from the person's files:\n{{CONTEXT}}\n\nQuestion: ${question}`,
+      context: sources.join('\n\n'),
+    })).trim();
+
+    // Show the files the answer names (or the most relevant ones when it names none).
+    const named = usedIds.filter(id => answer.toLowerCase().includes(byId.get(id).originalName.toLowerCase()));
+    const shown = (named.length ? named : usedIds.slice(0, 3)).map(id => byId.get(id));
+    const couldNotFind = /couldn['’]?t find|could not find|no information|not (?:mentioned|found)/i.test(answer) && !named.length;
+    return this.reply(route, {
+      answer,
+      provider: 'ollama',
+      model: config.ollama.assistantModel,
+      files: couldNotFind ? [] : await this.withKinds(await this.annotateFiles(userId, shown)),
+    });
+  }
+
   async handleSearch(route, { userId, question }) {
-    const found = await this.searchForQuestion(userId, question);
+    let found;
+    if (route.mode !== 'offline') {
+      try {
+        found = await this.aiSearchFiles(userId, route, question);
+      } catch (error) {
+        console.error('[File Box AI] AI search failed, using basic search:', error.message);
+      }
+    }
+    if (!found) found = await this.searchForQuestion(userId, question);
     let { files } = found;
     if (/\b(newest|latest|most\s+recent)\b/i.test(question)) files = [...files].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
     else if (/\boldest\b/i.test(question)) files = [...files].sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt));
-    return this.reply(route, { answer: this.findAnswer(question, files, found.hiddenContentMatches), provider: 'local-search', files });
+    return this.reply(route, { answer: this.findAnswer(question, files, found.hiddenContentMatches, found.query), provider: 'local-search', files: await this.withKinds(files) });
   }
 
   /**
@@ -815,7 +1010,7 @@ Respond to the latest user request now.`,
       }
     } else {
       // No file chosen: re-read the request by rules only, and act only when every name matches one file.
-      const route = await intentRouter.routeIntent(question, {}, { classify: async () => null });
+      const route = { ...intentRouter.routeIntent(question), mode: 'offline' };
       if (route.action !== type) return failed('Ask again so I can check which file you mean.');
       const targets = await this.resolveTargets(route, question, userId, { level: 'owner', verb: FILE_ACTIONS[type].verb });
       if (targets.reply) return failed(targets.reply.answer);
@@ -841,19 +1036,34 @@ Respond to the latest user request now.`,
   }
 
   /**
-   * One chat turn. The request is routed by local rules first (the model only picks an intent when no
-   * rule matched), names are resolved against what the user may access, and the model is used only to
-   * write answers that need it.
+   * What the user wants. The local model reads the request (with recent conversation); when Ollama is not
+   * running, simple rules stand in and the reply is marked offline. A choice from an earlier list carries
+   * the original interpretation, so it is not re-read.
+   */
+  async understand({ question, fileId, history, resolved }) {
+    noteActivity();
+    if (resolved.route) return resolved.route;
+    const hasSelectedFile = Boolean(fileId);
+    const status = await this.getStatus();
+    if (status.reachable) {
+      try {
+        return { ...(await understandRequest(question, { hasSelectedFile, history })), mode: 'ai' };
+      } catch (error) {
+        console.error('[File Box AI] Understanding failed, using offline rules:', error.message);
+      }
+    }
+    const fileNames = aiActionExecutor.extractFileNames(question) || [];
+    return { ...intentRouter.routeIntent(question, { hasSelectedFile, fileNames }), mode: 'offline' };
+  }
+
+  /**
+   * One chat turn: understand the request, resolve the files it names among those the user may access
+   * (asking when several match), then search, act (with the usual confirmations) or answer.
    *
    * `resolved` carries choices the user made from an earlier list: { files: { "<name>": id }, folder: id }.
    */
   async chat({ userId, question, fileId, history = [], context = '', resolved = {} }) {
-    const fileNames = aiActionExecutor.extractFileNames(question) || [];
-    const route = await intentRouter.routeIntent(
-      question,
-      { hasSelectedFile: Boolean(fileId), fileNames },
-      { classify: (q, options) => this.classifyIntent(q, options) }
-    );
+    const route = await this.understand({ question, fileId, history, resolved });
     const turn = { userId, question, fileId, history, context, resolved };
 
     switch (route.intent) {
@@ -883,6 +1093,8 @@ Respond to the latest user request now.`,
       case 'explain':
       case 'file_question':
         return this.handleFileRequest(route, turn);
+      case 'drive_question':
+        return this.handleDriveQuestion(route, turn);
       default: {
         await this.requireModel();
         const answer = await this.composeAnswer({

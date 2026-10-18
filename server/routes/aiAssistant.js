@@ -9,6 +9,8 @@ const { authorizeFile, sendDenied } = require('../services/permissions');
 const fileAIActions = require('../services/fileAIActions');
 const { buildDuplicateSuggestions } = require('../services/duplicateSuggestions');
 const { suggestOrganization, applyProposals } = require('../services/organizeSuggestions');
+const { INTENTS } = require('../services/intentRouter');
+const { ACTIONS } = require('../services/requestUnderstanding');
 
 const sanitizeHistory = (history = []) =>
   (Array.isArray(history) ? history : [])
@@ -28,7 +30,27 @@ const sanitizeResolved = (resolved) => {
       if (typeof name === 'string' && name.length <= 200 && isId(id)) files[name.toLowerCase()] = id;
     });
   }
-  return { files, folder: isId(resolved?.folder) ? resolved.folder : undefined };
+  return { files, folder: isId(resolved?.folder) ? resolved.folder : undefined, route: sanitizeRoute(resolved?.route) };
+};
+
+// How File Box understood the original request, returned with a choice so it continues unchanged.
+// It is the user's own request; permissions and confirmations still apply to whatever it asks for.
+const sanitizeRoute = (route) => {
+  if (!route || typeof route !== 'object' || !INTENTS.includes(route.intent)) return undefined;
+  const text = (value) => (typeof value === 'string' ? value.slice(0, 200) : '');
+  return {
+    intent: route.intent,
+    action: ACTIONS.includes(route.action) && route.action !== 'none' ? route.action : undefined,
+    target: text(route.target),
+    destination: text(route.destination),
+    newName: text(route.newName),
+    searchTerms: text(route.searchTerms),
+    lookFor: ['what_the_file_is', 'words_inside_files', 'none'].includes(route.lookFor) ? route.lookFor : 'none',
+    source: route.source === 'model' ? 'model' : 'rule',
+    rule: text(route.rule),
+    confidence: typeof route.confidence === 'number' ? route.confidence : 0,
+    mode: route.mode === 'offline' ? 'offline' : 'ai',
+  };
 };
 
 const sendAssistantError = (res, error) => {
