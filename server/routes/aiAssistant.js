@@ -11,7 +11,9 @@ const { buildDuplicateSuggestions } = require('../services/duplicateSuggestions'
 const { suggestOrganization, applyProposals } = require('../services/organizeSuggestions');
 const { INTENTS } = require('../services/intentRouter');
 const { ACTIONS } = require('../services/requestUnderstanding');
-const { noteActivity } = require('../services/fileProfiler');
+const { noteActivity, readingStatus } = require('../services/fileProfiler');
+const { recordFeedback } = require('../services/aiFeedback');
+const { fileById } = require('../services/fileResolver');
 
 const sanitizeHistory = (history = []) =>
   (Array.isArray(history) ? history : [])
@@ -128,7 +130,12 @@ router.post('/chat', auth, async (req, res) => {
       res.flushHeaders?.();
       const send = (event) => res.write(`${JSON.stringify(event)}\n`);
       try {
-        const reply = await ollamaWorkspaceAssistant.chat({ ...turn, onToken: (text) => send({ type: 'token', text }) });
+        const reply = await ollamaWorkspaceAssistant.chat({
+          ...turn,
+          onToken: (text) => send({ type: 'token', text }),
+          // The answer being written is replaced (File Box looked in more files); the page clears it.
+          onReset: () => send({ type: 'reset' }),
+        });
         send({ type: 'done', reply });
       } catch (error) {
         send({ type: 'error', ...assistantErrorBody(error) });
@@ -142,10 +149,50 @@ router.post('/chat', auth, async (req, res) => {
   }
 });
 
+// How far File Box has got reading the files this person can see (for "Reading your files: 4 of 6").
+router.get('/reading-status', auth, async (req, res) => {
+  try {
+    res.json(await readingStatus(req.user._id));
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Could not check reading progress.' });
+  }
+});
+
 // The File Box AI page is open: background file reading stays paused so questions are answered first.
 router.post('/presence', auth, (req, res) => {
   noteActivity();
   res.json({ ok: true });
+});
+
+// 👍/👎 on an answer, optionally with the file that was actually meant. File Box uses corrections for the
+// same person's later, similar requests.
+router.post('/feedback', auth, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const rating = body.rating === 'up' ? 'up' : body.rating === 'down' ? 'down' : '';
+    const question = typeof body.question === 'string' ? body.question.trim() : '';
+    if (!rating || !question) return res.status(400).json({ message: 'A rating and the original question are required.' });
+    let correctFile = null;
+    if (body.correctFileId) {
+      const file = isId(body.correctFileId) ? await fileById(req.user._id, body.correctFileId, { level: 'viewer' }) : null;
+      if (!file) return res.status(400).json({ message: 'That file is not available to you.' });
+      correctFile = file._id;
+    }
+    await recordFeedback(req.user._id, {
+      question,
+      answer: typeof body.answer === 'string' ? body.answer : '',
+      intent: typeof body.intent === 'string' ? body.intent : '',
+      action: typeof body.action === 'string' ? body.action : '',
+      phrase: typeof body.phrase === 'string' ? body.phrase : '',
+      rating,
+      shownFiles: Array.isArray(body.shownFileIds) ? body.shownFileIds.filter(isId) : [],
+      correctFile,
+      note: typeof body.note === 'string' ? body.note : '',
+    });
+    res.json({ ok: true, learned: Boolean(correctFile) });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Could not save feedback.' });
+  }
 });
 
 // Run a destructive or exposing action (trash, share) after the user confirmed it in the UI

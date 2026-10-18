@@ -81,3 +81,18 @@
 .filebox-ai-choices .source-team { color: #7a6aa0; }
 .filebox-ai-mode { margin: 8px 0 0; font-size: 11px; color: #a0745a; }
 .filebox-ai-files small.filebox-ai-kind { padding: 1px 6px; border-radius: 4px; background: #eef3e8; color: #4f6b43; white-space: nowrap; }
+
+/* Answers: where they came from, feedback, reading progress */
+.filebox-ai-sources { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 4px; }
+.filebox-ai-sources button { width: 100%; text-align: left; padding: 6px 9px; border: 0; border-left: 3px solid #b8cba8; background: #f7f9f4; color: #4c5d43; font-size: 12px; cursor: pointer; border-radius: 0 6px 6px 0; overflow-wrap: anywhere; }
+.filebox-ai-sources button:hover { background: #eef4e8; }
+.filebox-ai-sources q { font-style: italic; }
+.filebox-ai-sources span { color: #7d8a72; }
+.filebox-ai-feedback { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: #7d8a72; }
+.filebox-ai-feedback > button { padding: 2px 7px; border: 1px solid #e2e8da; border-radius: 6px; background: #fff; cursor: pointer; font-size: 13px; line-height: 1.4; }
+.filebox-ai-feedback > button:hover { border-color: #a7bc96; }
+.filebox-ai-feedback-form { display: grid; gap: 6px; width: 100%; margin-top: 4px; }
+.filebox-ai-feedback-form label { display: grid; gap: 4px; }
+.filebox-ai-feedback-form select, .filebox-ai-feedback-form input { padding: 6px 8px; border: 1px solid #dfe6d6; border-radius: 6px; font-size: 12px; max-width: 100%; }
+.filebox-ai-feedback-form div { display: flex; gap: 6px; }
+.filebox-ai-reading { margin: 0 0 14px; padding: 8px 12px; border-radius: 8px; background: #f2f6ec; color: #4f6b43; font-size: 12px; }

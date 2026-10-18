@@ -1174,6 +1174,7 @@ export const aiAssistantAPI = {
   chatStream: async (
     body: { question: string; fileId?: string; history?: AssistantHistoryMessage[]; resolved?: AssistantResolved },
     onToken: (text: string) => void,
+    onReset?: () => void,
   ) => {
     const token = await currentToken('/ai-assistant/chat');
     const response = await fetch(`${API_URL}/ai-assistant/chat`, {
@@ -1197,6 +1198,7 @@ export const aiAssistantAPI = {
         if (!line.trim()) continue;
         const event = JSON.parse(line);
         if (event.type === 'token') onToken(event.text);
+        else if (event.type === 'reset') onReset?.();
         else if (event.type === 'done') return event.reply;
         else if (event.type === 'error') throw fail(event.status, event.body);
       }
@@ -1205,6 +1207,17 @@ export const aiAssistantAPI = {
   },
   presence: async () => {
     await api.post('/ai-assistant/presence');
+  },
+  feedback: async (body: {
+    question: string; answer: string; rating: 'up' | 'down'; intent?: string; action?: string; phrase?: string;
+    shownFileIds?: string[]; correctFileId?: string; note?: string;
+  }): Promise<{ ok: boolean; learned: boolean }> => {
+    const response = await api.post('/ai-assistant/feedback', body);
+    return response.data;
+  },
+  readingStatus: async (): Promise<{ total: number; done: number; pending: number }> => {
+    const response = await api.get('/ai-assistant/reading-status');
+    return response.data;
   },
   confirmAction: async (action: { type: string; question: string; fileId?: string | null; fileIds?: string[] }) => {
     const response = await api.post('/ai-assistant/confirm', { ...action, fileId: action.fileId || undefined });

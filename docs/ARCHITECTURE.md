@@ -127,6 +127,25 @@ When Ollama is running, the local model reads every chat request (`services/requ
 - **Answers across files** read passages only from the files that clearly lead the ranking (within 0.06 of the best), with passages weighted by their file's relevance.
 - **Background reading steps aside.** A request from the user cancels any background file read in progress (`ollamaClient` aborts it), which is retried later. While the File Box AI page is open it sends `POST /api/ai-assistant/presence` every 20 seconds, and background reading stays paused.
 
+### Accuracy test set
+
+`npm run test:ai` (in `server/`) checks File Box AI against a fixed set of realistic files (`server/ai-accuracy/fixtures.js`) and questions with known right answers (`server/ai-accuracy/cases.json`). It covers understanding requests, finding files, answering from files, and privacy across accounts.
+- It builds a throwaway database (`filebox-ai-accuracy`; it refuses any database whose name lacks "test" or "accuracy"), has File Box read every file with the real profiler and passage index, asks every question, prints a score per area, and drops the database.
+- `--only=<area>` runs one area. `--strict` makes any failure an error.
+- **Every mistake becomes a case:** add it to `cases.json`. File names in the fixtures deliberately don't reveal what the files are.
+- **Your own corrections:** `node scripts/exportAiFeedback.js` turns 👎 corrections into `ai-accuracy/live-cases.json` (your questions and file ids, so it's in `.gitignore`). `npm run test:ai -- --live` then also checks those against your real data, read-only.
+- First full run: 39/41. The two misses were fixed: flat embedding scores now widen the judging, and questions now look in more files when the leading ones lack the answer.
+
+### Feedback and corrections
+
+Every answer has 👍/👎. 👎 can name the file that was meant, plus a note. `POST /api/ai-assistant/feedback` stores it in `AIFeedback`; a named file must be one the user can read. When the same person later asks something similar in meaning (cosine ≥ 0.86 with `nomic-embed-text`), `services/aiFeedback.js` adds the corrected file and removes the files they marked wrong, both when finding files and when choosing which files to read for an answer. Corrections never affect other accounts.
+
+### Seeing what File Box AI is doing
+
+- **Reading progress.** `GET /api/ai-assistant/reading-status` returns `{ total, done, pending }` for the user's files with text. The AI page shows "File Box is reading your files: 4 of 6 done" until everything is read.
+- **Where an answer came from.** Answers to questions across files include `sources: [{ fileId, name, quote }]`: for each named file, the line of its text (or noted fact) that shares the most with the answer. The page shows the quotes under the answer; clicking one opens the file.
+- **Looking further.** When the files that looked most relevant don't contain the answer, the next most relevant files are read before File Box says it couldn't find it. The stream sends `{type:"reset"}` so the page replaces the first attempt.
+
 ### Reading files and answering from them
 
 - **What each file is.** `services/fileProfiler.js` reads each file's text once per version: the beginning, plus samples from the middle and end of long files. It stores a broad category (homework, transcript, bill, certificate, work document, …) in `FileContent.aiCategory`, a specific kind in `aiType`, a description in `aiDescription`, and up to 6 key facts in `aiFacts` (amount due, due date, grade, issuer, …, copied from the text). `aiProfileVersion` lets older notes be re-read. It runs in the background while Ollama is idle.

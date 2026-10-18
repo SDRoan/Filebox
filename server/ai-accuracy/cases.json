@@ -1,0 +1,56 @@
+{
+  "about": "File Box AI accuracy test set. Run with: npm run test:ai (from server/). Add a case for every mistake found, so it never comes back. Text expectations are case-insensitive; a value starting with / is a regular expression.",
+  "understanding": [
+    { "message": "Find my resume", "expect": { "intent": "smart_search|search" } },
+    { "message": "Which file mentions MongoDB?", "expect": { "intent": "smart_search", "lookFor": "words_inside_files" } },
+    { "message": "Move report into Archive", "expect": { "intent": "action", "action": "move_file", "file": "report", "destination": "Archive" } },
+    { "message": "Put the screenshot in Screenshots", "expect": { "intent": "action", "action": "move_file" } },
+    { "message": "rename my resume to Resume 2026", "expect": { "intent": "action", "action": "rename_file", "newName": "Resume 2026" } },
+    { "message": "Share budget.pdf as a link", "expect": { "intent": "action", "action": "share_file", "file": "budget.pdf" } },
+    { "message": "Share report with bob@x.com", "expect": { "intent": "action", "action": "share_file", "file": "report" } },
+    { "message": "Trash report", "expect": { "intent": "action", "action": "delete_file", "file": "report" } },
+    { "message": "Create a folder called Trips", "expect": { "intent": "action", "action": "create_folder", "newName": "Trips" } },
+    { "message": "Organize my screenshots", "expect": { "intent": "organize" } },
+    { "message": "Clean up duplicate files", "expect": { "intent": "duplicates" } },
+    { "message": "How do I share a file?", "expect": { "intent": "help" } },
+    { "message": "Give me a summary of report.docx", "expect": { "intent": "summarize" } },
+    { "message": "What is my GPA?", "expect": { "intent": "drive_question" } },
+    { "message": "When is my electricity bill due?", "expect": { "intent": "drive_question" } },
+    { "message": "Show me my certificates", "expect": { "intent": "smart_search|search" } },
+    { "message": "Does my resume mention Python?", "expect": { "intent": "file_question" } },
+    { "message": "hello", "expect": { "intent": "chat" } },
+    {
+      "message": "share it as a link",
+      "history": [{ "role": "user", "content": "Find my taxes" }, { "role": "assistant", "content": "I found 1 file.\n[Files shown: taxes-2025.pdf]" }],
+      "expect": { "intent": "action", "action": "share_file", "file": "taxes-2025.pdf" }
+    }
+  ],
+  "search": [
+    { "message": "Find my electricity bill", "expectFiles": ["doc1.txt"] },
+    { "message": "Show me my certificates", "expectFiles": ["file (2).txt"], "notFiles": ["doc1.txt"] },
+    { "message": "Where is my transcript?", "expectFiles": ["scan_0042.txt"] },
+    { "message": "Find my homework", "expectFiles": ["hw3.txt"], "notFiles": ["scan_0042.txt"] },
+    { "message": "Find my resume", "expectFiles": ["SR profile.txt"], "notFiles": ["Startup Ideas.txt"] },
+    { "message": "Find my CV", "expectFiles": ["SR profile.txt"] },
+    { "message": "Find my receipts", "expectFiles": ["IMG_0419.txt"] },
+    { "message": "Where is my lease?", "expectFiles": ["apt.txt"] },
+    { "message": "Do I have a tax return?", "expectFiles": [] }
+  ],
+  "questions": [
+    { "message": "When is my electricity bill due?", "expectText": "October 21", "expectFile": "doc1.txt" },
+    { "message": "How much do I owe on my electricity bill?", "expectText": "84.20" },
+    { "message": "What is my GPA?", "expectText": "3.62", "expectFile": "scan_0042.txt" },
+    { "message": "What grade did I get in Calculus I?", "expectText": "/A-|A−|A minus/" },
+    { "message": "When does the warehouse lease end?", "expectText": "/31 January 2027|January 31,? 2027/" },
+    { "message": "Who owns the budget review?", "expectText": "Priya" },
+    { "message": "How much was my Target receipt?", "expectText": "25.33" },
+    { "message": "How much is my rent?", "expectText": "1,850", "expectFile": "apt.txt" },
+    { "message": "When does my apartment lease end?", "expectText": "/August 31,? 2027|31 August 2027/" },
+    { "message": "What is my AWS certificate ID?", "expectText": "AWS-77812" },
+    { "message": "What is my passport number?", "expectText": "/couldn['’]?t find|could not find|not (in|found)/", "mustNotContain": ["4471", "AWS-77812"] }
+  ],
+  "privacy": [
+    { "user": "other", "message": "When is my electricity bill due?", "mustNotContain": ["October 21", "84.20"] },
+    { "user": "other", "message": "What is my GPA?", "mustNotContain": ["3.62"] }
+  ]
+}

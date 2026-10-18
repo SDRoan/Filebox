@@ -5,6 +5,7 @@ const config = require('../config/aiConfig');
 const { readableFileFilter } = require('./permissions');
 const { cleanPhrase, phraseWords, describeFile, compareChoices } = require('./fileResolver');
 const { profileDocument, textDocument } = require('./fileProfiler');
+const { correctionsFor } = require('./aiFeedback');
 
 /**
  * Finds the file(s) a user means ("my resume", "the old report") by meaning.
@@ -23,6 +24,8 @@ const JUDGE_TOP = 5;
 const CLEAR_SCORE = 0.68;
 const CLEAR_MARGIN = 0.12;
 const MIN_SCORE = 0.35;
+const FLAT_SPREAD = 0.03;
+const MAX_JUDGE_FLAT = 15;
 const MAX_CHOICES = 8;
 
 const nameVectors = new Map(); // vectors for files without a FileContent record (e.g. not extracted yet)
@@ -184,7 +187,10 @@ async function matchByMeaning(phrase, files) {
   const [top, second] = scored;
   if (top && top.score >= CLEAR_SCORE && (!second || top.score - second.score >= CLEAR_MARGIN)
     && (await profiledIds([top.file])).has(top.file._id.toString())) return [top.file];
-  const close = scored.slice(0, JUDGE_TOP).filter(s => s.score >= MIN_SCORE).map(s => s.file);
+  // When scores are flat (a short word like "CV" says little to the embedding model), the ranking cannot
+  // be trusted to put the right file in the top few, so the language model looks at more of them.
+  const flat = scored.length > JUDGE_TOP && scored[0].score - scored[JUDGE_TOP - 1].score < FLAT_SPREAD;
+  const close = scored.slice(0, flat ? MAX_JUDGE_FLAT : JUDGE_TOP).filter(s => s.score >= MIN_SCORE).map(s => s.file);
   if (!close.length) return [];
   return (await judge(phrase, close)).map(i => close[i]);
 }
@@ -201,7 +207,15 @@ async function findFiles(userId, request, { level = 'viewer', trashed = false } 
 
   // Files named what the user typed need no judgement (several of them become a question for the user).
   const named = namedFiles(files, phrase);
-  const matched = named.length ? named : (files.length ? await matchByMeaning(phrase, files) : []);
+  let matched = named.length ? named : (files.length ? await matchByMeaning(phrase, files) : []);
+
+  // The person's own corrections for requests like this one: add the file they said was right,
+  // drop the ones they said were wrong.
+  const { include, exclude } = files.length ? await correctionsFor(userId, phrase) : { include: [], exclude: [] };
+  if (include.length || exclude.length) {
+    const corrected = files.filter(file => include.includes(file._id.toString()) && !matched.some(m => m._id.equals(file._id)));
+    matched = [...matched, ...corrected].filter(file => !exclude.includes(file._id.toString()));
+  }
 
   const cache = new Map();
   const described = [];

@@ -36,6 +36,12 @@ interface ChoiceRequest {
   key: string;
   options: AssistantChoice[];
 }
+interface AnswerSource {
+  fileId: string;
+  name: string;
+  quote: string;
+}
+
 interface ResumeRequest {
   question: string;
   fileId?: string | null;
@@ -55,6 +61,12 @@ interface Message {
   chosenId?: string;
   offline?: boolean;
   error?: boolean;
+  // What this answer replied to, for 👍/👎 feedback.
+  question?: string;
+  route?: { intent?: string; action?: string; phrase?: string };
+  sources?: AnswerSource[];
+  feedback?: 'up' | 'down';
+  feedbackOpen?: boolean;
 }
 
 interface AssistantStatus {
@@ -195,6 +207,13 @@ const AIAssistant: React.FC = () => {
           if (streamed !== piece) updateMessage(streamId, { content: streamed });
           setStreaming(true);
         },
+        // File Box looked in more files and is writing a new answer: clear the first one.
+        () => {
+          if (streamed) {
+            streamed = ' ';
+            updateMessage(streamId, { content: 'Looking in more of your files…' });
+          }
+        },
       );
       const reply: Omit<Message, 'id'> = {
         role: 'assistant',
@@ -206,6 +225,9 @@ const AIAssistant: React.FC = () => {
         resume: response.resume,
         offline: response.route?.mode === 'offline',
         actionState: response.pendingAction ? 'pending' : undefined,
+        question,
+        route: response.route ? { intent: response.route.intent, action: response.route.action, phrase: response.route.phrase } : undefined,
+        sources: response.sources?.length ? response.sources : undefined,
       };
       if (streamed) {
         if (reply.panel) livePanelIds.current.add(streamId);
@@ -287,6 +309,48 @@ const AIAssistant: React.FC = () => {
     send(message.resume.question, message.resume.fileId || undefined, resolved, `${option.name} — ${option.location}`);
   };
 
+  // 👍/👎 on an answer. A correction ("the right file was X") is used for similar requests later.
+  const [feedbackFile, setFeedbackFile] = useState('');
+  const [feedbackNote, setFeedbackNote] = useState('');
+  const [feedbackThanks, setFeedbackThanks] = useState<Record<string, string>>({});
+  const sendFeedback = async (message: Message, rating: 'up' | 'down', correctFileId?: string, note?: string) => {
+    if (!message.question) return;
+    updateMessage(message.id, { feedback: rating, feedbackOpen: false });
+    try {
+      const result = await aiAssistantAPI.feedback({
+        question: message.question,
+        answer: message.content,
+        rating,
+        intent: message.route?.intent,
+        action: message.route?.action,
+        phrase: message.route?.phrase,
+        shownFileIds: [...(message.files || []).map(f => f.id), ...(message.sources || []).map(s => s.fileId)],
+        correctFileId: correctFileId || undefined,
+        note: note || undefined,
+      });
+      setFeedbackThanks(prev => ({ ...prev, [message.id]: result.learned ? "Thanks. File Box will use that file for questions like this." : 'Thanks for the feedback.' }));
+    } catch {
+      setFeedbackThanks(prev => ({ ...prev, [message.id]: 'Feedback could not be saved.' }));
+    }
+    setFeedbackFile('');
+    setFeedbackNote('');
+  };
+
+  // While File Box is still reading files, say so: answers improve as it reads.
+  const [reading, setReading] = useState<{ total: number; done: number; pending: number } | null>(null);
+  useEffect(() => {
+    if (!status?.ready) return undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = () => aiAssistantAPI.readingStatus()
+      .then((result) => {
+        setReading(result);
+        if (result.pending > 0) timer = setTimeout(check, 15000);
+      })
+      .catch(() => setReading(null));
+    check();
+    return () => { if (timer) clearTimeout(timer); };
+  }, [status?.ready]);
+
   const modifiedLabel = (value?: string) => {
     if (!value) return '';
     const date = new Date(value);
@@ -351,6 +415,12 @@ const AIAssistant: React.FC = () => {
           {checking && !status ? 'Checking…' : ready ? `Local · ${status?.assistantModel}` : 'Offline'}
         </span>
       </header>
+
+      {ready && reading && reading.pending > 0 && (
+        <p className="filebox-ai-reading" role="status">
+          File Box is reading your files: {reading.done} of {reading.total} done. Answers get better as it reads.
+        </p>
+      )}
 
       {status && !ready && (
         <section className="filebox-ai-offline" aria-live="polite">
@@ -437,6 +507,20 @@ const AIAssistant: React.FC = () => {
             <article key={message.id} className={`filebox-ai-message ${message.role} ${message.error ? 'error' : ''}`}>
               <div className="filebox-ai-message-body">{message.content}</div>
               {message.offline && <p className="filebox-ai-mode">Offline mode: basic matching until File Box AI is running.</p>}
+              {message.sources && (
+                <ul className="filebox-ai-sources" aria-label="Where this answer came from">
+                  {message.sources.map(source => {
+                    const file = message.files?.find(f => f.id === source.fileId);
+                    return (
+                      <li key={source.fileId}>
+                        <button onClick={() => (file ? openFile(file) : navigate(pagePath('files')))}>
+                          <q>{source.quote}</q> <span>— {source.name}</span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
               {message.files && (
                 <ul className="filebox-ai-files">
                   {message.files.map(file => (
@@ -481,6 +565,39 @@ const AIAssistant: React.FC = () => {
                 <p className="ai-panel-muted">
                   {livePanelIds.current.has(message.id) ? 'This review was replaced by a newer one below.' : 'Ask again to start a fresh review.'}
                 </p>
+              )}
+              {message.role === 'assistant' && message.question && !message.error && !message.pendingAction && !message.choices && (
+                <div className="filebox-ai-feedback">
+                  {feedbackThanks[message.id] ? (
+                    <span>{feedbackThanks[message.id]}</span>
+                  ) : !message.feedback && !message.feedbackOpen ? (
+                    <>
+                      <button aria-label="Good answer" title="Good answer" onClick={() => sendFeedback(message, 'up')}>👍</button>
+                      <button aria-label="Wrong answer" title="Wrong answer" onClick={() => updateMessage(message.id, { feedbackOpen: true })}>👎</button>
+                    </>
+                  ) : null}
+                  {message.feedbackOpen && (
+                    <div className="filebox-ai-feedback-form">
+                      <label>
+                        Was a different file meant?
+                        <select value={feedbackFile} onChange={(event) => setFeedbackFile(event.target.value)}>
+                          <option value="">No, something else was wrong</option>
+                          {fileOptions.map(file => <option key={file._id} value={file._id}>{file.originalName}</option>)}
+                        </select>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="What was wrong? (optional)"
+                        value={feedbackNote}
+                        onChange={(event) => setFeedbackNote(event.target.value)}
+                      />
+                      <div>
+                        <button className="btn-primary" onClick={() => sendFeedback(message, 'down', feedbackFile, feedbackNote)}>Send</button>
+                        <button className="btn-secondary" onClick={() => updateMessage(message.id, { feedbackOpen: false })}>Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
               {message.pendingAction && (
                 <div className="filebox-ai-confirm">

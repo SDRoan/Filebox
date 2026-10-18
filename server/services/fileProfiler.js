@@ -176,10 +176,27 @@ async function runOnce() {
   }
 }
 
+/**
+ * Reading progress for one person's files: files with text File Box has fully read (described at the
+ * current version and cut into passages) out of all their files with text.
+ */
+async function readingStatus(userId) {
+  const { readableFileFilter } = require('./permissions');
+  const FileChunk = require('../models/FileChunk');
+  const files = await File.find(await readableFileFilter(userId)).select('_id').lean();
+  const contents = await FileContent.find({ file: { $in: files.map(f => f._id) }, extractedText: { $nin: ['', null] } })
+    .select('file aiProfileVersion aiProfiledAt extractedAt').lean();
+  const indexed = new Set((await FileChunk.distinct('file', { file: { $in: contents.map(c => c.file) } })).map(id => id.toString()));
+  const done = contents.filter(c => (c.aiProfileVersion || 0) >= PROFILE_VERSION
+    && (!c.extractedAt || (c.aiProfiledAt && c.aiProfiledAt >= c.extractedAt))
+    && indexed.has(c.file.toString())).length;
+  return { total: contents.length, done, pending: contents.length - done };
+}
+
 function start() {
   if (process.env.FILEBOX_AI_PROFILER === 'off' || timer) return;
   timer = setInterval(() => runOnce().catch(() => {}), INTERVAL_MS);
   setTimeout(() => runOnce().catch(() => {}), 5000);
 }
 
-module.exports = { profileFile, runOnce, start, noteActivity, profileDocument, textDocument, PROFILE_VERSION };
+module.exports = { profileFile, runOnce, start, noteActivity, profileDocument, textDocument, readingStatus, PROFILE_VERSION };

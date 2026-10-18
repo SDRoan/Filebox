@@ -15,6 +15,7 @@ const { understandRequest } = require('./requestUnderstanding');
 const { findFiles, rankReadableFiles } = require('./aiFileFinder');
 const { noteActivity } = require('./fileProfiler');
 const { ensureIndexed, searchPassages } = require('./fileIndex');
+const { correctionsFor } = require('./aiFeedback');
 const { filterReadable } = require('./permissions');
 const { cleanPhrase, phraseWords, resolveFile, resolveFolder, fileById, folderById } = require('./fileResolver');
 const { buildDuplicateSuggestions } = require('./duplicateSuggestions');
@@ -644,6 +645,8 @@ Respond to the latest user request now.`,
       rule: route.rule,
       confidence: route.confidence,
       mode: route.mode,
+      // What the request was looking for; sent back with 👍/👎 feedback.
+      phrase: route.searchTerms || route.target || undefined,
     };
   }
 
@@ -929,9 +932,18 @@ Respond to the latest user request now.`,
    * A question answered from what is written in the user's files ("When is my electricity bill due?").
    * Only files the user may read are searched; the answer names the file each fact came from.
    */
-  async handleDriveQuestion(route, { userId, question, history, onToken }) {
+  async handleDriveQuestion(route, { userId, question, history, onToken, onReset }) {
     await this.requireModel();
-    const allRanked = await rankReadableFiles(userId, question, { limit: 8 });
+    let allRanked = await rankReadableFiles(userId, question, { limit: 8 });
+    // Files the person said were right for a question like this one come first; ones they said were wrong go.
+    const { include, exclude } = await correctionsFor(userId, question);
+    if (include.length || exclude.length) {
+      const top = allRanked[0]?.score || 0;
+      allRanked = allRanked
+        .filter(r => !exclude.includes(r.file._id.toString()))
+        .map(r => (include.includes(r.file._id.toString()) ? { ...r, score: top + 0.1 } : r))
+        .sort((a, b) => b.score - a.score);
+    }
     // Read passages only from the files that clearly lead (what each file IS ranks files reliably; single
     // passages of unrelated files can look similar to almost any question).
     const best = allRanked[0]?.score || 0;
@@ -958,7 +970,38 @@ Respond to the latest user request now.`,
       return this.reply(route, { answer: "I couldn't find anything in your files that answers that.", provider: 'ollama' });
     }
 
-    const answer = await this.answerFromSources({ question, sources, history, onToken });
+    let answer = await this.answerFromSources({ question, sources, history, onToken });
+    const notFound = (text) => /couldn['’]?t find|could not find|no information|not (?:mentioned|found)/i.test(text);
+
+    // Not in the files that looked most relevant: read the next ones before giving up
+    // ("warehouse lease" first matched the apartment lease; the answer was in an operations report).
+    const next = allRanked.filter(r => !fileIds.some(id => id.equals(r.file._id))).slice(0, 3);
+    if (notFound(answer) && next.length) {
+      const nextIds = next.map(r => r.file._id);
+      await ensureIndexed(nextIds, { limit: 3 });
+      const morePassages = await searchPassages(nextIds, question, { k: 5, perFile: 4 });
+      if (morePassages.length) {
+        next.forEach(r => byId.set(r.file._id.toString(), r.file));
+        const moreIds = [...new Set(morePassages.map(p => p.file))];
+        const moreProfiles = await FileContent.find({ file: { $in: moreIds } }).select('file aiType aiCategory aiDescription aiFacts').lean();
+        moreProfiles.forEach(c => profiles.set(c.file.toString(), c));
+        const moreSources = moreIds.map((id, i) => {
+          const profile = profiles.get(id) || {};
+          const text = morePassages.filter(p => p.file === id).sort((a, b) => a.index - b.index).map(p => p.text).join('\n...\n');
+          return `[${i + 1}] File: ${byId.get(id).originalName}${profile.aiType ? ` (${[profile.aiCategory, profile.aiType].filter(Boolean).join(', ')})` : ''}\nText:\n${text}`;
+        });
+        if (onReset) onReset();
+        const second = await this.answerFromSources({ question, sources: moreSources, history, onToken });
+        if (!notFound(second)) {
+          answer = second;
+          passages.push(...morePassages);
+          usedIds.push(...moreIds.filter(id => !usedIds.includes(id)));
+        } else if (onReset) {
+          onReset();
+          onToken?.(answer);
+        }
+      }
+    }
 
     // Show the files the answer names (or the most relevant ones when it names none).
     const named = usedIds.filter(id => answer.toLowerCase().includes(byId.get(id).originalName.toLowerCase()));
@@ -969,7 +1012,25 @@ Respond to the latest user request now.`,
       provider: 'ollama',
       model: config.ollama.assistantModel,
       files: couldNotFind ? [] : await this.withKinds(await this.annotateFiles(userId, shown)),
+      // The sentence each named file contributed, so the person can check the answer against the file.
+      sources: couldNotFind ? [] : this.quoteSources(answer, named.length ? named : usedIds.slice(0, 1), byId, passages, profiles),
     });
+  }
+
+  /** For each file, the line of its text (or noted fact) that shares the most with the answer. */
+  quoteSources(answer, ids, byId, passages, profiles) {
+    const words = (text) => (text.toLowerCase().match(/[a-z0-9][a-z0-9.,$%-]*[a-z0-9%]|[a-z0-9]/g) || []).filter(w => w.length > 1 || /\d/.test(w));
+    const wanted = new Set(words(answer.replace(/\([^)]*\)/g, ' ')));
+    const score = (line) => words(line).reduce((sum, w) => sum + (wanted.has(w) ? (/\d/.test(w) ? 3 : 1) : 0), 0);
+    return ids.map((id) => {
+      const lines = passages.filter(p => p.file === id).flatMap(p => p.text.split(/\n+|(?<=[.!?])\s+/))
+        .concat((profiles.get(id)?.aiFacts || []).map(f => `${f.label}: ${f.value}`))
+        .map(line => line.replace(/\s+/g, ' ').trim())
+        .filter(line => line.length > 3);
+      const best = lines.map(line => ({ line, points: score(line) })).sort((a, b) => b.points - a.points)[0];
+      if (!best || !best.points) return null;
+      return { fileId: id, name: byId.get(id).originalName, quote: best.line.slice(0, 220) };
+    }).filter(Boolean);
   }
 
   /** Answer a question using only the given excerpts from the person's files (named in the answer). */
@@ -1080,9 +1141,9 @@ Be brief and direct.`,
    *
    * `resolved` carries choices the user made from an earlier list: { files: { "<name>": id }, folder: id }.
    */
-  async chat({ userId, question, fileId, history = [], context = '', resolved = {}, onToken }) {
+  async chat({ userId, question, fileId, history = [], context = '', resolved = {}, onToken, onReset }) {
     const route = await this.understand({ question, fileId, history, resolved });
-    const turn = { userId, question, fileId, history, context, resolved, onToken };
+    const turn = { userId, question, fileId, history, context, resolved, onToken, onReset };
 
     switch (route.intent) {
       case 'duplicates': {
