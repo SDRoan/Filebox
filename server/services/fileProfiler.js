@@ -12,7 +12,7 @@ const { indexFile, needsIndex, removeOrphans } = require('./fileIndex');
  * Runs in the background, only while Ollama is reachable and nobody is using File Box AI.
  */
 
-const PROFILE_VERSION = 2;
+const PROFILE_VERSION = 3;
 const BATCH = 1;
 // Ollama answers one request at a time; the profiler waits while someone is using File Box AI.
 const QUIET_MS = 30 * 1000;
@@ -67,6 +67,7 @@ Read the file name and its text, then return JSON with:
 - "type": what this file is, in 1-4 lowercase words (for example: calculus homework, electricity bill, official transcript, AWS certificate, offer letter)
 - "description": one or two plain sentences saying what this specific file is about
 - "facts": up to 6 key facts written in the file that someone might ask about later, each {"label", "value"}, copied exactly (for example: amount due, due date, issuer, account holder, course, grade, GPA, issue date, expiry date, total, institution, employer, deadline). Only facts stated in the text; an empty list if none.
+A student's own submitted work (essays, writing assignments, problem sets, lab reports) is "homework or assignment".
 Describe what the file is, not topics it merely mentions.`,
     content: `File name: ${file.originalName}\n\nText:`,
     context: sampleText(text),

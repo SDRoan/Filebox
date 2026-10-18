@@ -951,7 +951,7 @@ Respond to the latest user request now.`,
       model: config.ollama.assistantModel,
       system: `You answer questions about a person's own files inside File Box, a file storage app.
 Use only the file excerpts given. After each fact, name the file it came from in parentheses, for example (electric-bill-oct.pdf).
-If the excerpts do not contain the answer, say you couldn't find it in their files and suggest what to upload or search for. Never guess or use outside knowledge for facts about the person.
+If the excerpts do not contain the answer, say in one sentence that you couldn't find it in their files; do not point to unrelated files. Never guess or use outside knowledge for facts about the person.
 Be brief and direct.`,
       content: `Recent conversation:\n${this.serializeConversation(history) || 'None.'}\n\nExcerpts from the person's files:\n{{CONTEXT}}\n\nQuestion: ${question}`,
       context: sources.join('\n\n'),
