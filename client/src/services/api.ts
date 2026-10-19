@@ -1106,6 +1106,20 @@ export const signaturesAPI = {
     const response = await api.delete(`/signatures/${signatureId}`);
     return response.data;
   },
+  // Pages of a PDF for placing a signature: sizes, then each page as an image (object URL).
+  getPdfPages: async (fileId: string): Promise<{ total: number; pages: { width: number; height: number }[] }> => {
+    const response = await api.get(`/signatures/document/${fileId}/pages`);
+    return response.data;
+  },
+  getPdfPageImage: async (fileId: string, page: number): Promise<string> => {
+    const response = await api.get(`/signatures/document/${fileId}/pages/${page}`, { responseType: 'blob' });
+    return URL.createObjectURL(response.data);
+  },
+  /** Sign a PDF: position is the signature's top-left corner and width, as fractions of the page. */
+  signPdf: async (fileId: string, data: { signatureId: string; pageNumber: number; position: { x: number; y: number; width: number } }) => {
+    const response = await api.post(`/signatures/apply/${fileId}`, data);
+    return response.data;
+  },
   applySignature: async (fileId: string, data: { signatureId: string; pageNumber: number; position: { x: number; y: number; width: number; height: number } }) => {
     const response = await api.post(`/signatures/apply/${fileId}`, data);
     return response.data;

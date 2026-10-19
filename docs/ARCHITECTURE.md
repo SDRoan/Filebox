@@ -261,6 +261,15 @@ Documented and intentionally left for later phases:
 | SMTP (optional) | Email verification and password reset | Free with any mailbox you already have; File Box works without it |
 | Microsoft Teams / Zoom / Slack OAuth (optional) | Integrations page | Free developer apps; not needed for core File Box |
 
+## Signing PDFs
+
+Signatures are drawn and saved on the Signatures page (`Signature`). To sign, open a PDF's menu in My Files and choose **Sign** (shown to the owner and editors only).
+- The dialog shows the PDF's pages as images. The server renders them with pdf-parse: `GET /api/signatures/document/:fileId/pages` and `/pages/:n`.
+- You click where the signature goes and adjust its size. Positions are fractions of the page, so they don't depend on screen size.
+- `POST /api/signatures/apply/:fileId` stamps the signature into the PDF with pdf-lib (`services/pdfSign.js`). Requirements: editor access, a PDF not in Trash, and one of the signer's own signatures.
+- The unsigned file is saved first as a version ("Before signing"), and then the signed copy replaces it. Signing is recorded in `DocumentSignature` and in activity ("Signed with …").
+- Previously the apply step accepted viewers and never stamped the PDF, and no part of the UI could reach the signing screen.
+
 ## Your day (Home)
 
 Home shows what the person did in File Box each day, File Box AI's summary of it, and suggestions. This replaces "Continue working" and "Recent activity". The idea follows daily-work-summary tools such as DeskTrust, WorkWitness and Work Review, but only activity inside File Box is recorded, and it stays on this machine.

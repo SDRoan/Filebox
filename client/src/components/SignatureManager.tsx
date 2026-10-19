@@ -123,6 +123,9 @@ const SignatureManager: React.FC<SignatureManagerProps> = ({ onSelectSignature, 
         </div>
 
         <div className="signature-manager-content">
+          {embedded && (
+            <p className="signature-hint">Draw and save your signature here. To sign a PDF, open its menu in My Files and choose <strong>Sign</strong>.</p>
+          )}
           <button
             className="create-signature-btn"
             onClick={() => setShowSignaturePad(true)}

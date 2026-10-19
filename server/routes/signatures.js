@@ -1,12 +1,14 @@
 const express = require('express');
 const router = express.Router();
-const { getFileRole } = require('../services/permissions');
+const { getFileRole, authorizeFile, sendDenied } = require('../services/permissions');
+const { pageInfo, pageImage, stampSignature } = require('../services/pdfSign');
+const { snapshotCurrentVersion, replaceFileContents, newLivePath } = require('../services/fileVersions');
+const Activity = require('../models/Activity');
 const auth = require('../middleware/auth');
 const Signature = require('../models/Signature');
 const DocumentSignature = require('../models/DocumentSignature');
 const File = require('../models/File');
 const fs = require('fs-extra');
-const path = require('path');
 
 // Get all user signatures
 router.get('/', auth, async (req, res) => {
@@ -140,90 +142,81 @@ router.delete('/:signatureId', auth, async (req, res) => {
 });
 
 // Apply signature to a document
+// Pages of a PDF, for placing a signature: count and sizes, then each page as an image.
+router.get('/document/:fileId/pages', auth, async (req, res) => {
+  try {
+    const access = await authorizeFile(req.params.fileId, req.user._id, 'viewer');
+    if (sendDenied(res, access)) return;
+    if (!/pdf/i.test(access.file.mimeType)) return res.status(400).json({ message: 'Only PDF files can be signed.' });
+    res.json(await pageInfo(access.file.path));
+  } catch (error) {
+    res.status(error.status || 500).json({ message: error.message || 'Could not read this PDF.' });
+  }
+});
+
+router.get('/document/:fileId/pages/:page', auth, async (req, res) => {
+  try {
+    const access = await authorizeFile(req.params.fileId, req.user._id, 'viewer');
+    if (sendDenied(res, access)) return;
+    const page = parseInt(req.params.page, 10);
+    if (!/pdf/i.test(access.file.mimeType) || !(page >= 1)) return res.status(400).json({ message: 'Choose a page of a PDF.' });
+    res.set('Content-Type', 'image/png').set('Cache-Control', 'private, max-age=60').send(await pageImage(access.file.path, page));
+  } catch (error) {
+    res.status(error.status || 500).json({ message: error.message || 'Could not show this page.' });
+  }
+});
+
+/**
+ * Sign a PDF with one of your saved signatures. Only the owner or an editor may sign. The unsigned file
+ * is kept as a version first, so signing can always be undone from Version history.
+ * Body: { signatureId, pageNumber, position: { x, y, width } } (fractions of the page, from the top-left).
+ */
 router.post('/apply/:fileId', auth, async (req, res) => {
   try {
-    const { signatureId, pageNumber, position } = req.body;
-    
-    if (!signatureId || !pageNumber || !position) {
-      return res.status(400).json({ 
-        message: 'Signature ID, page number, and position are required' 
-      });
+    const { signatureId, pageNumber, position } = req.body || {};
+    const fraction = (value) => typeof value === 'number' && value >= 0 && value <= 1;
+    if (!signatureId || !(pageNumber >= 1) || !position || !fraction(position.x) || !fraction(position.y) || !(position.width > 0.02 && position.width <= 1)) {
+      return res.status(400).json({ message: 'Choose a signature and where to put it.' });
     }
-    
-    // Verify file exists and user has access
-    const file = await File.findById(req.params.fileId);
-    if (!file) {
-      return res.status(404).json({ message: 'File not found' });
-    }
-    
-    if (!(await getFileRole(file, req.user._id))) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-    
-    // Verify signature exists and belongs to user
-    const signature = await Signature.findById(signatureId);
-    if (!signature) {
-      return res.status(404).json({ message: 'Signature not found' });
-    }
-    
-    if (signature.user.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Access denied' });
-    }
-    
-    // Only allow PDFs for now
-    if (!file.mimeType.includes('pdf')) {
-      return res.status(400).json({ message: 'Signatures can only be applied to PDF files' });
-    }
-    
-    // Check if file exists on disk
-    const filePath = path.isAbsolute(file.path) 
-      ? file.path 
-      : path.join(__dirname, '..', file.path);
-    
-    if (!await fs.pathExists(filePath)) {
-      return res.status(404).json({ message: 'File not found on disk' });
-    }
-    
-    // Apply signature to PDF
-    const signedPdfPath = await applySignatureToPDF(
-      filePath,
-      signature.signatureData,
-      pageNumber,
-      position,
-      file.owner.toString()
-    );
-    
-    // Create document signature record
-    const documentSignature = new DocumentSignature({
+
+    const access = await authorizeFile(req.params.fileId, req.user._id, 'editor');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
+    if (file.isTrashed) return res.status(404).json({ message: 'File not found' });
+    if (!/pdf/i.test(file.mimeType)) return res.status(400).json({ message: 'Only PDF files can be signed.' });
+    if (!(await fs.pathExists(file.path))) return res.status(404).json({ message: 'File not found on disk' });
+
+    const signature = await Signature.findOne({ _id: signatureId, user: req.user._id });
+    if (!signature) return res.status(404).json({ message: 'Signature not found' });
+
+    const { bytes, height } = await stampSignature(file.path, signature.signatureData, { page: pageNumber, ...position });
+    const version = await snapshotCurrentVersion(file, req.user._id, 'Before signing');
+    const signedPath = newLivePath(file, '.pdf');
+    await fs.writeFile(signedPath, bytes);
+    await replaceFileContents(file, signedPath, bytes.length);
+
+    const documentSignature = await DocumentSignature.create({
       file: file._id,
       user: req.user._id,
       signature: signature._id,
       pageNumber,
-      position,
-      signedDocumentPath: signedPdfPath
+      position: { x: position.x, y: position.y, width: position.width, height },
+      signedDocumentPath: signedPath,
     });
-    
-    await documentSignature.save();
-    
-    // Update file path to point to signed version
-    file.path = signedPdfPath;
-    await file.save();
-    
+    await Activity.create({ user: req.user._id, file: file._id, action: 'edited', details: `Signed with "${signature.name}"` });
+
     res.status(201).json({
-      message: 'Signature applied successfully',
+      message: 'Signed. The unsigned file is kept in Version history.',
       documentSignature,
-      signedFile: {
-        id: file._id,
-        path: signedPdfPath
-      }
+      versionNumber: version?.versionNumber || null,
+      file: { _id: file._id, originalName: file.originalName, size: file.size, updatedAt: file.updatedAt },
     });
   } catch (error) {
     console.error('Error applying signature:', error);
-    res.status(500).json({ message: error.message });
+    res.status(error.status || 500).json({ message: error.message || 'Could not sign this PDF.' });
   }
 });
 
-// Get signatures applied to a document
 router.get('/document/:fileId', auth, async (req, res) => {
   try {
     const file = await File.findById(req.params.fileId);
@@ -250,37 +243,5 @@ router.get('/document/:fileId', auth, async (req, res) => {
 // Helper function to apply signature to PDF
 // Note: For now, we store signature positions and render them as overlays in the frontend
 // This is more efficient and doesn't modify the original PDF
-async function applySignatureToPDF(pdfPath, signatureData, pageNumber, position, userId) {
-  try {
-    // Validate PDF exists
-    const fileExists = await fs.pathExists(pdfPath);
-    if (!fileExists) {
-      throw new Error('PDF file not found');
-    }
-    
-    // For now, we skip PDF validation to avoid pdf-parse issues
-    // The frontend will handle signature placement and validation
-    // If you need page count validation, uncomment below:
-    /*
-    const pdfParse = require('pdf-parse');
-    const originalPdfBuffer = await fs.readFile(pdfPath);
-    const pdfData = await pdfParse(originalPdfBuffer);
-    const totalPages = pdfData.numpages || 1;
-    
-    if (pageNumber < 1 || pageNumber > totalPages) {
-      throw new Error(`Invalid page number. PDF has ${totalPages} pages.`);
-    }
-    */
-    
-    // Return original path - signature overlay will be handled in frontend
-    // This approach is more efficient and preserves the original document
-    return pdfPath;
-  } catch (error) {
-    console.error('Error validating PDF:', error);
-    // If validation fails, still return the path - frontend will handle it
-    return pdfPath;
-  }
-}
-
 module.exports = router;
 
