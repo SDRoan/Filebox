@@ -44,16 +44,30 @@ export const isHexColor = (value: unknown): value is string => typeof value === 
 
 const BASE = hexToHsl(DEFAULT_ACCENT);
 
-/** The color a brand shade becomes for an accent (exposed for previews and tests). */
+// The darkest and lightest accent the main color may take: white text stays readable on buttons, and
+// dark text stays readable on tinted backgrounds. Lighter or darker picks are shifted into this range.
+export const ACCENT_LIGHTNESS = { min: 0.2, max: 0.5 };
+const PALE_MAX_SATURATION = 0.55;
+
+/** Lightness the main brand color takes for an accent (after keeping it readable). */
+export const usableLightness = (accent: string) => clamp(hexToHsl(accent).l, ACCENT_LIGHTNESS.min, ACCENT_LIGHTNESS.max);
+
+/**
+ * The color a brand shade becomes for an accent (exposed for previews and tests). Every shade takes the
+ * accent's hue; saturation scales with how colorful the accent is; lightness is remapped so the main
+ * brand color becomes the accent itself while lighter and darker shades keep their order and spacing.
+ */
 export function shadeFor(original: string, accent: string): string {
   const target = hexToHsl(accent);
   const shade = hexToHsl(`#${original}`);
-  const strength = clamp(target.s / BASE.s, 0, 3);
-  return hslToHex({
-    h: (target.h + (shade.h - BASE.h) + 360) % 360,
-    s: clamp(shade.s * strength, 0, 1),
-    l: shade.l,
-  });
+  const strength = target.s / BASE.s;
+  const mainL = usableLightness(accent);
+  const l = shade.l <= BASE.l
+    ? shade.l * (mainL / BASE.l)
+    : mainL + (shade.l - BASE.l) * ((1 - mainL) / (1 - BASE.l));
+  // Pale backgrounds stay soft even for a vivid accent; everything else follows the accent fully.
+  const maxS = l > 0.85 ? PALE_MAX_SATURATION : 1;
+  return hslToHex({ h: target.h, s: clamp(shade.s * strength, 0, maxS), l: clamp(l, 0, 1) });
 }
 
 /** Recolor File Box for an accent (or back to green for the default / no accent). */
