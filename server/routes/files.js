@@ -16,6 +16,7 @@ const StudyGroup = require('../models/StudyGroup');
 const FileMemory = require('../models/FileMemory');
 const { assertAvailable } = require('../utils/optionalModule');
 const { authorizeFile, authorizeFolder, sendDenied, capabilitiesFor, getFileRole, readableFileFilter } = require('../services/permissions');
+const { logView } = require('../services/activityLog');
 const { extractInBackground } = require('../services/backgroundExtraction');
 const { restorableParent } = require('../services/fileResolver');
 const { snapshotCurrentVersion, replaceFileContents, newLivePath } = require('../services/fileVersions');
@@ -449,10 +450,15 @@ router.get('/download/:id', auth, async (req, res) => {
     // Track activity - notify owner if this is a shared file
     const isSharedFile = file.owner.toString() !== req.user._id.toString();
 
-    // Log activity
-    await logActivity(req.user._id, 'downloaded', file._id, null, file.originalName);
+    // Opening a file to look at it (previews ask with ?purpose=view) is a view, not a download.
+    const isView = req.query.purpose === 'view';
+    if (isView) {
+      await logView(req.user._id, file);
+    } else {
+      await logActivity(req.user._id, 'downloaded', file._id, null, file.originalName);
+    }
     // Record analytics
-    await analytics.recordActivity(file._id, req.user._id, 'download', {
+    await analytics.recordActivity(file._id, req.user._id, isView ? 'view' : 'download', {
       fileName: file.originalName,
       isSharedFile
     });
@@ -1107,6 +1113,7 @@ router.get('/preview-text/:id', auth, async (req, res) => {
     const access = await authorizeFile(req.params.id, req.user._id, 'viewer');
     if (sendDenied(res, access)) return;
     const { file } = access;
+    await logView(req.user._id, file);
 
     // Check if we have extracted text in FileContent
     let fileContent = await FileContent.findOne({ file: file._id });

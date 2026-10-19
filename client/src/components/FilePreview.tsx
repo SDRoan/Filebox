@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useFileFocus } from '../hooks/useFileFocus';
 import { FileItemType } from '../types';
 import { filesAPI } from '../services/api';
 import CodeViewer from './CodeViewer';
@@ -14,6 +15,7 @@ interface FilePreviewProps {
 }
 
 const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
+  useFileFocus(file._id);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
 
       // Handle images
       if (mimeType.startsWith('image/')) {
-        const blob = await filesAPI.downloadFile(file._id);
+        const blob = await filesAPI.downloadFile(file._id, { view: true });
         const url = URL.createObjectURL(blob);
         setPreviewUrl(url);
         setLoading(false);
@@ -50,7 +52,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
 
       // Handle videos
       if (mimeType.startsWith('video/')) {
-        const blob = await filesAPI.downloadFile(file._id);
+        const blob = await filesAPI.downloadFile(file._id, { view: true });
         const url = URL.createObjectURL(blob);
         setPreviewUrl(url);
         setLoading(false);
@@ -59,7 +61,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
 
       // Handle PDFs
       if (mimeType.includes('pdf')) {
-        const blob = await filesAPI.downloadFile(file._id);
+        const blob = await filesAPI.downloadFile(file._id, { view: true });
         const url = URL.createObjectURL(blob);
         setPreviewUrl(url);
         setLoading(false);
@@ -148,7 +150,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
         mimeType.includes('css') ||
         mimeType.includes('html')
       ) {
-        const blob = await filesAPI.downloadFile(file._id);
+        const blob = await filesAPI.downloadFile(file._id, { view: true });
         const text = await blob.text();
         setTextContent(text);
         setLoading(false);

@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { homeAPI, searchAPI, HomeActivity, HomeOverview, HomeSuggestion } from '../services/api';
+import { homeAPI, searchAPI, HomeOverview, HomeSuggestion } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { FileItem, Folder } from '../types';
 import { pagePath } from '../config/workspaceNavigation';
-import { formatRelativeTime } from '../utils/fileDisplay';
 import FileRowList, { FileRowItem } from './FileRowList';
 import DuplicateReview from './DuplicateReview';
 import OrganizeReview from './OrganizeReview';
+import DayView from './DayView';
 import { AIAssistantIcon, ArrowRightIcon, CloseIcon, FolderIcon, SearchIcon } from './Icons';
 import './OverviewPages.css';
 import './AIPanels.css';
@@ -24,28 +24,6 @@ const MAX_VISIBLE_SUGGESTIONS = 3;
 const readDismissed = (): Record<string, string> => {
   try { return JSON.parse(localStorage.getItem(DISMISSED_KEY) || '{}') || {}; } catch { return {}; }
 };
-
-const ACTIVITY_VERBS: Record<string, string> = {
-  uploaded: 'uploaded', created: 'created', edited: 'edited', downloaded: 'downloaded', deleted: 'moved to Trash',
-  restored: 'restored', renamed: 'renamed', moved: 'moved', copied: 'copied', shared: 'shared',
-  starred: 'starred', unstarred: 'unstarred', commented: 'commented on', version_created: 'saved a new version of',
-  version_restored: 'restored a version of',
-};
-
-// "You shared Resume.pdf", "File Box organized 4 files into Screenshots"
-function describeActivity(entry: HomeActivity) {
-  const name = entry.fileName || entry.folderName || 'an item';
-  if (entry.source === 'filebox') {
-    if (entry.action === 'moved' && entry.details.startsWith('Organized into ')) {
-      return { who: 'File Box', text: `organized ${entry.count > 1 ? `${entry.count} files` : name} into ${entry.details.replace('Organized into ', '')}` };
-    }
-    const verb = ACTIVITY_VERBS[entry.action] || 'updated';
-    return { who: 'File Box', text: `${verb} ${entry.count > 1 ? `${entry.count} files` : name}` };
-  }
-  const verb = ACTIVITY_VERBS[entry.action] || 'updated';
-  const extra = entry.action === 'shared' && entry.details ? ` ${entry.details.startsWith('with ') ? entry.details : `(${entry.details.toLowerCase()})`}` : '';
-  return { who: 'You', text: `${verb} ${name}${extra}` };
-}
 
 const CHIPS: Array<{ label: string; kind: 'prefill' | 'organize' | 'duplicates' | 'ai'; value?: string }> = [
   { label: 'Find something', kind: 'prefill', value: 'Find ' },
@@ -195,59 +173,21 @@ const HomeView: React.FC<HomeViewProps> = ({ onOpenFile, onOpenFolder }) => {
       )}
 
       {overview && !isEmpty && (
-        <div className="home-grid">
-          <div className="home-main">
-            {visibleSuggestions.length > 0 && (
-              <section className="overview-section" aria-labelledby="home-suggestions-title">
-                <div className="overview-section-head"><h2 id="home-suggestions-title">File Box suggestions</h2><span>Nothing changes until you choose</span></div>
-                <div className="suggestion-cards">
-                  {visibleSuggestions.map(suggestion => (
-                    <article key={suggestion.id} className="suggestion-card">
-                      <button className="suggestion-dismiss" onClick={() => dismiss(suggestion)} aria-label={`Dismiss: ${suggestion.noticed}`} title="Dismiss"><CloseIcon size={14} /></button>
-                      <h3>{suggestion.noticed}</h3>
-                      <p className="suggestion-why">{suggestion.why}</p>
-                      <p className="suggestion-recommendation">{suggestion.recommendation}</p>
-                      <button className="btn-secondary suggestion-action" onClick={() => runSuggestion(suggestion)}>{suggestion.action.label}</button>
-                    </article>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            <section className="overview-section" aria-labelledby="home-continue-title">
-              <div className="overview-section-head">
-                <h2 id="home-continue-title">Continue working</h2>
-                {overview.continueWorking.length > 0 && <button onClick={() => navigate(pagePath('recent'))}>View all recent</button>}
-              </div>
-              {overview.continueWorking.length > 0 ? (
-                <FileRowList files={overview.continueWorking} onOpen={onOpenFile} />
-              ) : (
-                <p className="overview-muted">Files you open, edit, share or upload in the last 30 days will show up here.</p>
-              )}
-            </section>
-          </div>
-
-          <aside className="home-side">
-            <section className="overview-section" aria-labelledby="home-activity-title">
-              <div className="overview-section-head"><h2 id="home-activity-title">Recent activity</h2></div>
-              {overview.activity.length > 0 ? (
-                <ul className="activity-list">
-                  {overview.activity.map(entry => {
-                    const { who, text } = describeActivity(entry);
-                    return (
-                      <li key={entry._id} className={entry.source === 'filebox' ? 'by-filebox' : ''}>
-                        <span><strong className="activity-who">{who}</strong> {text}</span>
-                        <time dateTime={entry.createdAt}>{formatRelativeTime(entry.createdAt)}</time>
-                      </li>
-                    );
-                  })}
-                </ul>
-              ) : (
-                <p className="overview-muted">Uploads, edits, shares and things File Box does for you will appear here.</p>
-              )}
-            </section>
-          </aside>
-        </div>
+        <DayView onOpenFile={onOpenFile}>
+          {visibleSuggestions.length > 0 && (
+            <div className="suggestion-cards" aria-label="File Box suggestions">
+              {visibleSuggestions.map(suggestion => (
+                <article key={suggestion.id} className="suggestion-card">
+                  <button className="suggestion-dismiss" onClick={() => dismiss(suggestion)} aria-label={`Dismiss: ${suggestion.noticed}`} title="Dismiss"><CloseIcon size={14} /></button>
+                  <h3>{suggestion.noticed}</h3>
+                  <p className="suggestion-why">{suggestion.why}</p>
+                  <p className="suggestion-recommendation">{suggestion.recommendation}</p>
+                  <button className="btn-secondary suggestion-action" onClick={() => runSuggestion(suggestion)}>{suggestion.action.label}</button>
+                </article>
+              ))}
+            </div>
+          )}
+        </DayView>
       )}
 
       {panel && (

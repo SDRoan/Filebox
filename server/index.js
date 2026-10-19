@@ -81,6 +81,7 @@ app.use('/api/summaries', require('./routes/summaries'));
 app.use('/api/signatures', require('./routes/signatures'));
 app.use('/api/ai-assistant', require('./routes/aiAssistant'));
 app.use('/api/home', require('./routes/home'));
+app.use('/api/activity', require('./routes/activity'));
 app.use('/api/file-memory', require('./routes/fileMemory'));
 app.use('/api/predictive-org', optionalRoute(path.join(__dirname, 'routes/predictiveOrganization.js'), [path.join(__dirname, 'services/predictiveOrganization.js')]));
 app.use('/api/cloud-backup', require('./routes/cloudBackup'));

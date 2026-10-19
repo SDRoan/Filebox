@@ -261,6 +261,24 @@ Documented and intentionally left for later phases:
 | SMTP (optional) | Email verification and password reset | Free with any mailbox you already have; File Box works without it |
 | Microsoft Teams / Zoom / Slack OAuth (optional) | Integrations page | Free developer apps; not needed for core File Box |
 
+## Your day (Home)
+
+Home shows what the person did in File Box each day, File Box AI's summary of it, and suggestions. This replaces "Continue working" and "Recent activity". The idea follows daily-work-summary tools such as DeskTrust, WorkWitness and Work Review, but only activity inside File Box is recorded, and it stays on this machine.
+
+- **What is recorded (`Activity`).**
+  - Uploads, edits, downloads, shares, moves, renames and other file changes, as before.
+  - New `viewed` entries: opening a file to look at it. Previews call `/files/download/:id?purpose=view`, and the text preview counts too. Repeats within 10 minutes count once. Previews used to be logged as downloads.
+  - New `focused` entries: time with a file open and visible. A 30-second heartbeat from the preview and editor (`POST /api/activity/focus`, `hooks/useFileFocus.ts`) is stored in `durationSeconds`/`endedAt`. Heartbeats less than 2 minutes apart extend one sitting.
+  - New `asked` entries: questions asked in File Box AI. Picking a choice from a list doesn't count as a new question.
+- **Facts (`services/dailySummary.js`, `GET /api/home/day?date=&tz=`).** For one day in the person's time zone: totals (time in files, files worked on, uploads, edits, opens, downloads, shares, questions), the files worked on with time and actions, File Box's note on what each file is, folders, questions, and an hour-by-hour timeline. It also returns the recent days that have activity, for the day picker.
+- **Summary (`POST /api/home/day/summary`).**
+  - The local model writes a 2–4 sentence summary, up to 5 highlights and up to 3 suggestions from the facts only, as schema-constrained JSON.
+  - It's cached in `DailySummary` per person and day, and rewritten when the day's facts change (`factsHash`).
+  - Without Ollama, plain sentences are built from the facts and marked as a basic summary.
+  - Home shows the facts immediately and asks for a summary only when there's no current one.
+- File Box's rule-based suggestion cards (broken files, duplicates, large files…) appear under "Suggestions", next to File Box AI's suggestions.
+- `GET /api/home` still returns the Phase 4A overview (suggestions, continue working, activity) for other callers.
+
 ## Home overview (Phase 4A)
 
 `GET /api/home` (`services/homeSummary.js`) returns everything Home shows, computed from local data only. It never calls Ollama, so Home stays fast and works offline.

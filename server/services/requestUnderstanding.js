@@ -76,6 +76,8 @@ const EXAMPLES = [
   example('Find duplicate files', { intent: 'duplicates' }),
   example('Clean up the duplicates in my drive', { intent: 'duplicates' }),
   example('Show me my receipts', { intent: 'smart_search', searchTerms: 'receipts', lookFor: 'what_the_file_is' }),
+  example('Find 4417', { intent: 'smart_search', searchTerms: '4417', lookFor: 'what_the_file_is' }),
+  example('Find the contract in trash', { intent: 'smart_search', searchTerms: 'contract', lookFor: 'what_the_file_is' }),
   example('Which files mention Kubernetes?', { intent: 'smart_search', searchTerms: 'Kubernetes', lookFor: 'words_inside_files' }),
   example('Do I have a passport scan?', { intent: 'smart_search', searchTerms: 'passport scan', lookFor: 'what_the_file_is' }),
   example('Does my cover letter mention Java?', { intent: 'file_question', file: 'cover letter' }),

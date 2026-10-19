@@ -14,6 +14,14 @@ const { ACTIONS } = require('../services/requestUnderstanding');
 const { noteActivity, readingStatus } = require('../services/fileProfiler');
 const { recordFeedback } = require('../services/aiFeedback');
 const { fileById } = require('../services/fileResolver');
+const { logQuestion } = require('../services/activityLog');
+
+// Questions asked in File Box AI go into the day's activity (choices picked from a list are not new questions).
+const recordQuestion = (turn, reply) => {
+  if (turn.resolved?.route) return;
+  const fileId = reply?.sources?.[0]?.fileId || reply?.files?.[0]?.id || reply?.fileId || null;
+  logQuestion(turn.userId, turn.question, isId(String(fileId || '')) ? fileId : null);
+};
 
 const sanitizeHistory = (history = []) =>
   (Array.isArray(history) ? history : [])
@@ -137,13 +145,16 @@ router.post('/chat', auth, async (req, res) => {
           onReset: () => send({ type: 'reset' }),
         });
         send({ type: 'done', reply });
+        recordQuestion(turn, reply);
       } catch (error) {
         send({ type: 'error', ...assistantErrorBody(error) });
       }
       return res.end();
     }
 
-    res.json(await ollamaWorkspaceAssistant.chat(turn));
+    const reply = await ollamaWorkspaceAssistant.chat(turn);
+    res.json(reply);
+    recordQuestion(turn, reply);
   } catch (error) {
     sendAssistantError(res, error);
   }

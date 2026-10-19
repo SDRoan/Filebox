@@ -169,8 +169,9 @@ export const filesAPI = {
     const response = await api.post('/files/folder', { name, parentFolder });
     return response.data;
   },
-  downloadFile: async (fileId: string) => {
-    const response = await api.get(`/files/download/${fileId}`, {
+  // { view: true } when a file is only being opened to look at it (preview, editor), not saved to disk.
+  downloadFile: async (fileId: string, options: { view?: boolean } = {}) => {
+    const response = await api.get(`/files/download/${fileId}${options.view ? '?purpose=view' : ''}`, {
       responseType: 'blob',
     });
     return response.data;
@@ -1145,6 +1146,58 @@ export const homeAPI = {
   getOverview: async (): Promise<HomeOverview> => {
     const response = await api.get('/home');
     return response.data;
+  },
+  getDay: async (date?: string): Promise<DayOverview> => {
+    const response = await api.get('/home/day', { params: { date, tz: new Date().getTimezoneOffset() } });
+    return response.data;
+  },
+  // Starts writing the day's summary in the background; getDay reports it when ready.
+  writeDaySummary: async (date: string, force = false): Promise<{ writing: boolean }> => {
+    const response = await api.post('/home/day/summary', { date, force, tz: new Date().getTimezoneOffset() });
+    return response.data;
+  },
+};
+
+// "Your day" on Home: what was done in File Box on a date and File Box AI's summary of it.
+export interface DayFile {
+  fileId: string;
+  name: string;
+  kind: string;
+  about: string;
+  exists: boolean;
+  parentFolder: string | null;
+  minutes: number;
+  actions: Record<string, number>;
+  firstAt: string;
+  lastAt: string;
+}
+export interface DayFacts {
+  date: string;
+  totals: { activeMinutes: number; filesWorkedOn: number; uploaded: number; edited: number; viewed: number; downloaded: number; shared: number; organized: number; questions: number };
+  files: DayFile[];
+  questions: { question: string; at: string }[];
+  folders: { action: string; name: string; at: string }[];
+  fileboxActions: number;
+  timeline: { hour: number; items: string[] }[];
+  empty: boolean;
+}
+export interface DaySummary {
+  summary: string;
+  highlights: string[];
+  suggestions: string[];
+  basic: boolean;
+  generatedAt?: string;
+}
+export interface DayOverview {
+  facts: DayFacts;
+  summary: DaySummary | null;
+  writing: boolean;
+  days: { date: string; count: number }[];
+}
+
+export const activityAPI = {
+  focus: async (fileId: string, seconds: number) => {
+    await api.post('/activity/focus', { fileId, seconds });
   },
 };
 

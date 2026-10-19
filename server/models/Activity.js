@@ -33,7 +33,11 @@ const activitySchema = new mongoose.Schema({
       'unstarred',
       'version_created',
       'version_restored',
-      'commented'
+      'commented',
+      // Daily activity (Home "Your day"): opened a file to look at it, time spent in a file, asked File Box AI.
+      'viewed',
+      'focused',
+      'asked'
     ],
     required: true
   },
@@ -46,6 +50,14 @@ const activitySchema = new mongoose.Schema({
     type: String,
     enum: ['user', 'filebox'],
     default: 'user'
+  },
+  // 'focused': seconds spent with the file open and visible; endedAt is the last heartbeat.
+  durationSeconds: {
+    type: Number,
+    default: 0
+  },
+  endedAt: {
+    type: Date
   },
   createdAt: {
     type: Date,
