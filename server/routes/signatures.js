@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { getFileRole, authorizeFile, sendDenied } = require('../services/permissions');
-const { pageInfo, pageImage, stampSignature } = require('../services/pdfSign');
+const { pageInfo, pageImage, stampSignature, verifyPdf } = require('../services/pdfSign');
 const { snapshotCurrentVersion, replaceFileContents, newLivePath } = require('../services/fileVersions');
 const Activity = require('../models/Activity');
 const auth = require('../middleware/auth');
@@ -190,6 +190,8 @@ router.post('/apply/:fileId', auth, async (req, res) => {
     if (!signature) return res.status(404).json({ message: 'Signature not found' });
 
     const { bytes, height } = await stampSignature(file.path, signature.signatureData, { page: pageNumber, ...position });
+    // The signed copy must open before it replaces anything.
+    await verifyPdf(bytes);
     const version = await snapshotCurrentVersion(file, req.user._id, 'Before signing');
     const signedPath = newLivePath(file, '.pdf');
     await fs.writeFile(signedPath, bytes);
@@ -213,7 +215,7 @@ router.post('/apply/:fileId', auth, async (req, res) => {
     });
   } catch (error) {
     console.error('Error applying signature:', error);
-    res.status(error.status || 500).json({ message: error.message || 'Could not sign this PDF.' });
+    res.status(error.status || 500).json({ code: error.code, message: error.message || 'Could not sign this PDF.' });
   }
 });
 

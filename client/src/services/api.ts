@@ -1107,7 +1107,7 @@ export const signaturesAPI = {
     return response.data;
   },
   // Pages of a PDF for placing a signature: sizes, then each page as an image (object URL).
-  getPdfPages: async (fileId: string): Promise<{ total: number; pages: { width: number; height: number }[] }> => {
+  getPdfPages: async (fileId: string): Promise<{ total: number; pages: { width: number; height: number }[]; protected?: boolean; protectedMessage?: string }> => {
     const response = await api.get(`/signatures/document/${fileId}/pages`);
     return response.data;
   },

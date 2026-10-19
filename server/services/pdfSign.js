@@ -10,6 +10,12 @@ const { PDFParse } = require('pdf-parse');
 
 const MAX_PAGES = 200;
 
+// Protected (encrypted) PDFs cannot be changed without breaking them: pdf-lib can read past the
+// protection but writes a file that viewers refuse to open. They are left as they are.
+const PROTECTED_MESSAGE = 'This PDF is protected (encrypted), so File Box cannot add a signature without breaking it. '
+  + 'Ask the sender for an unprotected copy, or print it to a new PDF first.';
+const protectedError = () => Object.assign(new Error(PROTECTED_MESSAGE), { status: 409, code: 'PDF_PROTECTED' });
+
 /** Page count and sizes (in PDF points). */
 async function pageInfo(pdfPath) {
   const doc = await PDFDocument.load(await fs.readFile(pdfPath), { ignoreEncryption: true });
@@ -17,7 +23,7 @@ async function pageInfo(pdfPath) {
     const { width, height } = page.getSize();
     return { width, height };
   });
-  return { total: doc.getPageCount(), pages };
+  return { total: doc.getPageCount(), pages, protected: doc.isEncrypted, protectedMessage: doc.isEncrypted ? PROTECTED_MESSAGE : undefined };
 }
 
 /** One page as a PNG (for showing it while placing the signature). */
@@ -49,6 +55,7 @@ function signatureImage(signatureData = '') {
  */
 async function stampSignature(pdfPath, signatureData, place) {
   const doc = await PDFDocument.load(await fs.readFile(pdfPath), { ignoreEncryption: true });
+  if (doc.isEncrypted) throw protectedError();
   const page = doc.getPages()[place.page - 1];
   if (!page) throw Object.assign(new Error('That page does not exist.'), { status: 400 });
   const { kind, bytes } = signatureImage(signatureData);
@@ -65,4 +72,17 @@ async function stampSignature(pdfPath, signatureData, place) {
   return { bytes: await doc.save(), height: height / pageHeight };
 }
 
-module.exports = { pageInfo, pageImage, stampSignature };
+/** Check that a PDF opens and its pages can be read (used before a signed copy replaces the original). */
+async function verifyPdf(bytes) {
+  const parser = new PDFParse({ data: new Uint8Array(bytes) });
+  try {
+    await parser.getText();
+    await parser.getScreenshot({ first: 1, scale: 0.3 });
+  } catch (error) {
+    throw Object.assign(new Error('Signing produced a file that would not open, so nothing was changed.'), { status: 422, cause: error });
+  } finally {
+    await parser.destroy();
+  }
+}
+
+module.exports = { pageInfo, pageImage, stampSignature, verifyPdf };

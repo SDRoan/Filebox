@@ -35,6 +35,7 @@ const SignPdfDialog: React.FC<SignPdfDialogProps> = ({ file, onClose, onSigned }
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState('');
+  const [protectedMessage, setProtectedMessage] = useState('');
   const pageRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -48,6 +49,7 @@ const SignPdfDialog: React.FC<SignPdfDialogProps> = ({ file, onClose, onSigned }
     signaturesAPI.getPdfPages(file._id)
       .then(info => {
         setTotal(info.total);
+        if (info.protected) setProtectedMessage(info.protectedMessage || 'This PDF is protected and cannot be signed.');
         if (info.pages[0]) setPageAspect(info.pages[0].height / info.pages[0].width);
       })
       .catch(err => setError(err?.response?.data?.message || 'Could not open this PDF.'));
@@ -122,6 +124,11 @@ const SignPdfDialog: React.FC<SignPdfDialogProps> = ({ file, onClose, onSigned }
           <div className="sign-pdf-done" role="status">
             <p>{done}</p>
             <button className="btn-primary" onClick={onClose}>Done</button>
+          </div>
+        ) : protectedMessage ? (
+          <div className="sign-pdf-empty" role="alert">
+            <p>{protectedMessage}</p>
+            <button className="btn-secondary" onClick={onClose}>Close</button>
           </div>
         ) : signatures && signatures.length === 0 ? (
           <div className="sign-pdf-empty">
