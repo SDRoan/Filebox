@@ -6,7 +6,9 @@ import CodeViewer from './CodeViewer';
 import FileMemory from './FileMemory';
 import PredictiveOrganization from './PredictiveOrganization';
 import FileEditor from './FileEditor';
-import { MemoryIcon, DownloadIcon, CloseIcon, EditIcon } from './Icons';
+import { MemoryIcon, DownloadIcon, CloseIcon, EditIcon, SignatureIcon } from './Icons';
+import SignPdfDialog from './SignPdfDialog';
+import { capabilitiesFor, AccessRole } from '../utils/permissions';
 import './FilePreview.css';
 
 interface FilePreviewProps {
@@ -21,6 +23,9 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
   const [error, setError] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [showMemory, setShowMemory] = useState(false);
+  const [showSign, setShowSign] = useState(false);
+  // Owners and editors can sign PDFs (same rule as the file menu).
+  const canSign = /pdf/i.test(file.mimeType || '') && capabilitiesFor(((file as any).access as AccessRole) || 'owner').canEdit;
   const [showOrgSuggestions, setShowOrgSuggestions] = useState(true);
   const [showEditor, setShowEditor] = useState(false);
 
@@ -312,6 +317,12 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
                 <span>Edit</span>
               </button>
             )}
+            {canSign && (
+              <button onClick={() => setShowSign(true)} className="preview-action-btn" title="Sign this PDF">
+                <SignatureIcon size={16} color="#ffffff" />
+                <span>Sign</span>
+              </button>
+            )}
             <button onClick={handleDownload} className="preview-action-btn" title="Download File">
               <DownloadIcon size={16} color="#ffffff" />
               <span>Download</span>
@@ -419,6 +430,9 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
       )}
       {showMemory && (
         <FileMemory fileId={file._id} onClose={() => setShowMemory(false)} />
+      )}
+      {showSign && (
+        <SignPdfDialog file={file} onClose={() => setShowSign(false)} onSigned={() => loadPreview()} />
       )}
     </div>
   );

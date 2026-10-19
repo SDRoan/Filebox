@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { signaturesAPI } from '../services/api';
 import { pagePath } from '../config/workspaceNavigation';
 import { CloseIcon, SignatureIcon } from './Icons';
@@ -99,8 +100,15 @@ const SignPdfDialog: React.FC<SignPdfDialogProps> = ({ file, onClose, onSigned }
     }
   };
 
-  return (
-    <div className="ai-panel-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+  // Rendered at the top of the page, so it works the same when opened from inside the file preview
+  // (whose background click closes the preview).
+  return createPortal(
+    <div
+      className="ai-panel-backdrop sign-pdf-backdrop"
+      // React passes portal events to the component that opened the dialog; keep them here.
+      onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => { event.stopPropagation(); if (event.target === event.currentTarget) onClose(); }}
+    >
       <div className="ai-panel-dialog wide sign-pdf" role="dialog" aria-modal="true" aria-labelledby="sign-pdf-title">
         <header className="ai-panel-header">
           <div>
@@ -164,7 +172,8 @@ const SignPdfDialog: React.FC<SignPdfDialogProps> = ({ file, onClose, onSigned }
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 

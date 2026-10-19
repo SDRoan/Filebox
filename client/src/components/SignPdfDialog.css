@@ -21,3 +21,5 @@
   .sign-pdf-stage { max-height: none; }
 }
 .sign-pdf-controls input[type="range"] { accent-color: var(--fb-g-3f6543, #3f6543); }
+/* Above the file preview (z-index 2000-3000), which can open this dialog */
+.ai-panel-backdrop.sign-pdf-backdrop { z-index: 3500; }
