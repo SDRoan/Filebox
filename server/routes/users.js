@@ -13,6 +13,29 @@ router.get('/profile', auth, async (req, res) => {
   }
 });
 
+// Appearance preferences (Settings > Appearance)
+router.get('/preferences', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('accentColor').lean();
+    res.json({ accentColor: user?.accentColor || null });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.put('/preferences', auth, async (req, res) => {
+  try {
+    const value = req.body?.accentColor;
+    if (value !== null && !(typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value))) {
+      return res.status(400).json({ message: 'Choose a color like #3f6543.' });
+    }
+    await User.updateOne({ _id: req.user._id }, { $set: { accentColor: value ? value.toLowerCase() : null } });
+    res.json({ accentColor: value ? value.toLowerCase() : null });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Update user profile
 router.patch('/profile', auth, async (req, res) => {
   try {

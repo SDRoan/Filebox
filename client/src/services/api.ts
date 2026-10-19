@@ -1195,6 +1195,17 @@ export interface DayOverview {
   days: { date: string; count: number }[];
 }
 
+export const preferencesAPI = {
+  get: async (): Promise<{ accentColor: string | null }> => {
+    const response = await api.get('/users/preferences');
+    return response.data;
+  },
+  setAccent: async (accentColor: string | null): Promise<{ accentColor: string | null }> => {
+    const response = await api.put('/users/preferences', { accentColor });
+    return response.data;
+  },
+};
+
 export const activityAPI = {
   focus: async (fileId: string, seconds: number) => {
     await api.post('/activity/focus', { fileId, seconds });

@@ -1,4 +1,5 @@
 import React from 'react';
+import AccentPicker from './AccentPicker';
 import { useAuth } from '../context/AuthContext';
 import { workspacePages } from '../config/workspaceNavigation';
 import { formatBytes } from '../utils/fileDisplay';
@@ -45,6 +46,11 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onOpenPage }) => {
           </div>
           <div><dt>File Box AI</dt><dd>Runs locally with Ollama. Your files are never sent to a hosted AI service.</dd></div>
         </dl>
+      </section>
+
+      <section className="overview-section" aria-labelledby="settings-appearance">
+        <div className="overview-section-head"><h2 id="settings-appearance">Appearance</h2><span>Choose the color File Box is shown in</span></div>
+        <AccentPicker />
       </section>
 
       <section className="overview-section">

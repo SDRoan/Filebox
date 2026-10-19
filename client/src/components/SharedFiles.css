@@ -306,7 +306,7 @@
 }
 
 .permission-badge.view {
-  background: #4caf50;
+  background: var(--fb-g-4caf50, #4caf50);
   color: white;
 }
 
@@ -437,7 +437,7 @@
 }
 
 .action-button.download-btn:hover {
-  background: #4caf50;
+  background: var(--fb-g-4caf50, #4caf50);
   color: white;
 }
 

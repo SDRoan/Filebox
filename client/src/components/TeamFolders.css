@@ -478,11 +478,11 @@
 .team-add-member .form-input { flex: 1; min-width: 0; margin: 0; }
 .team-add-member .action-button:disabled { opacity: .5; cursor: not-allowed; }
 .team-member-error { margin: 6px 0 0; font-size: 12px; color: #8a4532; }
-.team-role-help { margin: 8px 0 14px; font-size: 11px; line-height: 1.5; color: #8a967e; }
+.team-role-help { margin: 8px 0 14px; font-size: 11px; line-height: 1.5; color: var(--fb-g-8a967e, #8a967e); }
 @media (max-width: 520px) { .team-add-member { flex-wrap: wrap; } .team-add-member .form-input { flex-basis: 100%; } }
 
 /* Quieter member controls, matching the rest of File Box */
 .dashboard .remove-member-btn { background: #fff; color: #8a4532; border: 1px solid #ead7cf; border-radius: 6px; }
 .dashboard .remove-member-btn:hover { background: #fdf3ef; }
-.dashboard .modal-content-small h3 { font-size: 18px; font-weight: 600; color: #2c402c; }
-.dashboard .current-members h4 { font-size: 11px; font-weight: 600; letter-spacing: 1.1px; text-transform: uppercase; color: #6f7a66; }
+.dashboard .modal-content-small h3 { font-size: 18px; font-weight: 600; color: var(--fb-g-2c402c, #2c402c); }
+.dashboard .current-members h4 { font-size: 11px; font-weight: 600; letter-spacing: 1.1px; text-transform: uppercase; color: var(--fb-g-6f7a66, #6f7a66); }

@@ -238,7 +238,7 @@ async function writeSummary(userId, facts, { onToken, force = false } = {}) {
         onToken,
         system: `You write a person's daily work summary for File Box, their file storage app, from a log of what they did in File Box that day.
 Return JSON with:
-- "summary": 2-4 sentences in the second person ("You spent most of the day on ..."), describing what they worked on and accomplished, naming files and what kind of files they are. Mention time only when the log gives minutes.
+- "summary": 2-4 sentences in the second person, describing what they worked on and accomplished, naming files and what kind of files they are. Match the size of the day: for a light day say it plainly ("Today you opened ..."); say "most of the day" or "a lot" only when the minutes in the log support it. Mention time only when the log gives minutes.
 - "highlights": up to 5 short bullet points of the most important things they did, most important first.
 - "suggestions": up to 3 specific, useful next steps that follow from the day (for example: finish or share a document they edited a lot, follow up on a question they asked, organize files they uploaded). Never invent files or facts.
 Use only the log, and describe each file with exactly the actions logged for it (opened, downloaded, edited...). Never mention things that did not happen or judge how much was done. Be warm but concise.`,

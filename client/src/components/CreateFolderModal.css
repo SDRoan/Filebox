@@ -1,13 +1,13 @@
-.folder-dialog { width: min(420px, calc(100vw - 32px)); padding: 0; margin: auto; color: #35482c; background: #fdfef9; border: 1px solid #d9e1ce; border-radius: 12px; box-shadow: 0 20px 80px #1c30152e; }
+.folder-dialog { width: min(420px, calc(100vw - 32px)); padding: 0; margin: auto; color: var(--fb-g-35482c, #35482c); background: var(--fb-g-fdfef9, #fdfef9); border: 1px solid var(--fb-g-d9e1ce, #d9e1ce); border-radius: 12px; box-shadow: 0 20px 80px #1c30152e; }
 .folder-dialog::backdrop { background: #1d281b55; }
 .folder-dialog-content { padding: 28px; }
 .folder-dialog h2 { font-family: Georgia, serif; font-size: 29px; font-weight: 400; letter-spacing: -.6px; margin: 0 0 7px; }
-.folder-dialog p { font-size: 12px; color: #87947a; margin-bottom: 24px; }
+.folder-dialog p { font-size: 12px; color: var(--fb-g-87947a, #87947a); margin-bottom: 24px; }
 .folder-dialog label { display: block; font-size: 12px; font-weight: 500; margin-bottom: 8px; }
-.folder-dialog-input { width: 100%; padding: 10px 12px; border: 1px solid #d2ddc5; border-radius: 5px; background: white; color: #435739; font-size: 13px; }
-.folder-dialog-input:focus { outline: 2px solid #819c6b; outline-offset: 2px; }
+.folder-dialog-input { width: 100%; padding: 10px 12px; border: 1px solid var(--fb-g-d2ddc5, #d2ddc5); border-radius: 5px; background: white; color: var(--fb-g-435739, #435739); font-size: 13px; }
+.folder-dialog-input:focus { outline: 2px solid var(--fb-g-819c6b, #819c6b); outline-offset: 2px; }
 .folder-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 26px; }
 .folder-dialog-actions button { padding: 9px 16px; border-radius: 5px; font-size: 12px; cursor: pointer; }
-.folder-dialog-cancel { background: transparent; border: 1px solid #dce4d2; color: #657857; }
-.folder-dialog-create { background: #3f6543; border: 1px solid #3f6543; color: white; }
+.folder-dialog-cancel { background: transparent; border: 1px solid var(--fb-g-dce4d2, #dce4d2); color: var(--fb-g-657857, #657857); }
+.folder-dialog-create { background: var(--fb-g-3f6543, #3f6543); border: 1px solid var(--fb-g-3f6543, #3f6543); color: white; }
 .folder-dialog-create:disabled { opacity: .45; cursor: not-allowed; }

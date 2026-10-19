@@ -375,13 +375,13 @@
 }
 
 .repost-btn.reposted {
-  background: #f0fdf4;
+  background: var(--fb-g-f0fdf4, #f0fdf4);
   border-color: #22c55e;
   color: #22c55e;
 }
 
 .repost-btn.reposted:hover {
-  background: #dcfce7;
+  background: var(--fb-g-dcfce7, #dcfce7);
   border-color: #16a34a;
 }
 

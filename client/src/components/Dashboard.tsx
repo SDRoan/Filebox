@@ -25,6 +25,8 @@ import { FileRowItem } from './FileRowList';
 import { useAuth } from '../context/AuthContext';
 import { FileItemType } from '../types';
 import { getWorkspacePage, pagePath } from '../config/workspaceNavigation';
+import { preferencesAPI } from '../services/api';
+import { applyAccent, rememberAccent } from '../theme/accent';
 import './Dashboard.css';
 import './WorkspacePages.css';
 
@@ -47,6 +49,13 @@ const Dashboard: React.FC = () => {
   const [pendingUploads, setPendingUploads] = useState<{ id: number; files: File[] } | null>(null);
 
   const currentFolderId = folderStack[folderStack.length - 1];
+
+  // The account's accent color (Settings > Appearance), so it follows the person to other browsers.
+  useEffect(() => {
+    preferencesAPI.get()
+      .then(({ accentColor }) => { applyAccent(accentColor); rememberAccent(accentColor); })
+      .catch(() => { /* keep the color saved in this browser */ });
+  }, []);
 
   // Other pages (Home, Recent, File Box AI) can open a folder in My Files via navigation state.
   useEffect(() => {

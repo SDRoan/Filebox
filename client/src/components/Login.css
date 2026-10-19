@@ -249,5 +249,5 @@
 }
 
 /* Product positioning */
-.login-header .login-positioning { margin: 18px 0 6px; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; letter-spacing: -0.5px; color: #2c402c; }
-.login-header .login-subline { margin: 0 0 18px; font-size: 13px; line-height: 1.5; color: #6f7a66; }
+.login-header .login-positioning { margin: 18px 0 6px; font-family: Georgia, 'Times New Roman', serif; font-size: 26px; font-weight: 400; letter-spacing: -0.5px; color: var(--fb-g-2c402c, #2c402c); }
+.login-header .login-subline { margin: 0 0 18px; font-size: 13px; line-height: 1.5; color: var(--fb-g-6f7a66, #6f7a66); }

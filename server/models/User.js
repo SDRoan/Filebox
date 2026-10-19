@@ -20,6 +20,12 @@ const userSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  // Appearance: the accent color File Box is shown in (Settings > Appearance). null = File Box green.
+  accentColor: {
+    type: String,
+    default: null,
+    match: /^#[0-9a-fA-F]{6}$/
+  },
   storageUsed: {
     type: Number,
     default: 0

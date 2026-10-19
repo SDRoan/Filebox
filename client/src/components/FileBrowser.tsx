@@ -551,12 +551,12 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
           <div className="empty-state">
             <div className="empty-state-content">
               <svg className="empty-folder-illustration" width="156" height="126" viewBox="0 0 156 126" fill="none" aria-hidden="true">
-                <path d="M30 39a5 5 0 0 1 5-5h29l9 9h47a5 5 0 0 1 5 5v55H30z" fill="#d7e0cd" stroke="#a7b698" strokeWidth="1.3"/>
-                <g transform="rotate(-9 76 63)"><rect x="47" y="20" width="65" height="79" rx="3" fill="#f8f9f4" stroke="#b5c0a9" strokeWidth="1.3"/><path d="M58 37h37M58 46h37M58 55h24" stroke="#d3d9cb" strokeWidth="2" strokeLinecap="round"/></g>
-                <path d="M25 57h108l-10 49H35z" fill="#e8eddf" stroke="#a7b698" strokeWidth="1.3" strokeLinejoin="round"/>
-                <rect x="60" y="75" width="37" height="13" rx="2" fill="#f8f9f4" stroke="#c2cdb7"/>
-                <path d="M70 81.5h17" stroke="#b1bea4" strokeWidth="1.4" strokeLinecap="round"/>
-                <path d="M23 108h112" stroke="#d8dfd0" strokeWidth="1.3" strokeLinecap="round"/>
+                <path d="M30 39a5 5 0 0 1 5-5h29l9 9h47a5 5 0 0 1 5 5v55H30z" strokeWidth="1.3" style={{ fill: 'var(--fb-g-d7e0cd, #d7e0cd)', stroke: 'var(--fb-g-a7b698, #a7b698)' }}/>
+                <g transform="rotate(-9 76 63)"><rect x="47" y="20" width="65" height="79" rx="3" strokeWidth="1.3" style={{ fill: 'var(--fb-g-f8f9f4, #f8f9f4)', stroke: 'var(--fb-g-b5c0a9, #b5c0a9)' }}/><path d="M58 37h37M58 46h37M58 55h24" strokeWidth="2" strokeLinecap="round" style={{ stroke: 'var(--fb-g-d3d9cb, #d3d9cb)' }}/></g>
+                <path d="M25 57h108l-10 49H35z" strokeWidth="1.3" strokeLinejoin="round" style={{ fill: 'var(--fb-g-e8eddf, #e8eddf)', stroke: 'var(--fb-g-a7b698, #a7b698)' }}/>
+                <rect x="60" y="75" width="37" height="13" rx="2" style={{ fill: 'var(--fb-g-f8f9f4, #f8f9f4)', stroke: 'var(--fb-g-c2cdb7, #c2cdb7)' }}/>
+                <path d="M70 81.5h17" strokeWidth="1.4" strokeLinecap="round" style={{ stroke: 'var(--fb-g-b1bea4, #b1bea4)' }}/>
+                <path d="M23 108h112" strokeWidth="1.3" strokeLinecap="round" style={{ stroke: 'var(--fb-g-d8dfd0, #d8dfd0)' }}/>
               </svg>
               <h2 className="empty-state-title">{filterBy !== 'all' ? 'Nothing in this view yet' : showTrash ? 'All clear.' : showStarred ? 'Keep your favorites here.' : 'Good things start with a file.'}</h2>
               <p className="empty-state-description">{filterBy !== 'all' ? 'Try another file type, or head back to all files.' : showTrash ? 'Deleted items stay here for 30 days, just in case.' : showStarred ? 'Star a file or folder and it will be easy to find here.' : 'Keep your documents, images, and projects together. Add a file to get started.'}</p>

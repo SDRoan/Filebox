@@ -1,0 +1,30 @@
+/* Settings > Appearance: accent color wheel */
+.accent-picker { display: flex; gap: 28px; align-items: flex-start; flex-wrap: wrap; padding: 4px 0 8px; }
+.accent-wheel {
+  position: relative; flex: none; width: 200px; height: 200px; border-radius: 50%; cursor: crosshair; touch-action: none;
+  background:
+    radial-gradient(closest-side, hsl(0 0% 40%) 0%, hsl(0 0% 40% / 0) 100%),
+    conic-gradient(hsl(0 75% 40%), hsl(60 75% 40%), hsl(120 75% 40%), hsl(180 75% 40%), hsl(240 75% 40%), hsl(300 75% 40%), hsl(360 75% 40%));
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.accent-wheel:focus-visible { outline: 3px solid var(--fb-g-9bb68d, #9bb68d); outline-offset: 4px; }
+.accent-wheel-marker { position: absolute; width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 50%; border: 3px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3), 0 2px 6px rgba(0, 0, 0, 0.25); pointer-events: none; }
+.accent-controls { flex: 1; min-width: 240px; display: grid; gap: 14px; }
+.accent-current { display: flex; align-items: center; gap: 12px; }
+.accent-current strong { display: block; font-size: 14px; color: #2f3330; }
+.accent-current span { font-size: 12px; color: #6f736d; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.accent-swatch.large { width: 40px; height: 40px; border-radius: 10px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1); }
+.accent-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.accent-presets button { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15); cursor: pointer; }
+.accent-presets button.selected { box-shadow: 0 0 0 2px #2f3330; }
+.accent-exact { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #4a4f47; }
+.accent-exact input { width: 44px; height: 30px; padding: 0; border: 1px solid #d9dcd5; border-radius: 6px; background: none; cursor: pointer; }
+.accent-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.accent-status { font-size: 12px; color: #6f736d; }
+.accent-preview { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px; border: 1px dashed #d9dcd5; border-radius: 10px; }
+.accent-preview-chip { padding: 4px 10px; border-radius: 999px; background: var(--fb-g-eef3e8, #eef3e8); color: var(--fb-g-4f6b43, #4f6b43); font-size: 12px; }
+.accent-preview-text { font-size: 13px; color: var(--fb-g-3f6543, #3f6543); font-weight: 600; }
+@media (max-width: 480px) {
+  .accent-picker { justify-content: center; }
+  .accent-wheel { width: 180px; height: 180px; }
+}

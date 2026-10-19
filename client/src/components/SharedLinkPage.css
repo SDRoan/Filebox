@@ -1,14 +1,14 @@
-.shared-link-page { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 24px 16px; background: #f6f7f1; color: #3d4a37; font-family: var(--font-sans); }
-.shared-link-card { width: 100%; max-width: 440px; padding: 32px 28px; border: 1px solid #e0e7d7; border-radius: 14px; background: #fff; text-align: center; box-shadow: 0 12px 32px #2a3a2010; }
-.shared-link-icon { display: inline-grid; place-items: center; width: 56px; height: 56px; margin-bottom: 14px; border-radius: 12px; background: #eef2e8; color: #557049; }
-.shared-link-card h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: 400; color: #2c402c; overflow-wrap: anywhere; }
-.shared-link-muted { margin: 8px 0 0; font-size: 13px; line-height: 1.6; color: #7d8a72; }
+.shared-link-page { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 24px 16px; background: var(--fb-g-f6f7f1, #f6f7f1); color: var(--fb-g-3d4a37, #3d4a37); font-family: var(--font-sans); }
+.shared-link-card { width: 100%; max-width: 440px; padding: 32px 28px; border: 1px solid var(--fb-g-e0e7d7, #e0e7d7); border-radius: 14px; background: #fff; text-align: center; box-shadow: 0 12px 32px #2a3a2010; }
+.shared-link-icon { display: inline-grid; place-items: center; width: 56px; height: 56px; margin-bottom: 14px; border-radius: 12px; background: var(--fb-g-eef2e8, #eef2e8); color: var(--fb-g-557049, #557049); }
+.shared-link-card h1 { margin: 0; font-family: Georgia, 'Times New Roman', serif; font-size: 24px; font-weight: 400; color: var(--fb-g-2c402c, #2c402c); overflow-wrap: anywhere; }
+.shared-link-muted { margin: 8px 0 0; font-size: 13px; line-height: 1.6; color: var(--fb-g-7d8a72, #7d8a72); }
 .shared-link-form { display: flex; flex-direction: column; gap: 12px; margin-top: 22px; text-align: left; }
-.shared-link-form label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #5f6e55; }
+.shared-link-form label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--fb-g-5f6e55, #5f6e55); }
 .shared-link-form label span { display: inline-flex; align-items: center; gap: 5px; }
-.shared-link-form input { min-height: 40px; padding: 8px 12px; border: 1px solid #dfe7d7; border-radius: 7px; font: inherit; font-size: 14px; }
-.shared-link-form button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; border: 0; border-radius: 7px; background: #3f6543; color: #fff; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+.shared-link-form input { min-height: 40px; padding: 8px 12px; border: 1px solid var(--fb-g-dfe7d7, #dfe7d7); border-radius: 7px; font: inherit; font-size: 14px; }
+.shared-link-form button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; border: 0; border-radius: 7px; background: var(--fb-g-3f6543, #3f6543); color: #fff; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
 .shared-link-form button:disabled { opacity: .6; }
 .shared-link-error { margin: 0; font-size: 12px; color: #8a4532; }
-.shared-link-note { margin: 20px 0 0; padding: 10px; border-radius: 7px; background: #fafbf8; font-size: 12px; color: #7d8a72; }
-.shared-link-footer { font-size: 11px; color: #9aa58f; }
+.shared-link-note { margin: 20px 0 0; padding: 10px; border-radius: 7px; background: var(--fb-g-fafbf8, #fafbf8); font-size: 12px; color: var(--fb-g-7d8a72, #7d8a72); }
+.shared-link-footer { font-size: 11px; color: var(--fb-g-9aa58f, #9aa58f); }
