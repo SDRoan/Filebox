@@ -38,6 +38,8 @@
 .file-selection-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: var(--fb-g-eff4e9, #eff4e9); padding: 10px; border-radius: 6px; margin-bottom: 15px; }
 .selection-count { font-size: 12px; color: var(--fb-g-586f47, #586f47); padding: 0 8px; }
 .file-browser .file-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 16px; padding: 20px; }
+/* Each card keeps its own height; a captioned picture does not stretch the folders beside it. */
+.file-browser .file-list:not(.list-view) { align-items: start; }
 .file-browser .file-list.list-view { display: flex; flex-direction: column; gap: 0; padding: 0; }
 .file-browser .file-item, .file-browser .folder-item { border: 1px solid var(--fb-g-e8ecdf, #e8ecdf); border-radius: 6px; box-shadow: none; min-height: 190px; background: #fff; }
 .file-browser .file-item:hover, .file-browser .folder-item:hover { transform: none; box-shadow: none; border-color: var(--fb-g-b6c5a8, #b6c5a8); background: var(--fb-g-fcfdf9, #fcfdf9); }

@@ -63,14 +63,16 @@ const ImageCaption: React.FC<ImageCaptionProps> = ({ fileId, initial, canWrite }
     return (
       <div className="image-caption" title={caption.text}>
         <p className="image-caption-text">{caption.text}</p>
-        {caption.hashtags && caption.hashtags.length > 0 && (
-          <p className="image-caption-tags">{caption.hashtags.map(tag => `#${tag}`).join(' ')}</p>
-        )}
-        {canWrite && (
-          <button className="image-caption-again" onClick={askForCaption} title="Ask File Box AI for a different caption">
-            <AIAssistantIcon size={12} /> New caption
-          </button>
-        )}
+        <div className="image-caption-row">
+          {caption.hashtags && caption.hashtags.length > 0 && (
+            <p className="image-caption-tags">{caption.hashtags.map(tag => `#${tag}`).join(' ')}</p>
+          )}
+          {canWrite && (
+            <button className="image-caption-icon" onClick={askForCaption} title="New caption" aria-label="Write a new caption">
+              <AIAssistantIcon size={13} />
+            </button>
+          )}
+        </div>
         {error && <p className="image-caption-error" role="alert">{error}</p>}
       </div>
     );
