@@ -16,6 +16,7 @@ import FileRelationships from './FileRelationships';
 import ClassificationBadge from './ClassificationBadge';
 import { ImageIcon, VideoIcon, AudioIcon, DocumentIcon, SummaryIcon, AnalyticsIcon, EyeIcon, PackageIcon, CopyIcon, ShareIcon, ScrollIcon, CommentIcon, DownloadIcon, StarredIcon, TrashIcon, RestoreIcon, LinkIcon, EditIcon, AIAssistantIcon, SignatureIcon } from './Icons';
 import SignPdfDialog from './SignPdfDialog';
+import ImageThumbnail from './ImageThumbnail';
 import './FileItem.css';
 
 interface FileItemProps {
@@ -265,7 +266,7 @@ const FileItem: React.FC<FileItemProps> = ({
             onClick={(e) => e.stopPropagation()}
           />
         )}
-        <div className="file-icon" onClick={() => !selectionMode && canPreview() && !showTrash && setShowPreview(true)} style={{ cursor: !selectionMode && canPreview() && !showTrash ? 'pointer' : 'default' }}>{getFileIcon(file.mimeType)}</div>
+        <div className="file-icon" onClick={() => !selectionMode && canPreview() && !showTrash && setShowPreview(true)} style={{ cursor: !selectionMode && canPreview() && !showTrash ? 'pointer' : 'default' }}>{file.mimeType.startsWith('image/') && !showTrash ? <ImageThumbnail fileId={file._id} name={file.originalName} fallback={getFileIcon(file.mimeType)} /> : getFileIcon(file.mimeType)}</div>
         <div className="file-info" onClick={() => !selectionMode && canPreview() && !showTrash && !isRenaming && setShowPreview(true)} style={{ cursor: !selectionMode && canPreview() && !showTrash && !isRenaming ? 'pointer' : 'default', flex: 1 }}>
           {isRenaming ? (
             <input

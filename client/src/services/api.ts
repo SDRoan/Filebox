@@ -176,6 +176,11 @@ export const filesAPI = {
     });
     return response.data;
   },
+  // An image for a file card; not recorded as a view or download.
+  getThumbnail: async (fileId: string) => {
+    const response = await api.get(`/files/download/${fileId}?purpose=thumbnail`, { responseType: 'blob' });
+    return response.data as Blob;
+  },
   deleteFile: async (fileId: string) => {
     const response = await api.delete(`/files/${fileId}?type=file`);
     return response.data;

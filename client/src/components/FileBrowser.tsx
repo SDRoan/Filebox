@@ -419,6 +419,8 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
     let filteredFolders = [...folders];
 
     // Apply filters
+    // A file-type view (Images, Videos, Documents) shows only those files, not folders.
+    if (filterBy !== 'all' && filterBy !== 'folders') filteredFolders = [];
     if (filterBy === 'folders') {
       filteredFiles = [];
     } else if (filterBy === 'images') {

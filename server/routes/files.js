@@ -447,6 +447,13 @@ router.get('/download/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'File not found on disk. The file may have been deleted.' });
     }
 
+    // Card thumbnails for images: shown while browsing, so they are not counted as views or downloads.
+    if (req.query.purpose === 'thumbnail') {
+      if (!String(file.mimeType || '').startsWith('image/')) return res.status(415).json({ message: 'Only images have thumbnails.' });
+      res.set('Cache-Control', 'private, max-age=300');
+      return res.type(file.mimeType).sendFile(require('path').resolve(file.path));
+    }
+
     // Track activity - notify owner if this is a shared file
     const isSharedFile = file.owner.toString() !== req.user._id.toString();
 
