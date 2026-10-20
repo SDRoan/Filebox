@@ -70,6 +70,16 @@ const fileSchema = new mongoose.Schema({
       default: null
     }
   }],
+  // A fun caption for a picture, written by the local vision model after upload.
+  aiCaption: {
+    text: { type: String, default: '' },
+    hashtags: [{ type: String }],
+    status: { type: String, enum: ['', 'writing', 'done', 'failed'], default: '' },
+    error: { type: String, default: '' },
+    model: { type: String, default: '' },
+    attempt: { type: Number, default: 0 },
+    at: { type: Date, default: null },
+  },
   dataClassification: {
     type: String,
     enum: ['Public', 'Internal', 'Confidential', 'Top Secret'],

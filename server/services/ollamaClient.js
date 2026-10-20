@@ -26,6 +26,9 @@ const TASK_PROFILES = {
   summarize: { temperature: 0, maxOutput: 900 },
   answer: { temperature: 0, maxOutput: 1000 },
   describe: { temperature: 0, maxOutput: 400 },
+  // Fun photo captions are the one place variety is wanted; "another caption" changes the seed.
+  // The vision model may need a minute to load before it starts.
+  caption: { temperature: 0.8, maxOutput: 200, timeoutMs: 240000 },
 };
 
 // Conservative estimate (English averages ~4 characters per token for Llama 3).
@@ -217,7 +220,7 @@ class OllamaClient {
    * examples: [{ user, assistant }] shown to the model as earlier turns (small models follow these better).
    * onToken: called with each piece of the reply as it is written (the reply still resolves in full).
    */
-  async generate({ background = false, task = 'answer', model, system, content, context, images, format, examples = [], onToken, keepAlive = '5m' }) {
+  async generate({ background = false, task = 'answer', model, system, content, context, images, format, examples = [], onToken, keepAlive = '5m', seed }) {
     if (!this.isEnabled()) {
       throw new Error('Ollama is disabled.');
     }
@@ -248,7 +251,7 @@ class OllamaClient {
       ],
       options: {
         temperature: profile.temperature,
-        seed: config.ollama.seed,
+        seed: seed ?? config.ollama.seed,
         num_ctx: contextWindow,
         num_predict: profile.maxOutput,
       },

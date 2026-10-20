@@ -18,6 +18,7 @@ const { assertAvailable } = require('../utils/optionalModule');
 const { authorizeFile, authorizeFolder, sendDenied, capabilitiesFor, getFileRole, readableFileFilter } = require('../services/permissions');
 const { logView } = require('../services/activityLog');
 const { extractInBackground } = require('../services/backgroundExtraction');
+const imageCaption = require('../services/imageCaption');
 const { restorableParent } = require('../services/fileResolver');
 const { snapshotCurrentVersion, replaceFileContents, newLivePath } = require('../services/fileVersions');
 const { purgeFile, purgeFolderTree, purgeTrash, trashSize, RECOVERY_DAYS } = require('../services/trash');
@@ -382,6 +383,8 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
 
     // Read the file's text in the background so File Box AI can search and answer from it.
     extractInBackground(file);
+    // Pictures also get a fun caption from the local vision model.
+    imageCaption.captionInBackground(file);
   } catch (error) {
     console.error('Upload error:', error);
     // Clean up uploaded file if it exists
@@ -424,6 +427,35 @@ router.post('/folder', auth, async (req, res) => {
     io.to(`user-${req.user._id}`).emit('folder-created', folder);
 
     res.status(201).json(folder);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// A picture's AI caption (cards ask while it is being written).
+router.get('/:id/caption', auth, async (req, res) => {
+  try {
+    const access = await authorizeFile(req.params.id, req.user._id, 'viewer');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
+    res.json({ canCaption: imageCaption.canCaption(file), caption: file.aiCaption || null });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Ask for a caption (or a different one). Saved on the file, so it needs edit access.
+router.post('/:id/caption', auth, async (req, res) => {
+  try {
+    const access = await authorizeFile(req.params.id, req.user._id, 'editor');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
+    if (!imageCaption.canCaption(file)) return res.status(400).json({ message: 'Captions are only for pictures.' });
+    const again = Boolean(file.aiCaption?.text);
+    if (!imageCaption.captionInBackground(file, { again })) {
+      return res.status(503).json({ message: 'File Box AI is turned off.' });
+    }
+    res.status(202).json({ caption: { ...(file.aiCaption?.toObject?.() || {}), status: 'writing', error: '' } });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

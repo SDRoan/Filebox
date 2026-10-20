@@ -1,3 +1,4 @@
+import type { ImageCaption } from '../types';
 import axios from 'axios';
 import { LOCAL_PREVIEW_ENABLED } from '../config/localPreview';
 
@@ -180,6 +181,14 @@ export const filesAPI = {
   getThumbnail: async (fileId: string) => {
     const response = await api.get(`/files/download/${fileId}?purpose=thumbnail`, { responseType: 'blob' });
     return response.data as Blob;
+  },
+  getCaption: async (fileId: string) => {
+    const response = await api.get(`/files/${fileId}/caption`);
+    return response.data as { canCaption: boolean; caption: ImageCaption | null };
+  },
+  newCaption: async (fileId: string) => {
+    const response = await api.post(`/files/${fileId}/caption`);
+    return response.data as { caption: ImageCaption };
   },
   deleteFile: async (fileId: string) => {
     const response = await api.delete(`/files/${fileId}?type=file`);

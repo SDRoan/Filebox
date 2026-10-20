@@ -17,6 +17,7 @@ import ClassificationBadge from './ClassificationBadge';
 import { ImageIcon, VideoIcon, AudioIcon, DocumentIcon, SummaryIcon, AnalyticsIcon, EyeIcon, PackageIcon, CopyIcon, ShareIcon, ScrollIcon, CommentIcon, DownloadIcon, StarredIcon, TrashIcon, RestoreIcon, LinkIcon, EditIcon, AIAssistantIcon, SignatureIcon } from './Icons';
 import SignPdfDialog from './SignPdfDialog';
 import ImageThumbnail from './ImageThumbnail';
+import ImageCaption from './ImageCaption';
 import './FileItem.css';
 
 interface FileItemProps {
@@ -290,6 +291,9 @@ const FileItem: React.FC<FileItemProps> = ({
             }}>
               {file.originalName}
             </div>
+          )}
+          {file.mimeType.startsWith('image/') && !showTrash && !isRenaming && (
+            <ImageCaption fileId={file._id} initial={file.aiCaption} canWrite={caps.canEdit} />
           )}
           <div className="file-meta">
             {formatSize(file.size)} • {showTrash && file.deletedAt ? (

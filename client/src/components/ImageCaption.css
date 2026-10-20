@@ -1,0 +1,12 @@
+/* AI captions under picture cards */
+.image-caption { display: grid; justify-items: center; gap: 3px; width: 100%; margin: 6px 0 4px; text-align: center; }
+.image-caption p { margin: 0; }
+.image-caption-text { font-size: 12px; line-height: 1.4; color: #3b3f45; font-style: italic; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.image-caption-tags { font-size: 11px; color: var(--fb-g-4f6b43, #4f6b43); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.image-caption.writing { display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 11px; color: var(--fb-g-6d8b58, #6d8b58); animation: image-caption-pulse 1.6s ease-in-out infinite; }
+.image-caption-again { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; padding: 2px 8px; border: 1px solid var(--fb-g-e0e6d8, #e0e6d8); border-radius: 999px; background: #fff; color: var(--fb-g-4f6b43, #4f6b43); font-size: 11px; cursor: pointer; }
+.image-caption-again:hover { background: var(--fb-g-f5f7f0, #f5f7f0); }
+.image-caption-error { font-size: 11px; color: #9a5b3a; }
+.list-view .image-caption { justify-items: start; text-align: left; }
+@keyframes image-caption-pulse { 50% { opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .image-caption.writing { animation: none; } }
