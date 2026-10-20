@@ -407,3 +407,6 @@
   padding-top: 1.5rem;
   border-top: 1px solid #e5e7eb;
 }
+
+.backup-intro { max-width: 720px; margin: -8px 0 22px; font-size: 14px; line-height: 1.55; color: #5d6359; }
+.backup-last-run { margin: 10px 0 0; font-size: 13px; color: #4a4f47; }

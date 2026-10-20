@@ -70,6 +70,12 @@ const fileSchema = new mongoose.Schema({
       default: null
     }
   }],
+  // Set on copies made by Folder Sync: where the file came from and the version that was copied.
+  syncedFrom: {
+    path: { type: String, default: null },
+    mtimeMs: { type: Number, default: null },
+    size: { type: Number, default: null },
+  },
   // A fun caption for a picture, written by the local vision model after upload.
   aiCaption: {
     text: { type: String, default: '' },

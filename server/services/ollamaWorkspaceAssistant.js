@@ -147,7 +147,7 @@ class OllamaWorkspaceAssistant {
       }
       case 'create_cloud_backup': {
         const sourceType = actionResult?.data?.sourceType || 'backup';
-        return `Set up the ${sourceType} cloud backup for you.`;
+        return `Set up Folder Sync for your ${sourceType} folder. Open Folder Sync and choose Sync now to copy it into File Box.`;
       }
       case 'star_file':
       case 'delete_file':

@@ -16,7 +16,31 @@ interface CloudBackup {
   totalSizeBackedUp: number;
   status: 'idle' | 'backing_up' | 'completed' | 'failed';
   lastError: string | null;
+  lastResult?: {
+    copied: number;
+    updated: number;
+    unchanged: number;
+    skippedCloudOnly: number;
+    skippedQuota: number;
+    skippedOther: number;
+    at: string | null;
+  };
   createdAt: string;
+}
+
+const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+
+/** One line about what the last sync did. */
+function lastRunSummary(result: CloudBackup['lastResult']): string {
+  if (!result?.at) return '';
+  const parts = [];
+  if (result.copied) parts.push(`${plural(result.copied, 'new file')} copied`);
+  if (result.updated) parts.push(`${plural(result.updated, 'changed file')} updated`);
+  if (!result.copied && !result.updated) parts.push('Everything was already up to date');
+  if (result.skippedCloudOnly) parts.push(`${plural(result.skippedCloudOnly, 'file')} skipped (only in iCloud, not on this Mac)`);
+  if (result.skippedQuota) parts.push(`${plural(result.skippedQuota, 'file')} skipped (storage full)`);
+  if (result.skippedOther) parts.push(`${plural(result.skippedOther, 'file')} skipped (could not copy, or a file you added has that name)`);
+  return parts.join(' · ');
 }
 
 const CloudBackup: React.FC = () => {
@@ -38,14 +62,23 @@ const CloudBackup: React.FC = () => {
     loadDefaultPaths();
   }, []);
 
+  // While a folder is syncing, check its progress every few seconds.
+  const syncing = backups.some(backup => backup.status === 'backing_up');
+  useEffect(() => {
+    if (!syncing) return;
+    const timer = setInterval(() => {
+      cloudBackupAPI.getBackups().then(setBackups).catch(() => {});
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [syncing]);
+
   const loadBackups = async () => {
     try {
       setLoading(true);
       const data = await cloudBackupAPI.getBackups();
       setBackups(data);
     } catch (error: any) {
-      console.error('Error loading backups:', error);
-      alert(error.response?.data?.message || 'Failed to load backups');
+      alert(error.response?.data?.message || 'Could not load your synced folders.');
     } finally {
       setLoading(false);
     }
@@ -121,20 +154,20 @@ const CloudBackup: React.FC = () => {
       handleCloseModal();
       loadBackups();
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to save backup configuration';
+      const errorMessage = error.response?.data?.message || error.message || 'Could not save this sync.';
       alert(errorMessage);
     }
   };
 
   const handleDelete = async (backupId: string) => {
-    if (!window.confirm('Are you sure you want to delete this backup configuration?')) {
+    if (!window.confirm('Stop syncing this folder? Files already copied stay in File Box.')) {
       return;
     }
     try {
       await cloudBackupAPI.deleteBackup(backupId);
       loadBackups();
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to delete backup');
+      alert(error.response?.data?.message || 'Could not remove this sync.');
     }
   };
 
@@ -145,17 +178,18 @@ const CloudBackup: React.FC = () => {
       });
       loadBackups();
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Failed to update backup');
+      alert(error.response?.data?.message || 'Could not update this sync.');
     }
   };
 
   const handlePerformBackup = async (backupId: string) => {
     try {
       setBackingUp(backupId);
-      await cloudBackupAPI.performBackup(backupId);
-      loadBackups();
+      // Starts in the background; the card shows progress until it finishes.
+      const started = await cloudBackupAPI.performBackup(backupId);
+      setBackups(prev => prev.map(backup => backup._id === backupId ? { ...backup, ...started } : backup));
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || error.message || 'Failed to perform backup';
+      const errorMessage = error.response?.data?.message || error.message || 'Could not start syncing.';
       alert(errorMessage);
     } finally {
       setBackingUp(null);
@@ -205,13 +239,21 @@ const CloudBackup: React.FC = () => {
   return (
     <div className="cloud-backup">
       <div className="backup-header">
-        <h2><CloudBackupIcon size={24} color="currentColor" /> Cloud Backup</h2>
+        <h2><CloudBackupIcon size={24} color="currentColor" /> Folder Sync</h2>
         <div className="backup-header-actions">
-          <button className="btn-primary" onClick={() => handleOpenModal()}>
-            <PlusIcon size={16} color="currentColor" /> Setup Backup
+          <button className="btn-primary" onClick={() => handleOpenModal()} disabled={defaultPaths.enabled === false}>
+            <PlusIcon size={16} color="currentColor" /> Sync a folder
           </button>
         </div>
       </div>
+      <p className="backup-intro">
+        Copies a folder from this computer into File Box and keeps the copy up to date, so you can search it and ask File Box AI about it.
+        New and changed files are copied; deleting a file from the folder does not delete it here.
+        The copy stays on this computer, so it is not an off-site backup.
+      </p>
+      {defaultPaths.enabled === false && (
+        <div className="backup-error">Folder Sync is turned off on this File Box.</div>
+      )}
 
       {loading ? (
         <div className="loading-state">
@@ -221,10 +263,10 @@ const CloudBackup: React.FC = () => {
       ) : backups.length === 0 ? (
         <div className="empty-state">
           <CloudBackupIcon size={64} color="#ccc" />
-          <h3>No backups configured</h3>
-          <p>Set up automatic backups for your Desktop and Documents folders</p>
-          <button className="btn-primary" onClick={() => handleOpenModal()}>
-            <PlusIcon size={16} color="currentColor" /> Setup Backup
+          <h3>No folders synced yet</h3>
+          <p>Choose a folder, such as Documents, to copy into File Box and keep up to date.</p>
+          <button className="btn-primary" onClick={() => handleOpenModal()} disabled={defaultPaths.enabled === false}>
+            <PlusIcon size={16} color="currentColor" /> Sync a folder
           </button>
         </div>
       ) : (
@@ -241,15 +283,16 @@ const CloudBackup: React.FC = () => {
                     className="status-badge"
                     style={{ backgroundColor: getStatusColor(backup.status) }}
                   >
-                    {backup.status === 'backing_up' ? 'Backing Up...' : 
-                     backup.status === 'completed' ? 'Completed' :
-                     backup.status === 'failed' ? 'Failed' : 'Idle'}
+                    {backup.status === 'backing_up' ? 'Syncing…' :
+                     backup.status === 'completed' ? 'Up to date' :
+                     backup.status === 'failed' ? 'Failed' : 'Not synced yet'}
                   </span>
                   <label className="toggle-switch">
                     <input
                       type="checkbox"
                       checked={backup.enabled}
                       onChange={() => handleToggleEnabled(backup)}
+                      aria-label="Sync automatically"
                     />
                     <span className="toggle-slider"></span>
                   </label>
@@ -262,27 +305,28 @@ const CloudBackup: React.FC = () => {
                   <span className="stat-value">{backup.backupFrequency}</span>
                 </div>
                 <div className="stat-item">
-                  <span className="stat-label">Last Backup:</span>
+                  <span className="stat-label">Last sync:</span>
                   <span className="stat-value">{formatDate(backup.lastBackupAt)}</span>
                 </div>
                 <div className="stat-item">
-                  <span className="stat-label">Backups:</span>
+                  <span className="stat-label">Syncs:</span>
                   <span className="stat-value">{backup.backupCount}</span>
                 </div>
                 <div className="stat-item">
-                  <span className="stat-label">Files:</span>
+                  <span className="stat-label">Files copied:</span>
                   <span className="stat-value">{backup.totalFilesBackedUp}</span>
                 </div>
                 <div className="stat-item">
-                  <span className="stat-label">Size:</span>
+                  <span className="stat-label">Copied size:</span>
                   <span className="stat-value">{formatBytes(backup.totalSizeBackedUp)}</span>
                 </div>
               </div>
 
+              {backup.status !== 'backing_up' && lastRunSummary(backup.lastResult) && (
+                <p className="backup-last-run">Last run: {lastRunSummary(backup.lastResult)}</p>
+              )}
               {backup.lastError && (
-                <div className="backup-error">
-                  <strong>Last Error:</strong> {backup.lastError}
-                </div>
+                <div className="backup-error">{backup.lastError}</div>
               )}
 
               <div className="backup-actions">
@@ -292,7 +336,7 @@ const CloudBackup: React.FC = () => {
                   disabled={backingUp === backup._id || backup.status === 'backing_up'}
                 >
                   <RefreshIcon size={16} color="currentColor" />
-                  {backingUp === backup._id ? 'Backing Up...' : 'Run Backup Now'}
+                  {backup.status === 'backing_up' ? 'Syncing…' : 'Sync now'}
                 </button>
                 <button
                   className="btn-secondary"
@@ -306,7 +350,7 @@ const CloudBackup: React.FC = () => {
                   onClick={() => handleDelete(backup._id)}
                 >
                   <TrashIcon size={16} color="currentColor" />
-                  Delete
+                  Stop syncing
                 </button>
               </div>
             </div>
@@ -318,12 +362,12 @@ const CloudBackup: React.FC = () => {
         <div className="modal-overlay" onClick={handleCloseModal}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>{editingBackup ? 'Edit Backup' : 'Setup Backup'}</h3>
+              <h3>{editingBackup ? 'Edit sync' : 'Sync a folder'}</h3>
               <button className="modal-close" onClick={handleCloseModal}>×</button>
             </div>
             <form onSubmit={handleSubmit} className="backup-form">
               <div className="form-group">
-                <label>Source Type</label>
+                <label>Folder</label>
                 <select
                   value={formData.sourceType}
                   onChange={(e) => handleSourceTypeChange(e.target.value as any)}
@@ -335,32 +379,29 @@ const CloudBackup: React.FC = () => {
                   {defaultPaths.documents?.exists && (
                     <option value="documents">Documents</option>
                   )}
-                  <option value="custom">Custom Path</option>
+                  <option value="custom">Another folder</option>
                 </select>
               </div>
 
               <div className="form-group">
-                <label>Source Path</label>
+                <label>Folder path</label>
                 <input
                   type="text"
                   value={formData.sourcePath}
                   onChange={(e) => setFormData(prev => ({ ...prev, sourcePath: e.target.value }))}
                   placeholder={formData.sourceType === 'desktop' ? defaultPaths.desktop?.path : 
                               formData.sourceType === 'documents' ? defaultPaths.documents?.path : 
-                              'Enter custom path'}
+                              `A folder inside ${(defaultPaths.roots || ['your home folder']).join(' or ')}`}
                   disabled={!!editingBackup || formData.sourceType !== 'custom'}
                   required
                 />
-                {formData.sourceType !== 'custom' && (
-                  <p className="form-hint">
-                    {formData.sourceType === 'desktop' && defaultPaths.desktop?.path}
-                    {formData.sourceType === 'documents' && defaultPaths.documents?.path}
-                  </p>
-                )}
+                <p className="form-hint">
+                  Only folders inside {(defaultPaths.roots || ['your home folder']).join(' or ')} can be synced. Files that are only in iCloud are skipped, and copies count toward your storage.
+                </p>
               </div>
 
               <div className="form-group">
-                <label>Backup Frequency</label>
+                <label>How often</label>
                 <select
                   value={formData.backupFrequency}
                   onChange={(e) => setFormData(prev => ({ ...prev, backupFrequency: e.target.value as any }))}
@@ -378,7 +419,7 @@ const CloudBackup: React.FC = () => {
                     checked={formData.enabled}
                     onChange={(e) => setFormData(prev => ({ ...prev, enabled: e.target.checked }))}
                   />
-                  Enable automatic backups
+                  Sync automatically
                 </label>
               </div>
 
@@ -387,7 +428,7 @@ const CloudBackup: React.FC = () => {
                   Cancel
                 </button>
                 <button type="submit" className="btn-primary">
-                  {editingBackup ? 'Update' : 'Create'} Backup
+                  {editingBackup ? 'Save' : 'Start syncing'}
                 </button>
               </div>
             </form>

@@ -154,39 +154,33 @@ setInterval(cleanupTrash, 24 * 60 * 60 * 1000); // 24 hours in milliseconds
 // Also run immediately on server start
 setTimeout(cleanupTrash, 60000); // Run after 1 minute of server startup
 
-// Cloud Backup Scheduler
+// Folder Sync scheduler (services/cloudBackup.js): runs syncs that are due, each for its own account.
 const runCloudBackups = async () => {
   try {
     const CloudBackup = require('./models/CloudBackup');
     const cloudBackupService = require('./services/cloudBackup');
-    
-    const now = new Date();
-    const backupsToRun = await CloudBackup.find({
+    if (!cloudBackupService.isEnabled()) return;
+    const due = await CloudBackup.find({
       enabled: true,
-      $or: [
-        { nextBackupAt: { $lte: now } },
-        { nextBackupAt: null }
-      ]
+      status: { $ne: 'backing_up' },
+      $or: [{ nextBackupAt: { $lte: new Date() } }, { nextBackupAt: null }],
     });
-
-    for (const backup of backupsToRun) {
+    for (const backup of due) {
       try {
-        console.log(`[Cloud Backup] Running backup for ${backup.sourceType} (${backup._id})`);
-        await cloudBackupService.performBackup(backup._id);
-        console.log(`[Cloud Backup] ✅ Backup completed for ${backup.sourceType}`);
+        await cloudBackupService.performBackup(backup._id, backup.user);
       } catch (error) {
-        console.error(`[Cloud Backup] ❌ Backup failed for ${backup.sourceType}:`, error.message);
+        console.error(`[Folder Sync] ${backup.sourcePath}:`, error.message);
       }
     }
   } catch (error) {
-    console.error('[Cloud Backup] Error in backup scheduler:', error);
+    console.error('[Folder Sync] Scheduler error:', error);
   }
 };
 
-// Run cloud backups every hour
-setInterval(runCloudBackups, 60 * 60 * 1000); // 1 hour
-// Also run after 2 minutes of server startup
-setTimeout(runCloudBackups, 120000); // Run after 2 minutes
+setInterval(runCloudBackups, 60 * 60 * 1000); // every hour
+setTimeout(runCloudBackups, 120000); // and 2 minutes after start
+// Syncs that were running when the server stopped did not finish.
+require('./services/cloudBackup').resetInterrupted().catch(() => {});
 
 const PORT = appConfig.server.port;
 const CLIENT_URL = appConfig.server.clientUrl;

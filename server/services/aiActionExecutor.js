@@ -1105,31 +1105,26 @@ class AIActionExecutor {
       sourcePath = cloudBackupService.getDefaultBackupPaths().documents || '';
     }
 
-    // Custom folder paths are only accepted from the Backup page, never from chat.
+    // Custom folder paths are only accepted from the Folder Sync page, never from chat.
     if (!sourcePath) {
       return {
         success: false,
-        message: 'I can set up a Desktop or Documents backup. For any other folder, use the Backup page.',
-      };
-    }
-
-    const exists = await cloudBackupService.checkPathExists(sourcePath);
-    if (!exists) {
-      return {
-        success: false,
-        message: `I can't access "${sourcePath}" from the server right now.`,
+        message: 'I can sync your Desktop or Documents folder. For any other folder, use the Folder Sync page.',
       };
     }
 
     const backupFrequency = /hourly/i.test(message) ? 'hourly' : /weekly/i.test(message) ? 'weekly' : 'daily';
-    const backup = await cloudBackupService.createOrUpdateBackup(userId, sourceType, sourcePath, {
-      enabled: true,
-      backupFrequency,
-    });
+    let backup;
+    try {
+      // Checks the folder is approved for syncing (see services/cloudBackup.js).
+      backup = await cloudBackupService.createOrUpdateBackup(userId, sourceType, sourcePath, { enabled: true, backupFrequency });
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
 
     return {
       success: true,
-      message: `Created the ${sourceType} cloud backup configuration.`,
+      message: `Set up Folder Sync for your ${sourceType} folder (${backupFrequency}). Files only stored in iCloud are skipped.`,
       data: {
         backupId: backup._id,
         sourceType: backup.sourceType,

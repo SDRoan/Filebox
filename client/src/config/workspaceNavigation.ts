@@ -16,7 +16,7 @@ export const workspacePages: WorkspacePage[] = [
   { id: 'teams', path: '/team-spaces', label: 'Team Spaces' },
   { id: 'requests', path: '/file-requests', label: 'File Requests' },
   { id: 'signatures', path: '/signatures', label: 'Signatures' },
-  { id: 'cloud-backup', path: '/backup', label: 'Backup' },
+  { id: 'cloud-backup', path: '/folder-sync', label: 'Folder Sync' },
   { id: 'trash', path: '/trash', label: 'Trash' },
   { id: 'storage', path: '/storage', label: 'Storage' },
   { id: 'settings', path: '/settings', label: 'Settings' },
@@ -33,7 +33,8 @@ export const workspacePages: WorkspacePage[] = [
 export const legacyPaths: Record<string, string> = {
   '/shared-files': '/shared',
   '/team-folders': '/team-spaces',
-  '/cloud-backup': '/backup',
+  '/cloud-backup': '/folder-sync',
+  '/backup': '/folder-sync',
   '/ai-assistant': '/ai',
   '/relationships': '/connections',
 };
