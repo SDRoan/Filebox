@@ -16,20 +16,25 @@ const CAPTIONABLE = /^image\/(png|jpe?g|webp|gif|avif|tiff|bmp)$/i;
 const inFlight = new Set();
 
 const SYSTEM = `You write captions for photos people post on social media.
-Look closely at what is actually in the picture and write one short, fun caption for it, the way a witty friend would post it.
-Rules:
-- One or two sentences, at most about 25 words. One or two fitting emoji are welcome.
-- Be playful and warm. Never make fun of how a person looks, and never guess who someone is.
-- The caption must match this picture: mention something you can really see.
-- Also give 2 to 4 short hashtags about the picture (letters and numbers only, no spaces).`;
+First, in "seen", list in a few words only what is clearly visible in the picture (colors, objects, mood). Do not add things you cannot see.
+Then write "caption": one short, witty caption built on something from "seen", the way a funny friend would post it.
+Rules for the caption:
+- At most about 20 words, with one or two fitting emoji.
+- Playful and clever, not generic: avoid plain descriptions like "nature is so pretty". A pun, a joke or a relatable feeling is great.
+- Never make fun of how a person looks, and never guess who someone is.
+Finally give 2 to 4 short hashtags about the picture (letters and numbers only, no spaces).
+Examples of the tone:
+- seen: "a cat asleep on a laptop keyboard" -> caption: "My coworker refuses to let me answer emails today 🐈💻"
+- seen: "a stack of pancakes with syrup" -> caption: "Stack goals achieved. Diet starts… eventually 🥞"`;
 
 const FORMAT = {
   type: 'object',
   properties: {
+    seen: { type: 'string' },
     caption: { type: 'string' },
     hashtags: { type: 'array', items: { type: 'string' } },
   },
-  required: ['caption', 'hashtags'],
+  required: ['seen', 'caption', 'hashtags'],
 };
 
 const canCaption = (file) => CAPTIONABLE.test(String(file?.mimeType || ''));
