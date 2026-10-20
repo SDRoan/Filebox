@@ -289,7 +289,9 @@ class CloudBackupService {
 
   /** Syncs left "in progress" by a server restart are marked as stopped. */
   async resetInterrupted() {
-    await CloudBackup.updateMany({ status: 'backing_up' }, { $set: { status: 'failed', lastError: 'Stopped when File Box restarted. Run it again to finish.' } });
+    // Not retried automatically for an hour, so a sync that keeps stopping the server cannot loop.
+    const retryAt = new Date(Date.now() + 60 * 60 * 1000);
+    await CloudBackup.updateMany({ status: 'backing_up' }, { $set: { status: 'failed', nextBackupAt: retryAt, lastError: 'Stopped when File Box restarted. Choose Sync now to finish; files already copied are kept.' } });
   }
 }
 
