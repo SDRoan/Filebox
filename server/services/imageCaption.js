@@ -52,7 +52,7 @@ const cleanTag = (tag) => String(tag || '').replace(/[^\p{L}\p{N}_]/gu, '').slic
 
 function parseCaption(text) {
   const data = JSON.parse(text);
-  const caption = String(data.caption || '').replace(/\s+/g, ' ').trim().replace(/^["“]|["”]$/g, '');
+  const caption = String(data.caption || '').replace(/[*_]{1,2}([^*_]+)[*_]{1,2}/g, '$1').replace(/\s+/g, ' ').trim().replace(/^["“]|["”]$/g, '');
   if (!caption) throw new Error('The model wrote an empty caption.');
   const hashtags = [...new Set((data.hashtags || []).map(cleanTag).filter(Boolean))].slice(0, MAX_TAGS);
   return { caption: caption.slice(0, 280), hashtags };
