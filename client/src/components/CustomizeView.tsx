@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AccentPicker from './AccentPicker';
 import FontSelect from './FontSelect';
 import { sidebarSections, orderedItems, navLabel } from './Sidebar';
@@ -10,6 +10,7 @@ import {
   customCssPaused, darkModeLook, fontStack, isBackgroundImage, isDark, isImageUrl, prepareBackgroundImage, presetAppearance, sanitizeAppearance,
 } from '../theme/appearance';
 import { workspacePages } from '../config/workspaceNavigation';
+import { MATCH_STYLES, PaletteColor, matchColors, paletteFromCss, paletteFromImage } from '../theme/palette';
 import { ArrowUpIcon, ChevronDownIcon, CheckIcon, DownloadIcon, UploadIcon } from './Icons';
 import './OverviewPages.css';
 import './CustomizeView.css';
@@ -47,6 +48,9 @@ const CSS_HOOKS: Array<[string, string]> = [
   ['--fb-page-bg, --fb-surface, --fb-sidebar-bg', 'colors (variables)'],
   ['--font-sans, --fb-heading-font, --fb-radius-scale', 'fonts and corners (variables)'],
 ];
+
+// Asks for the sidebar and top bar to be matched again now (they are otherwise matched once per background).
+const REMATCH = 'rematch';
 
 const STATUS_TEXT = { '': '', saving: 'Saving…', saved: 'Saved to your account', local: 'Saved in this browser only (could not reach File Box)' };
 
@@ -119,6 +123,15 @@ const CustomizeView: React.FC = () => {
   const [pictureBusy, setPictureBusy] = useState(false);
   const [linkDraft, setLinkDraft] = useState(appearance.background.url);
   const bg = appearance.background;
+  // The background's main colors, with the background they were read from (reading a picture takes a moment).
+  const [read, setRead] = useState<{ key: string; colors: PaletteColor[] | 'unreadable' } | null>(null);
+
+  // What the background is drawn from, and a short key for it (so colors are matched once per background).
+  const presetCss = bg.kind === 'preset' ? BACKGROUND_PRESETS.find(p => p.id === bg.preset)?.css : undefined;
+  const pictureSrc = bg.kind === 'image' ? backgroundImage : bg.kind === 'url' ? bg.url : null;
+  const sourceKey = presetCss ? `preset:${bg.preset}`
+    : pictureSrc ? `${bg.kind}:${pictureSrc.length}:${pictureSrc.slice(-48)}` : '';
+  const sampleBackground = presetCss || (pictureSrc ? `url("${pictureSrc}") center / cover no-repeat` : undefined);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const layout = appearance.sidebar;
   const dark = appearance.mode === 'dark';
@@ -130,6 +143,34 @@ const CustomizeView: React.FC = () => {
     setAccentKey(key => key + 1);
     preferencesAPI.setAccent(value).catch(() => { /* kept in this browser */ });
   };
+
+  // Read the background's main colors whenever it changes.
+  useEffect(() => {
+    let cancelled = false;
+    if (presetCss) setRead({ key: sourceKey, colors: paletteFromCss(presetCss) });
+    else if (pictureSrc) paletteFromImage(pictureSrc).then(colors => { if (!cancelled) setRead({ key: sourceKey, colors: colors || 'unreadable' }); });
+    else setRead(null);
+    return () => { cancelled = true; };
+  }, [presetCss, pictureSrc, sourceKey]);
+
+  // Only colors read from the background now showing (not the one before it).
+  const palette = read && read.key === sourceKey ? read.colors : null;
+  const matches = useMemo(() => (Array.isArray(palette) ? matchColors(palette, dark) : []), [palette, dark]);
+
+  // Match automatically: recolor the sidebar and top bar when the background, mode or style changes.
+  const matchKey = `${sourceKey}|${appearance.mode}|${bg.matchStyle}|${bg.matchAccent ? 'accent' : ''}`;
+  useEffect(() => {
+    if (!bg.matchColors || !sourceKey || !matches.length || bg.matchedFor === matchKey) return;
+    const match = matches.find(m => m.style === bg.matchStyle) || matches[0];
+    // Colors someone chose before matching existed are kept until the background changes.
+    if (!bg.matchedFor && (appearance.sidebarColor || appearance.headerColor)) {
+      updateBackground({ matchedFor: matchKey });
+      return;
+    }
+    update({ sidebarColor: match.sidebar, headerColor: match.header, background: { ...bg, matchedFor: matchKey } });
+    if (bg.matchAccent) setAccent(match.accent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchKey, matches, bg.matchColors]);
 
   const applyPreset = (preset: ThemePreset) => {
     replace(presetAppearance(preset, appearance));
@@ -364,6 +405,51 @@ const CustomizeView: React.FC = () => {
                   {bg.fade < 0.45 && <p className="customize-note">With little fade, text on the page can be hard to read over busy or dark pictures. Raise the fade if it is.</p>}
                 </div>
                 <Toggle label="Show behind the sidebar too" hint="The sidebar becomes see-through." checked={bg.behindSidebar} onChange={(behindSidebar) => updateBackground({ behindSidebar })} />
+
+                <div className="customize-field customize-match">
+                  <h3>Sidebar and top bar</h3>
+                  {palette === 'unreadable' && <p className="customize-note">This picture’s colors can’t be read (its website doesn’t allow it). Choose the sidebar and top bar colors yourself below.</p>}
+                  {Array.isArray(palette) && palette.length > 0 && (
+                    <div className="customize-palette">
+                      <span>Colors in your background</span>
+                      <div className="customize-palette-bar fb-true-color" aria-label={`Colors in your background: ${palette.slice(0, 6).map(c => c.hex.toUpperCase()).join(', ')}`}>
+                        {palette.slice(0, 6).map(c => <span key={c.hex} style={{ background: c.hex, flexGrow: Math.max(c.weight, 0.08) }} title={c.hex.toUpperCase()} />)}
+                      </div>
+                    </div>
+                  )}
+                  <Toggle label="Match the background automatically" hint="File Box picks sidebar and top bar colors from your background, keeping text easy to read. They update when the background or mode changes."
+                    checked={bg.matchColors} onChange={(on) => updateBackground({ matchColors: on, matchedFor: on ? REMATCH : bg.matchedFor })} />
+                  {matches.length > 0 && (
+                    <div className="customize-matches" role="radiogroup" aria-label="Color style">
+                      {matches.map(match => {
+                        const style = MATCH_STYLES.find(s => s.id === match.style)!;
+                        const selected = bg.matchColors && bg.matchStyle === match.style;
+                        return (
+                          <button key={match.style} role="radio" aria-checked={selected} className={selected ? 'selected' : ''}
+                            onClick={() => updateBackground({ matchColors: true, matchStyle: match.style, matchedFor: bg.matchColors && bg.matchStyle === match.style ? bg.matchedFor : REMATCH })}>
+                            <span className="match-sample fb-true-color" style={{ background: sampleBackground }} aria-hidden="true">
+                              <span className="match-sample-top" style={{ background: match.header }} />
+                              <span className="match-sample-side" style={{ background: match.sidebar }}>
+                                <span style={{ background: match.accent }} />
+                              </span>
+                            </span>
+                            <strong>{style.name}{selected && <CheckIcon size={13} />}</strong>
+                            <small>{style.description}</small>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <Toggle label="Also match the accent color" hint="Buttons and highlights take the background’s brightest color." checked={bg.matchAccent}
+                    onChange={(matchAccent) => updateBackground({ matchAccent, matchColors: matchAccent ? true : bg.matchColors, matchedFor: REMATCH })} />
+                  <div className="customize-colors">
+                    <ColorChoice label="Sidebar" hint={bg.matchColors ? 'matched to the background' : 'chosen by you'} value={appearance.sidebarColor} fallback={DEFAULT_COLORS.sidebar} dark={dark}
+                      onChange={(sidebarColor) => update({ sidebarColor, background: { ...bg, matchColors: false } })} />
+                    <ColorChoice label="Top bar" hint={bg.matchColors ? 'matched to the background' : 'chosen by you'} value={appearance.headerColor} fallback={appearance.pageColor || DEFAULT_COLORS.header} dark={dark}
+                      onChange={(headerColor) => update({ headerColor, background: { ...bg, matchColors: false } })} />
+                  </div>
+                  {!bg.matchColors && <p className="customize-hint">Changing a color yourself turns off automatic matching. Pick a style above to match again.</p>}
+                </div>
               </>
             )}
           </>

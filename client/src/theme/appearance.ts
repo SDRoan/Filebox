@@ -46,6 +46,12 @@ export interface BackgroundLayout {
   fade: number;
   blur: number;
   behindSidebar: boolean;
+  // Sidebar and top bar colors chosen to go with the background (theme/palette.ts).
+  matchColors: boolean;
+  matchStyle: 'soft' | 'colorful' | 'neutral';
+  matchAccent: boolean;
+  // Which background (and mode and style) the colors were last matched to, so they are not redone needlessly.
+  matchedFor: string;
 }
 
 // Ready-made backgrounds (Settings > Customize > Background).
@@ -94,7 +100,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
   reduceMotion: false,
   sidebar: { position: 'left', style: 'full', showSectionTitles: true, hidden: [], order: [], labels: {}, sectionTitles: {} },
   home: { title: '', showGreeting: true, showShortcuts: true, showDay: true, showSuggestions: true },
-  background: { kind: 'none', preset: '', url: '', fade: 0.55, blur: 0, behindSidebar: false },
+  background: { kind: 'none', preset: '', url: '', fade: 0.55, blur: 0, behindSidebar: false, matchColors: true, matchStyle: 'soft', matchAccent: false, matchedFor: '' },
   customCss: '',
 };
 
@@ -207,6 +213,10 @@ export function sanitizeAppearance(input: unknown): Appearance {
       fade: num(bg.fade, d.background.fade, BACKGROUND_FADE),
       blur: num(bg.blur, d.background.blur, BACKGROUND_BLUR),
       behindSidebar: bool(bg.behindSidebar, d.background.behindSidebar),
+      matchColors: bool(bg.matchColors, d.background.matchColors),
+      matchStyle: (['soft', 'colorful', 'neutral'] as const).find(style => style === bg.matchStyle) || d.background.matchStyle,
+      matchAccent: bool(bg.matchAccent, d.background.matchAccent),
+      matchedFor: text(bg.matchedFor, 200),
     },
     customCss: text(a.customCss, MAX_CUSTOM_CSS),
   };

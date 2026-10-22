@@ -69,6 +69,10 @@ function sanitizeAppearance(input) {
       fade: num(bg.fade, 0.55, 0, 0.95),
       blur: num(bg.blur, 0, 0, 24),
       behindSidebar: bool(bg.behindSidebar, false),
+      matchColors: bool(bg.matchColors, true),
+      matchStyle: ['soft', 'colorful', 'neutral'].includes(bg.matchStyle) ? bg.matchStyle : 'soft',
+      matchAccent: bool(bg.matchAccent, false),
+      matchedFor: text(bg.matchedFor, 200),
     },
     customCss: typeof input.customCss === 'string' ? input.customCss.slice(0, MAX_CUSTOM_CSS) : '',
   };
