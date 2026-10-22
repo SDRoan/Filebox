@@ -1224,9 +1224,20 @@ export interface DayOverview {
 }
 
 export const preferencesAPI = {
-  get: async (): Promise<{ accentColor: string | null }> => {
+  get: async (): Promise<{ accentColor: string | null; appearance: unknown | null }> => {
     const response = await api.get('/users/preferences');
     return response.data;
+  },
+  setAppearance: async (appearance: unknown): Promise<{ appearance: unknown }> => {
+    const response = await api.put('/users/preferences', { appearance });
+    return response.data;
+  },
+  getBackground: async (): Promise<{ image: string | null }> => {
+    const response = await api.get('/users/preferences/background');
+    return response.data;
+  },
+  setBackground: async (image: string | null): Promise<void> => {
+    await api.put('/users/preferences/background', { image });
   },
   setAccent: async (accentColor: string | null): Promise<{ accentColor: string | null }> => {
     const response = await api.put('/users/preferences', { accentColor });

@@ -6,6 +6,8 @@ import SearchBar from './SearchBar';
 import HomeView from './HomeView';
 import RecentView from './RecentView';
 import SettingsView from './SettingsView';
+import CustomizeView from './CustomizeView';
+import TopBarColor from './TopBarColor';
 import StorageView from './StorageView';
 import TeamFolders from './TeamFolders';
 import FileRequests from './FileRequests';
@@ -23,6 +25,7 @@ import Integrations from './Integrations';
 import SignatureManager from './SignatureManager';
 import { FileRowItem } from './FileRowList';
 import { useAuth } from '../context/AuthContext';
+import { useAppearance } from '../context/AppearanceContext';
 import { FileItemType } from '../types';
 import { getWorkspacePage, pagePath } from '../config/workspaceNavigation';
 import { preferencesAPI } from '../services/api';
@@ -36,6 +39,7 @@ const Dashboard: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { appearance } = useAppearance();
   const page = getWorkspacePage(location.pathname);
   const currentView = page.id;
   const setCurrentView = useCallback((view: string, state?: unknown) => navigate(pagePath(view), state ? { state } : undefined), [navigate]);
@@ -118,7 +122,8 @@ const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="dashboard">
+    <div className={`dashboard ${appearance.sidebar.position === 'right' ? 'sidebar-right' : ''}`}>
+      <div className="dashboard-backdrop" aria-hidden="true" />
       <a className="skip-link" href="#main-content">Skip to content</a>
       <Sidebar
         currentView={currentView}
@@ -135,8 +140,9 @@ const Dashboard: React.FC = () => {
           <button className="mobile-nav-toggle" onClick={() => setMobileNavOpen(!mobileNavOpen)} aria-label="Open navigation" aria-expanded={mobileNavOpen} aria-controls="workspace-navigation">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
-          <div className="workspace-breadcrumb"><span>File Box</span><span aria-hidden="true">/</span><strong>{page.label}</strong></div>
+          <div className="workspace-breadcrumb"><span>{appearance.brandName.trim() || 'File Box'}</span><span aria-hidden="true">/</span><strong>{page.label}</strong></div>
           {currentView !== 'home' && <SearchBar onFileClick={openFile} onFolderClick={handleFolderClick} />}
+          <TopBarColor />
         </header>
         <div className={`workspace-view workspace-view-${currentView}`}>
         {currentView === 'home' && (
@@ -241,6 +247,9 @@ const Dashboard: React.FC = () => {
         )}
         {currentView === 'settings' && (
           <SettingsView onOpenPage={handleViewChange} />
+        )}
+        {currentView === 'customize' && (
+          <CustomizeView />
         )}
         {currentView === 'relationships' && (
           <RelationshipsList key={relationshipsRefreshKey} />

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { homeAPI, searchAPI, HomeOverview, HomeSuggestion } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useAppearance } from '../context/AppearanceContext';
 import { FileItem, Folder } from '../types';
 import { pagePath } from '../config/workspaceNavigation';
 import FileRowList, { FileRowItem } from './FileRowList';
@@ -41,6 +42,7 @@ const greeting = () => {
 
 const HomeView: React.FC<HomeViewProps> = ({ onOpenFile, onOpenFolder }) => {
   const { user, isLocalPreview } = useAuth();
+  const { home } = useAppearance().appearance;
   const navigate = useNavigate();
   const [overview, setOverview] = useState<HomeOverview | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -108,11 +110,25 @@ const HomeView: React.FC<HomeViewProps> = ({ onOpenFile, onOpenFolder }) => {
   const firstName = isLocalPreview ? '' : (user?.name || '').split(' ')[0];
   const isEmpty = overview && !overview.continueWorking.length && !overview.activity.length && !overview.suggestions.length;
 
+  const suggestionCards = () => (
+    <div className="suggestion-cards" aria-label="File Box suggestions">
+      {visibleSuggestions.map(suggestion => (
+        <article key={suggestion.id} className="suggestion-card">
+          <button className="suggestion-dismiss" onClick={() => dismiss(suggestion)} aria-label={`Dismiss: ${suggestion.noticed}`} title="Dismiss"><CloseIcon size={14} /></button>
+          <h3>{suggestion.noticed}</h3>
+          <p className="suggestion-why">{suggestion.why}</p>
+          <p className="suggestion-recommendation">{suggestion.recommendation}</p>
+          <button className="btn-secondary suggestion-action" onClick={() => runSuggestion(suggestion)}>{suggestion.action.label}</button>
+        </article>
+      ))}
+    </div>
+  );
+
   return (
     <div className="overview-page home-view">
       <header className="home-hero">
-        <p className="home-greeting">{greeting()}{firstName ? `, ${firstName}` : ''}</p>
-        <h1>Ask File Box</h1>
+        {home.showGreeting && <p className="home-greeting">{greeting()}{firstName ? `, ${firstName}` : ''}</p>}
+        <h1>{home.title.trim() || 'Ask File Box'}</h1>
         <form className="home-search" role="search" onSubmit={(event) => { event.preventDefault(); if (query.trim()) askFileBox(query.trim()); }}>
           <SearchIcon size={18} />
           <input
@@ -124,9 +140,11 @@ const HomeView: React.FC<HomeViewProps> = ({ onOpenFile, onOpenFolder }) => {
           />
           {query.trim() && <kbd>Enter to ask File Box</kbd>}
         </form>
-        <div className="home-chips" aria-label="Things File Box can do">
-          {CHIPS.map(chip => <button key={chip.label} onClick={() => runChip(chip)}>{chip.label}</button>)}
-        </div>
+        {home.showShortcuts && (
+          <div className="home-chips" aria-label="Things File Box can do">
+            {CHIPS.map(chip => <button key={chip.label} onClick={() => runChip(chip)}>{chip.label}</button>)}
+          </div>
+        )}
 
         {results && (
           <div className="home-search-results" aria-live="polite">
@@ -172,21 +190,10 @@ const HomeView: React.FC<HomeViewProps> = ({ onOpenFile, onOpenFolder }) => {
         </section>
       )}
 
-      {overview && !isEmpty && (
+      {overview && !isEmpty && !home.showDay && home.showSuggestions && visibleSuggestions.length > 0 && suggestionCards()}
+      {overview && !isEmpty && home.showDay && (
         <DayView onOpenFile={onOpenFile}>
-          {visibleSuggestions.length > 0 && (
-            <div className="suggestion-cards" aria-label="File Box suggestions">
-              {visibleSuggestions.map(suggestion => (
-                <article key={suggestion.id} className="suggestion-card">
-                  <button className="suggestion-dismiss" onClick={() => dismiss(suggestion)} aria-label={`Dismiss: ${suggestion.noticed}`} title="Dismiss"><CloseIcon size={14} /></button>
-                  <h3>{suggestion.noticed}</h3>
-                  <p className="suggestion-why">{suggestion.why}</p>
-                  <p className="suggestion-recommendation">{suggestion.recommendation}</p>
-                  <button className="btn-secondary suggestion-action" onClick={() => runSuggestion(suggestion)}>{suggestion.action.label}</button>
-                </article>
-              ))}
-            </div>
-          )}
+          {home.showSuggestions && visibleSuggestions.length > 0 && suggestionCards()}
         </DayView>
       )}
 

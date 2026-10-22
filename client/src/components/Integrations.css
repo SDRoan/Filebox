@@ -30,9 +30,9 @@
 }
 
 .integration-card {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   padding: 1.5rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   transition: all 0.2s;
@@ -55,7 +55,7 @@
 .integration-icon {
   width: 48px;
   height: 48px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   display: flex;
   align-items: center;
   justify-content: center;
@@ -73,7 +73,7 @@
   padding: 0.25rem 0.75rem;
   background: var(--fb-g-d1fae5, #d1fae5);
   color: #065f46;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   font-size: 0.75rem;
   font-weight: 600;
 }
@@ -97,7 +97,7 @@
   margin-bottom: 1rem;
   padding: 0.75rem;
   background: #f9fafb;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
 }
 
 .integration-email {
@@ -117,7 +117,7 @@
   color: white;
   border: none;
   padding: 0.625rem 1.25rem;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
@@ -137,11 +137,11 @@
 }
 
 .btn-secondary {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   color: #374151;
   border: 1px solid #d1d5db;
   padding: 0.625rem 1rem;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
@@ -159,11 +159,11 @@
 }
 
 .btn-danger {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   color: #dc2626;
   border: 1px solid #fecaca;
   padding: 0.625rem 1rem;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
@@ -197,7 +197,7 @@
 .integrations-info {
   background: #f9fafb;
   border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   padding: 1.5rem;
   margin-top: 2rem;
 }

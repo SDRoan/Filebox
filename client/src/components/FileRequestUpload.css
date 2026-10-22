@@ -8,9 +8,9 @@
 }
 
 .upload-container {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   padding: 40px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
   max-width: 600px;
   width: 100%;
@@ -37,7 +37,7 @@
 
 .status-message {
   padding: 15px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   margin-bottom: 20px;
   font-weight: 600;
 }
@@ -58,7 +58,7 @@
   justify-content: center;
   padding: 60px 20px;
   border: 3px dashed #6b7280;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   background: #f8f9ff;
   cursor: pointer;
   transition: all 0.3s;
@@ -116,7 +116,7 @@
   gap: 12px;
   padding: 12px;
   background: #f9f9f9;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
 }
 
 .file-icon {

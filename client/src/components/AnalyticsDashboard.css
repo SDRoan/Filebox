@@ -14,7 +14,7 @@
 
 .analytics-container {
   background: #1e1e1e;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   width: 100%;
   max-width: 1200px;
   max-height: 90vh;
@@ -47,7 +47,7 @@
   background: #2a2a2a;
   color: #fff;
   border: 1px solid #444;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   padding: 0.5rem 1rem;
   font-size: 0.9rem;
   cursor: pointer;
@@ -62,7 +62,7 @@
   background: #444;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   width: 32px;
   height: 32px;
   cursor: pointer;
@@ -89,7 +89,7 @@
   color: #999;
   border: none;
   padding: 0.75rem 1.5rem;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.9rem;
   transition: all 0.2s;
@@ -144,7 +144,7 @@
 
 .stat-card {
   background: #2a2a2a;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   padding: 1.5rem;
   border: 1px solid #333;
 }
@@ -173,7 +173,7 @@
   gap: 1rem;
   padding: 0.75rem;
   background: #1e1e1e;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
 }
 
 .rank {
@@ -220,7 +220,7 @@
   flex: 1;
   height: 24px;
   background: #1e1e1e;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
   overflow: hidden;
 }
 
@@ -246,7 +246,7 @@
 .storage-item {
   padding: 1rem;
   background: #1e1e1e;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
 }
 
 .storage-header {
@@ -268,7 +268,7 @@
 .storage-bar {
   height: 8px;
   background: #2a2a2a;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
   overflow: hidden;
   margin-bottom: 0.5rem;
 }
@@ -287,7 +287,7 @@
 .suggestion-item {
   padding: 1rem;
   background: #1e1e1e;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   margin-bottom: 1rem;
   border-left: 3px solid #2ecc71;
 }
@@ -319,7 +319,7 @@
 .unused-file {
   padding: 1rem;
   background: #1e1e1e;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   border-left: 3px solid #e74c3c;
 }
 
@@ -364,14 +364,14 @@
   margin-bottom: 1.5rem;
   padding: 1rem;
   background: #1e1e1e;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
 }
 
 .line-chart-container {
   margin-bottom: 1.5rem;
   padding: 1rem;
   background: #1e1e1e;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   height: 250px;
   display: flex;
   align-items: center;
@@ -414,7 +414,7 @@
   width: 100%;
   max-width: 40px;
   background: linear-gradient(180deg, #6b7280 0%, #4b5563 100%);
-  border-radius: 4px 4px 0 0;
+  border-radius: calc(4px * var(--fb-radius-scale, 1)) calc(4px * var(--fb-radius-scale, 1)) 0 0;
   transition: all 0.3s;
   cursor: pointer;
   min-height: 4px;
@@ -440,7 +440,7 @@
   margin-bottom: 2rem;
   padding: 1rem;
   background: #1e1e1e;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
 }
 
 .pie-chart-svg {
@@ -523,7 +523,7 @@
   width: 100%;
   height: 20px;
   border: 1px solid #333;
-  border-radius: 3px;
+  border-radius: calc(3px * var(--fb-radius-scale, 1));
   transition: all 0.2s;
   cursor: pointer;
   min-height: 20px;
@@ -551,7 +551,7 @@
   width: 200px;
   height: 12px;
   background: linear-gradient(90deg, rgba(107, 114, 128, 0.1) 0%, rgba(107, 114, 128, 1) 100%);
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
   border: 1px solid #333;
 }
 

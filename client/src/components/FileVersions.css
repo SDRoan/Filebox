@@ -51,9 +51,9 @@
   align-items: center;
   padding: 15px;
   border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   margin-bottom: 10px;
-  background: white;
+  background: var(--fb-surface, #ffffff);
 }
 
 .version-info {
@@ -77,7 +77,7 @@
   background: #6b7280;
   color: white;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
   font-size: 11px;
   font-weight: 600;
 }
@@ -105,7 +105,7 @@
 .version-btn {
   background: none;
   border: 1px solid #ddd;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   padding: 8px 12px;
   cursor: pointer;
   font-size: 16px;

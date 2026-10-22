@@ -14,23 +14,23 @@
 .accent-current { display: flex; align-items: center; gap: 12px; }
 .accent-current strong { display: block; font-size: 14px; color: #2f3330; }
 .accent-current span { font-size: 12px; color: #6f736d; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-.accent-swatch.large { width: 40px; height: 40px; border-radius: 10px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1); }
+.accent-swatch.large { width: 40px; height: 40px; border-radius: calc(10px * var(--fb-radius-scale, 1)); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1); }
 .accent-presets { display: flex; flex-wrap: wrap; gap: 8px; }
 .accent-presets button { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15); cursor: pointer; }
 .accent-presets button.selected { box-shadow: 0 0 0 2px #2f3330; }
 .accent-exact { display: flex; align-items: center; gap: 10px; font-size: 13px; color: #4a4f47; }
-.accent-exact input { width: 44px; height: 30px; padding: 0; border: 1px solid #d9dcd5; border-radius: 6px; background: none; cursor: pointer; }
+.accent-exact input { width: 44px; height: 30px; padding: 0; border: 1px solid #d9dcd5; border-radius: calc(6px * var(--fb-radius-scale, 1)); background: none; cursor: pointer; }
 .accent-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .accent-status { font-size: 12px; color: #6f736d; }
-.accent-preview { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px; border: 1px dashed #d9dcd5; border-radius: 10px; }
-.accent-preview-chip { padding: 4px 10px; border-radius: 999px; background: var(--fb-g-eef3e8, #eef3e8); color: var(--fb-g-4f6b43, #4f6b43); font-size: 12px; }
+.accent-preview { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px; border: 1px dashed #d9dcd5; border-radius: calc(10px * var(--fb-radius-scale, 1)); }
+.accent-preview-chip { padding: 4px 10px; border-radius: calc(999px * var(--fb-radius-scale, 1)); background: var(--fb-g-eef3e8, #eef3e8); color: var(--fb-g-4f6b43, #4f6b43); font-size: 12px; }
 .accent-preview-text { font-size: 13px; color: var(--fb-g-3f6543, #3f6543); font-weight: 600; }
 @media (max-width: 480px) {
   .accent-picker { justify-content: center; }
   .accent-wheel { width: 180px; height: 180px; }
 }
 .accent-brightness { display: grid; gap: 6px; font-size: 13px; color: #4a4f47; max-width: 320px; }
-.accent-brightness input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 12px; border-radius: 999px; outline: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12); }
-.accent-brightness input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #fff; border: 2px solid #2f3330; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); cursor: pointer; }
-.accent-brightness input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 2px solid #2f3330; cursor: pointer; }
+.accent-brightness input[type="range"] { -webkit-appearance: none; appearance: none; width: 100%; height: 12px; border-radius: calc(999px * var(--fb-radius-scale, 1)); outline: none; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12); }
+.accent-brightness input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--fb-surface, #ffffff); border: 2px solid #2f3330; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); cursor: pointer; }
+.accent-brightness input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--fb-surface, #ffffff); border: 2px solid #2f3330; cursor: pointer; }
 .accent-note { margin: -6px 0 0; font-size: 12px; color: #8a6a3a; }

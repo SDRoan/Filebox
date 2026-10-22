@@ -53,6 +53,8 @@ app.use(cors({
   },
   credentials: true
 }));
+// Settings > Customize > Background: an uploaded picture is larger than other requests.
+app.use('/api/users/preferences/background', express.json({ limit: '4mb' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

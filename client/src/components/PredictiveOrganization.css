@@ -1,6 +1,6 @@
 .predictive-org-container {
   background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   margin: 1rem 0;
   box-shadow: 0 4px 12px rgba(75, 85, 99, 0.3);
   overflow: visible;
@@ -59,7 +59,7 @@
 .suggestion-count {
   background: rgba(255, 255, 255, 0.3);
   padding: 0.25rem 0.5rem;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   font-size: 0.85rem;
   font-weight: 600;
 }
@@ -84,7 +84,7 @@
 }
 
 .predictive-org-content {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   padding: 1rem;
   border-top: 1px solid rgba(255, 255, 255, 0.2);
   overflow: visible;
@@ -116,7 +116,7 @@
 
 .suggestion-card {
   background: #f8f9fa;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   padding: 1rem;
   margin-bottom: 0.75rem;
   border-left: 4px solid #6b7280;
@@ -168,7 +168,7 @@
 .confidence-badge,
 .occurrences-badge {
   padding: 0.25rem 0.75rem;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   font-size: 0.8rem;
   font-weight: 600;
   color: white;
@@ -192,7 +192,7 @@
 .ignore-btn {
   padding: 0.5rem 1rem;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.85rem;
   font-weight: 500;

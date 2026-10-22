@@ -2,15 +2,15 @@
 .sign-pdf .sign-pdf-body { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 20px; padding: 4px 2px 6px; }
 .sign-pdf-controls { display: grid; gap: 12px; align-content: start; }
 .sign-pdf-controls label { display: grid; gap: 6px; font-size: 12px; font-weight: 600; color: #4a4f47; }
-.sign-pdf-controls select { padding: 7px 9px; border: 1px solid var(--fb-g-dfe6d6, #dfe6d6); border-radius: 6px; font-size: 13px; }
+.sign-pdf-controls select { padding: 7px 9px; border: 1px solid var(--fb-g-dfe6d6, #dfe6d6); border-radius: calc(6px * var(--fb-radius-scale, 1)); font-size: 13px; }
 .sign-pdf-controls input[type="range"] { width: 100%; }
-.sign-pdf-sample { width: 100%; max-height: 80px; object-fit: contain; padding: 6px; border: 1px solid var(--fb-g-e6ebe0, #e6ebe0); border-radius: 8px; background: #fff; }
+.sign-pdf-sample { width: 100%; max-height: 80px; object-fit: contain; padding: 6px; border: 1px solid var(--fb-g-e6ebe0, #e6ebe0); border-radius: calc(8px * var(--fb-radius-scale, 1)); background: var(--fb-surface, #ffffff); }
 .sign-pdf-pages { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 12px; color: #5d6458; }
 .sign-pdf-pages .btn-secondary { padding: 5px 9px; font-size: 12px; }
 .sign-pdf-hint { margin: 0; font-size: 12px; color: #6f736d; }
 .sign-pdf-error { margin: 0; font-size: 12px; color: #a33a2a; }
-.sign-pdf-stage { max-height: 70vh; overflow: auto; padding: 12px; border-radius: 10px; background: #eceeea; }
-.sign-pdf-page { position: relative; max-width: 640px; margin: 0 auto; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15); cursor: crosshair; }
+.sign-pdf-stage { max-height: 70vh; overflow: auto; padding: 12px; border-radius: calc(10px * var(--fb-radius-scale, 1)); background: #eceeea; }
+.sign-pdf-page { position: relative; max-width: 640px; margin: 0 auto; background: var(--fb-surface, #ffffff); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15); cursor: crosshair; }
 .sign-pdf-page > img:first-child { display: block; width: 100%; height: auto; user-select: none; }
 .sign-pdf-loading { display: grid; place-items: center; height: 420px; color: #8a8f86; font-size: 13px; }
 .sign-pdf-placed { position: absolute; height: auto; pointer-events: none; outline: 1px dashed var(--fb-g-7f9e6c, #7f9e6c); outline-offset: 2px; }

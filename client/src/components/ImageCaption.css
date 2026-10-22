@@ -7,7 +7,7 @@
 .image-caption-icon { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--fb-g-6d8b58, #6d8b58); cursor: pointer; }
 .image-caption-icon:hover, .image-caption-icon:focus-visible { background: var(--fb-g-eef3e8, #eef3e8); color: var(--fb-g-3f6543, #3f6543); }
 .image-caption.writing { display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 11px; color: var(--fb-g-6d8b58, #6d8b58); animation: image-caption-pulse 1.6s ease-in-out infinite; }
-.image-caption-again { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; padding: 2px 8px; border: 1px solid var(--fb-g-e0e6d8, #e0e6d8); border-radius: 999px; background: #fff; color: var(--fb-g-4f6b43, #4f6b43); font-size: 11px; cursor: pointer; }
+.image-caption-again { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; padding: 2px 8px; border: 1px solid var(--fb-g-e0e6d8, #e0e6d8); border-radius: calc(999px * var(--fb-radius-scale, 1)); background: var(--fb-surface, #ffffff); color: var(--fb-g-4f6b43, #4f6b43); font-size: 11px; cursor: pointer; }
 .image-caption-again:hover { background: var(--fb-g-f5f7f0, #f5f7f0); }
 .image-caption-error { font-size: 11px; color: #9a5b3a; }
 .list-view .image-caption { justify-items: start; text-align: left; }

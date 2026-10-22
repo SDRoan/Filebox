@@ -1,6 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
+const { sanitizeAppearance, isBackgroundImage } = require('../utils/appearance');
 const router = express.Router();
 
 // Get user profile
@@ -13,24 +14,60 @@ router.get('/profile', auth, async (req, res) => {
   }
 });
 
-// Appearance preferences (Settings > Appearance)
+// Appearance preferences (Settings > Appearance and Settings > Customize)
 router.get('/preferences', auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select('accentColor').lean();
-    res.json({ accentColor: user?.accentColor || null });
+    const user = await User.findById(req.user._id).select('accentColor appearance').lean();
+    res.json({ accentColor: user?.accentColor || null, appearance: user?.appearance || null });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
+// Either setting can be sent alone; whatever is left out stays as it was.
 router.put('/preferences', auth, async (req, res) => {
   try {
-    const value = req.body?.accentColor;
-    if (value !== null && !(typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value))) {
-      return res.status(400).json({ message: 'Choose a color like #3f6543.' });
+    const body = req.body || {};
+    const update = {};
+    if ('accentColor' in body) {
+      const value = body.accentColor;
+      if (value !== null && !(typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value))) {
+        return res.status(400).json({ message: 'Choose a color like #3f6543.' });
+      }
+      update.accentColor = value ? value.toLowerCase() : null;
     }
-    await User.updateOne({ _id: req.user._id }, { $set: { accentColor: value ? value.toLowerCase() : null } });
-    res.json({ accentColor: value ? value.toLowerCase() : null });
+    if ('appearance' in body) {
+      if (body.appearance !== null && (typeof body.appearance !== 'object' || Array.isArray(body.appearance))) {
+        return res.status(400).json({ message: 'That look could not be read.' });
+      }
+      update.appearance = sanitizeAppearance(body.appearance);
+    }
+    if (!Object.keys(update).length) return res.status(400).json({ message: 'Nothing to save.' });
+    await User.updateOne({ _id: req.user._id }, { $set: update });
+    res.json(update);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Settings > Customize > Background: the uploaded picture, kept apart so other changes stay small.
+router.get('/preferences/background', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('+backgroundImage').lean();
+    res.json({ image: user?.backgroundImage || null });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+router.put('/preferences/background', auth, async (req, res) => {
+  try {
+    const image = req.body?.image ?? null;
+    if (image !== null && !isBackgroundImage(image)) {
+      return res.status(400).json({ message: 'Choose a JPEG, PNG or WebP picture under 3 MB.' });
+    }
+    await User.updateOne({ _id: req.user._id }, { $set: { backgroundImage: image } });
+    res.json({ saved: true });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

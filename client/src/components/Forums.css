@@ -32,7 +32,7 @@
   color: white !important;
   border: none !important;
   padding: 0.5rem 1rem !important;
-  border-radius: 6px !important;
+  border-radius: calc(6px * var(--fb-radius-scale, 1)) !important;
   cursor: pointer;
   font-size: 0.8125rem !important;
   font-weight: 600;
@@ -74,9 +74,9 @@
 .filter-select {
   padding: 0.5rem 0.75rem;
   border: 1px solid #d1d5db;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   color: #111827;
   cursor: pointer;
   transition: all 0.2s;
@@ -101,7 +101,7 @@
   width: 100%;
   padding: 0.5rem 0.75rem;
   border: 1px solid #d1d5db;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
   transition: all 0.2s;
 }
@@ -119,9 +119,9 @@
 }
 
 .post-card {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   padding: 1.25rem;
   cursor: pointer;
   transition: all 0.2s;
@@ -177,7 +177,7 @@
   padding: 0.25rem 0.5rem;
   background: #eff6ff;
   color: #4b5563;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
   font-size: 0.75rem;
   font-weight: 500;
 }
@@ -200,7 +200,7 @@
 .badge {
   display: inline-block;
   padding: 0.25rem 0.5rem;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -288,9 +288,9 @@
 }
 
 .post-detail {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   overflow: hidden;
 }
 
@@ -352,7 +352,7 @@
   padding: 0.5rem 0.75rem;
   background: #f3f4f6;
   border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
   font-weight: 500;
   color: #374151;
@@ -388,7 +388,7 @@
   padding: 0.5rem 0.75rem;
   background: #fee2e2;
   border: 1px solid #fecaca;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
   font-weight: 500;
   color: #991b1b;
@@ -423,7 +423,7 @@
 .reply-item {
   padding: 1rem;
   background: #f9fafb;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   border-left: 3px solid #4b5563;
 }
 
@@ -473,7 +473,7 @@
   width: 100%;
   padding: 0.75rem;
   border: 1px solid #d1d5db;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
   font-family: inherit;
   resize: vertical;
@@ -509,8 +509,8 @@
 }
 
 .forum-modal {
-  background: white;
-  border-radius: 8px;
+  background: var(--fb-surface, #ffffff);
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   width: 100%;
   max-width: 600px;
   max-height: 90vh;
@@ -571,7 +571,7 @@
   width: 100%;
   padding: 0.625rem 0.75rem;
   border: 1px solid #d1d5db;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
   font-family: inherit;
   transition: all 0.2s;
@@ -599,9 +599,9 @@
 
 .cancel-button {
   padding: 0.625rem 1.25rem;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #d1d5db;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
   font-weight: 500;
   color: #374151;
@@ -618,7 +618,7 @@
   padding: 0.625rem 1.25rem;
   background: #4b5563;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
   font-weight: 600;
   color: white;

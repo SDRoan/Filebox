@@ -3,10 +3,14 @@ import ReactDOM from 'react-dom/client';
 import './index.css';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
+import { AppearanceProvider } from './context/AppearanceContext';
 import { applyAccent, storedAccent } from './theme/accent';
+import { applyAppearance, applyBackgroundImage, storedAppearance, storedBackgroundImage } from './theme/appearance';
 
-// The color chosen in Settings > Appearance, applied before anything is drawn.
+// The color and look chosen in Settings, applied before anything is drawn.
 applyAccent(storedAccent());
+applyAppearance(storedAppearance());
+applyBackgroundImage(storedBackgroundImage());
 
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
@@ -15,7 +19,9 @@ const root = ReactDOM.createRoot(
 root.render(
   <React.StrictMode>
     <AuthProvider>
-      <App />
+      <AppearanceProvider>
+        <App />
+      </AppearanceProvider>
     </AuthProvider>
   </React.StrictMode>
 );

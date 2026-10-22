@@ -1,10 +1,10 @@
-.dashboard { display: flex; height: 100dvh; overflow: hidden; background: var(--fb-g-fdfdfb, #fdfdfb); font-family: var(--font-sans); }
-.dashboard-content { flex: 1; min-width: 0; height: 100dvh; display: flex; flex-direction: column; overflow-y: auto; background: var(--fb-g-fdfdfb, #fdfdfb); }
-.dashboard-header { height: 73px; min-height: 73px; padding: 0 42px; display: flex; align-items: center; gap: 24px; border-bottom: 1px solid var(--fb-g-e8e9e2, #e8e9e2); background: var(--fb-g-fdfdfb, #fdfdfb); position: sticky; top: 0; z-index: 105; }
+.dashboard { display: flex; height: 100dvh; overflow: hidden; background: var(--fb-page-bg, var(--fb-g-fdfdfb, #fdfdfb)); font-family: var(--font-sans); }
+.dashboard-content { flex: 1; min-width: 0; height: 100dvh; display: flex; flex-direction: column; overflow-y: auto; background: var(--fb-page-bg, var(--fb-g-fdfdfb, #fdfdfb)); }
+.dashboard-header { height: 73px; min-height: 73px; padding: 0 42px; display: flex; align-items: center; gap: 24px; border-bottom: 1px solid var(--fb-g-e8e9e2, #e8e9e2); background: var(--fb-header-bg, var(--fb-page-bg, var(--fb-g-fdfdfb, #fdfdfb))); position: sticky; top: 0; z-index: 105; }
 .workspace-breadcrumb { display: flex; align-items: center; gap: 13px; font-size: 12px; white-space: nowrap; color: #93988e; }
 .workspace-breadcrumb strong { color: var(--fb-g-515b4c, #515b4c); font-weight: 500; }
 .mobile-nav-toggle { display: none; border: 0; padding: 6px; background: transparent; color: var(--fb-g-354a38, #354a38); cursor: pointer; }
-.skip-link { position: fixed; top: -100px; left: 250px; z-index: 2000; background: var(--fb-g-315c45, #315c45); color: white; padding: 8px 16px; border-radius: 4px; }
+.skip-link { position: fixed; top: -100px; left: 250px; z-index: 2000; background: var(--fb-g-315c45, #315c45); color: white; padding: 8px 16px; border-radius: calc(4px * var(--fb-radius-scale, 1)); }
 .skip-link:focus { top: 10px; }
 @media (min-width: 1600px) { .dashboard-header { padding-inline: 56px; } }
 @media (max-width: 1100px) { .dashboard-header { padding-inline: 28px; } }

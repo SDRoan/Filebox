@@ -1,25 +1,25 @@
 .share-dialog-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px; background: #1d281b59; }
-.share-dialog { width: 100%; max-width: 560px; max-height: calc(100dvh - 32px); overflow-y: auto; padding: 22px 24px 18px; border-radius: 12px; background: #fff; color: var(--fb-g-3d4a37, #3d4a37); box-shadow: 0 24px 60px #1d281b33; font-family: var(--font-sans); }
+.share-dialog { width: 100%; max-width: 560px; max-height: calc(100dvh - 32px); overflow-y: auto; padding: 22px 24px 18px; border-radius: calc(12px * var(--fb-radius-scale, 1)); background: var(--fb-surface, #ffffff); color: var(--fb-g-3d4a37, #3d4a37); box-shadow: 0 24px 60px #1d281b33; font-family: var(--font-sans); }
 .share-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
 .share-dialog-header h2 { margin: 0; font-size: 17px; font-weight: 600; color: var(--fb-g-2c402c, #2c402c); overflow-wrap: anywhere; }
-.share-dialog-close { flex-shrink: 0; display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 6px; background: none; color: var(--fb-g-7d8a72, #7d8a72); cursor: pointer; }
+.share-dialog-close { flex-shrink: 0; display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: calc(6px * var(--fb-radius-scale, 1)); background: none; color: var(--fb-g-7d8a72, #7d8a72); cursor: pointer; }
 .share-dialog-close:hover { background: var(--fb-g-f0f3eb, #f0f3eb); }
 
 .share-add { display: flex; gap: 8px; }
 .share-add input { flex: 1; min-width: 0; }
-.share-dialog input[type="email"], .share-dialog input[type="password"], .share-dialog input[type="date"], .share-dialog select { min-height: 36px; padding: 7px 10px; border: 1px solid var(--fb-g-dfe7d7, #dfe7d7); border-radius: 6px; background: #fff; color: var(--fb-g-2f3c2b, #2f3c2b); font: inherit; font-size: 13px; }
+.share-dialog input[type="email"], .share-dialog input[type="password"], .share-dialog input[type="date"], .share-dialog select { min-height: 36px; padding: 7px 10px; border: 1px solid var(--fb-g-dfe7d7, #dfe7d7); border-radius: calc(6px * var(--fb-radius-scale, 1)); background: var(--fb-surface, #ffffff); color: var(--fb-g-2f3c2b, #2f3c2b); font: inherit; font-size: 13px; }
 .share-dialog input:focus, .share-dialog select:focus { outline: 2px solid var(--fb-g-c9d9bd, #c9d9bd); border-color: var(--fb-g-a7bc96, #a7bc96); }
 .share-hint { margin: 8px 0 0; font-size: 11px; line-height: 1.5; color: var(--fb-g-8a967e, #8a967e); }
-.share-message { margin: 12px 0 0; padding: 8px 11px; border-radius: 6px; background: var(--fb-g-eef4e7, #eef4e7); color: var(--fb-g-3f5a37, #3f5a37); font-size: 12px; }
+.share-message { margin: 12px 0 0; padding: 8px 11px; border-radius: calc(6px * var(--fb-radius-scale, 1)); background: var(--fb-g-eef4e7, #eef4e7); color: var(--fb-g-3f5a37, #3f5a37); font-size: 12px; }
 .share-message.error { background: #fdf3ef; color: #8a4532; }
 
-.share-primary, .share-secondary, .share-link-button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 7px 14px; border-radius: 6px; font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.share-primary, .share-secondary, .share-link-button { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 7px 14px; border-radius: calc(6px * var(--fb-radius-scale, 1)); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; }
 .share-primary { border: 0; background: var(--fb-g-3f6543, #3f6543); color: #fff; }
 .share-primary:hover:not(:disabled) { background: var(--fb-g-315536, #315536); }
 .share-primary:disabled { opacity: .5; cursor: not-allowed; }
-.share-secondary { border: 1px solid var(--fb-g-dfe7d7, #dfe7d7); background: #fff; color: var(--fb-g-4f6346, #4f6346); }
+.share-secondary { border: 1px solid var(--fb-g-dfe7d7, #dfe7d7); background: var(--fb-surface, #ffffff); color: var(--fb-g-4f6346, #4f6346); }
 .share-secondary:hover:not(:disabled) { border-color: var(--fb-g-a7bc96, #a7bc96); }
-.share-link-button { min-height: 30px; padding: 5px 10px; border: 1px solid var(--fb-g-dfe7d7, #dfe7d7); background: #fff; color: var(--fb-g-3f6543, #3f6543); font-size: 12px; }
+.share-link-button { min-height: 30px; padding: 5px 10px; border: 1px solid var(--fb-g-dfe7d7, #dfe7d7); background: var(--fb-surface, #ffffff); color: var(--fb-g-3f6543, #3f6543); font-size: 12px; }
 
 .share-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--fb-g-edf0e8, #edf0e8); }
 .share-section h3 { margin: 0 0 8px; font-size: 11px; font-weight: 600; letter-spacing: 1.1px; text-transform: uppercase; color: var(--fb-g-6f7a66, #6f7a66); }
@@ -39,10 +39,10 @@
 .share-person strong { font-size: 13px; font-weight: 500; color: var(--fb-g-2f3c2b, #2f3c2b); }
 .share-person small { font-size: 11px; color: var(--fb-g-8a967e, #8a967e); }
 .share-role-static { font-size: 12px; color: var(--fb-g-7d8a72, #7d8a72); padding-right: 4px; }
-.share-icon-button { display: grid; place-items: center; flex-shrink: 0; width: 30px; height: 30px; border: 0; border-radius: 6px; background: none; color: var(--fb-g-7d8a72, #7d8a72); cursor: pointer; }
+.share-icon-button { display: grid; place-items: center; flex-shrink: 0; width: 30px; height: 30px; border: 0; border-radius: calc(6px * var(--fb-radius-scale, 1)); background: none; color: var(--fb-g-7d8a72, #7d8a72); cursor: pointer; }
 .share-icon-button:hover:not(:disabled) { background: var(--fb-g-f0f3eb, #f0f3eb); color: var(--fb-g-3f5a37, #3f5a37); }
 
-.share-link-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid var(--fb-g-e6ebe0, #e6ebe0); border-radius: 8px; background: var(--fb-g-fafbf8, #fafbf8); }
+.share-link-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; padding: 12px; border: 1px solid var(--fb-g-e6ebe0, #e6ebe0); border-radius: calc(8px * var(--fb-radius-scale, 1)); background: var(--fb-g-fafbf8, #fafbf8); }
 .share-link-options label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--fb-g-6f7a66, #6f7a66); }
 .share-link-options .share-checkbox { flex-direction: row; align-items: center; gap: 8px; grid-column: 1 / -1; font-size: 12px; color: var(--fb-g-4f6346, #4f6346); }
 .share-link-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }

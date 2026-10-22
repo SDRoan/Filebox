@@ -21,10 +21,10 @@
   width: 100%;
   padding: 12px;
   border: 1px solid #ddd;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 14px;
   margin-bottom: 20px;
-  background: white;
+  background: var(--fb-surface, #ffffff);
 }
 
 .modal-select:focus {

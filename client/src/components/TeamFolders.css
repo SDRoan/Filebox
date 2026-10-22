@@ -24,7 +24,7 @@
   width: 100%;
   padding: 10px 40px 10px 16px;
   border: 2px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   font-size: 14px;
 }
 
@@ -45,9 +45,9 @@
 .sort-select-team {
   padding: 10px 16px;
   border: 2px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   font-size: 14px;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   cursor: pointer;
 }
 
@@ -69,9 +69,9 @@
   align-items: flex-start;
   gap: 15px;
   padding: 15px;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   cursor: pointer;
   transition: all 0.2s;
   position: relative;
@@ -91,7 +91,7 @@
 
 .role-badge {
   padding: 4px 8px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   color: white;
   font-size: 11px;
   font-weight: 600;
@@ -173,7 +173,7 @@
   padding: 8px 12px;
   background: #f0f0f0;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 18px;
   color: #666;
@@ -189,9 +189,9 @@
   top: 100%;
   right: 0;
   margin-top: 4px;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 1000;
   min-width: 150px;
@@ -203,7 +203,7 @@
   padding: 12px 16px;
   text-align: left;
   border: none;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   cursor: pointer;
   font-size: 14px;
   color: #333;
@@ -261,16 +261,16 @@
   margin-top: 6px;
   padding: 4px 8px;
   border: 1px solid #ddd;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
   font-size: 12px;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   cursor: pointer;
 }
 
 .role-badge-inline {
   display: inline-block;
   padding: 4px 8px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   color: white;
   font-size: 11px;
   font-weight: 600;
@@ -301,7 +301,7 @@
   background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
@@ -321,7 +321,7 @@
   background: #6b7280;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 14px;
 }
@@ -340,9 +340,9 @@
 }
 
 .modal-content-small {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   padding: 30px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   width: 90%;
   max-width: 500px;
   max-height: 80vh;
@@ -359,7 +359,7 @@
   max-height: 200px;
   overflow-y: auto;
   border: 1px solid #e0e0e0;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
 }
 
 .search-result-item {
@@ -387,7 +387,7 @@
 .role-select {
   padding: 6px 10px;
   border: 1px solid #ddd;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
 }
 
 .current-members {
@@ -408,7 +408,7 @@
   align-items: center;
   padding: 10px;
   background: #f9f9f9;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   margin-bottom: 8px;
 }
 
@@ -429,7 +429,7 @@
   background: #e74c3c;
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 12px;
 }
@@ -457,8 +457,8 @@
   max-width: 800px;
   height: 85vh;
   max-height: 800px;
-  background: white;
-  border-radius: 12px;
+  background: var(--fb-surface, #ffffff);
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   overflow: hidden;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
@@ -482,7 +482,7 @@
 @media (max-width: 520px) { .team-add-member { flex-wrap: wrap; } .team-add-member .form-input { flex-basis: 100%; } }
 
 /* Quieter member controls, matching the rest of File Box */
-.dashboard .remove-member-btn { background: #fff; color: #8a4532; border: 1px solid #ead7cf; border-radius: 6px; }
+.dashboard .remove-member-btn { background: var(--fb-surface, #ffffff); color: #8a4532; border: 1px solid #ead7cf; border-radius: calc(6px * var(--fb-radius-scale, 1)); }
 .dashboard .remove-member-btn:hover { background: #fdf3ef; }
 .dashboard .modal-content-small h3 { font-size: 18px; font-weight: 600; color: var(--fb-g-2c402c, #2c402c); }
 .dashboard .current-members h4 { font-size: 11px; font-weight: 600; letter-spacing: 1.1px; text-transform: uppercase; color: var(--fb-g-6f7a66, #6f7a66); }

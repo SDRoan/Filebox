@@ -37,7 +37,7 @@
 .search-input {
   padding: 0.5rem 1rem;
   border: 1px solid #d1d5db;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
   min-width: 250px;
   transition: border-color 0.2s;
@@ -52,9 +52,9 @@
 .category-select {
   padding: 0.5rem 1rem;
   border: 1px solid #d1d5db;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   cursor: pointer;
   transition: border-color 0.2s;
 }
@@ -83,9 +83,9 @@
 }
 
 .secured-link-card {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   padding: 1.5rem;
   transition: all 0.2s;
   display: flex;
@@ -125,7 +125,7 @@
 .badge {
   font-size: 0.75rem;
   padding: 0.25rem 0.5rem;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
   font-weight: 500;
 }
 
@@ -180,7 +180,7 @@
   padding: 0.25rem 0.75rem;
   background: #f3f4f6;
   color: #374151;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   font-weight: 500;
 }
 
@@ -195,7 +195,7 @@
   padding: 0.25rem 0.5rem;
   background: #e0e7ff;
   color: #4338ca;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
 }
 
 .link-notes {
@@ -203,7 +203,7 @@
   color: #4b5563;
   padding: 0.75rem;
   background: #f9fafb;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   border-left: 3px solid #6b7280;
 }
 
@@ -226,7 +226,7 @@
 .btn-delete {
   padding: 0.5rem 1rem;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
@@ -301,8 +301,8 @@
 }
 
 .modal-content {
-  background: white;
-  border-radius: 12px;
+  background: var(--fb-surface, #ffffff);
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   padding: 2rem;
   max-width: 600px;
   width: 100%;
@@ -339,7 +339,7 @@
   width: 100%;
   padding: 0.625rem;
   border: 1px solid #d1d5db;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
   transition: border-color 0.2s;
 }
@@ -402,7 +402,7 @@
   color: white;
   padding: 0.625rem 1.25rem;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
@@ -421,7 +421,7 @@
   color: #374151;
   padding: 0.625rem 1.25rem;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;

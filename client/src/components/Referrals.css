@@ -20,9 +20,9 @@
 }
 
 .referral-card {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   padding: 2rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
@@ -38,7 +38,7 @@
   gap: 1rem;
   background: #f9fafb;
   padding: 1rem;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   margin-bottom: 1rem;
 }
 
@@ -54,7 +54,7 @@
   color: white;
   border: none;
   padding: 0.5rem;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -72,9 +72,9 @@
 }
 
 .stat-item {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   padding: 1.5rem;
   text-align: center;
 }

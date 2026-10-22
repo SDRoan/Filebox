@@ -1,17 +1,17 @@
 /* Common page furniture for the existing workspace tools. */
 .workspace-view { display: flex; flex: 1; min-width: 0; flex-direction: column; }
-.dashboard .btn-primary, .dashboard .btn-secondary { flex: initial; width: auto; min-height: 36px; padding: 8px 14px; font-size: 12px; font-weight: 500; border-radius: 6px; box-shadow: none; }
+.dashboard .btn-primary, .dashboard .btn-secondary { flex: initial; width: auto; min-height: 36px; padding: 8px 14px; font-size: 12px; font-weight: 500; border-radius: calc(6px * var(--fb-radius-scale, 1)); box-shadow: none; }
 .dashboard .btn-primary { background: var(--fb-g-3f6543, #3f6543) !important; color: #fff; }
 .dashboard .btn-primary:hover { background: var(--fb-g-315536, #315536) !important; transform: none; box-shadow: none; }
-.dashboard .btn-secondary { border: 1px solid var(--fb-g-dbe3d2, #dbe3d2); color: var(--fb-g-607451, #607451); background: #fff; }
+.dashboard .btn-secondary { border: 1px solid var(--fb-g-dbe3d2, #dbe3d2); color: var(--fb-g-607451, #607451); background: var(--fb-surface, #ffffff); }
 .dashboard .workspace-view > :is(.shared-files-container, .social-feed-container, .learning, .templates-library, .web-shortcuts, .secured-links, .cloud-backup, .integrations, .relationships-list-container, .security-dashboard, .team-folders-page, .file-requests-page) { padding: 44px 42px 30px; margin: 0; width: 100%; min-width: 0; height: auto; min-height: 100%; max-width: none; background: var(--fb-g-fdfdfb, #fdfdfb); }
 .dashboard :is(.shared-files-title-section, .forums-header, .learning-header, .templates-header, .shortcuts-header, .secured-links-header, .backup-header, .relationships-header, .integrations-header, .security-header) { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 20px; padding: 0; margin: 0 0 30px; border: 0; background: transparent; box-shadow: none; }
-.dashboard :is(.shared-files-title-section, .forums-header, .learning-header, .templates-header, .shortcuts-header, .secured-links-header, .backup-header, .relationships-header, .integrations-header, .security-header) :is(h1,h2) { font-family: Georgia, 'Times New Roman', serif; font-size: 36px; font-weight: 400; line-height: 1.25; letter-spacing: -1px; color: var(--fb-g-2c402c, #2c402c); margin: 0; }
+.dashboard :is(.shared-files-title-section, .forums-header, .learning-header, .templates-header, .shortcuts-header, .secured-links-header, .backup-header, .relationships-header, .integrations-header, .security-header) :is(h1,h2) { font-family: var(--fb-heading-font, Georgia, 'Times New Roman', serif); font-size: 36px; font-weight: 400; line-height: 1.25; letter-spacing: -1px; color: var(--fb-g-2c402c, #2c402c); margin: 0; }
 .dashboard :is(.shared-files-title-section, .forums-header, .learning-header, .templates-header, .shortcuts-header, .secured-links-header, .backup-header, .relationships-header, .integrations-header, .security-header) :is(h1,h2) > svg { display: none !important; }
 .dashboard :is(.shared-page-title, .community-page-title, .learning-header, .integrations-header) p { margin: 9px 0 0; font-size: 13px; line-height: 1.6; color: var(--fb-g-78856e, #78856e); }
-.dashboard .workspace-view :is(.search-input, .search-input-team, .search-input-request, .search-input-rel, .filter-select, .sort-select-team, .filter-select-request, .sort-select-request) { background: #fff; color: var(--fb-g-5d7050, #5d7050); border: 1px solid var(--fb-g-dfe7d7, #dfe7d7); border-radius: 6px; min-height: 36px; font-size: 12px; padding: 8px 12px; box-shadow: none; }
+.dashboard .workspace-view :is(.search-input, .search-input-team, .search-input-request, .search-input-rel, .filter-select, .sort-select-team, .filter-select-request, .sort-select-request) { background: var(--fb-surface, #ffffff); color: var(--fb-g-5d7050, #5d7050); border: 1px solid var(--fb-g-dfe7d7, #dfe7d7); border-radius: calc(6px * var(--fb-radius-scale, 1)); min-height: 36px; font-size: 12px; padding: 8px 12px; box-shadow: none; }
 .dashboard .workspace-view .search-input::placeholder { color: var(--fb-g-929f86, #929f86); }
-.dashboard .workspace-view :is(.empty-state, .shared-files-empty, .no-relationships) { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 340px; padding: 35px 20px; border: 1px solid var(--fb-g-e2e7db, #e2e7db); border-radius: 9px; background: #fff; text-align: center; color: var(--fb-g-829672, #829672); }
+.dashboard .workspace-view :is(.empty-state, .shared-files-empty, .no-relationships) { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 340px; padding: 35px 20px; border: 1px solid var(--fb-g-e2e7db, #e2e7db); border-radius: calc(9px * var(--fb-radius-scale, 1)); background: var(--fb-surface, #ffffff); text-align: center; color: var(--fb-g-829672, #829672); }
 .dashboard .file-browser .empty-state { border: 0; border-radius: 0; padding-bottom: 45px; min-height: 390px; }
 .dashboard .workspace-view :is(.empty-state, .shared-files-empty, .no-relationships) h3 { font-size: 19px; font-weight: 500; color: var(--fb-g-46583c, #46583c); margin: 18px 0 10px; }
 .dashboard .workspace-view :is(.empty-state, .shared-files-empty, .no-relationships) p { color: var(--fb-g-7e8a72, #7e8a72); font-size: 12px; line-height: 1.8; }
@@ -19,20 +19,20 @@
 .dashboard .shared-files-container { display: block; }
 .dashboard .shared-files-header { margin-bottom: 12px; }
 .dashboard .shared-files-title-section { margin-bottom: 28px; }
-.dashboard .shared-files-tabs { box-shadow: none; border: 1px solid var(--fb-g-e0e7d7, #e0e7d7); background: var(--fb-g-f3f6ef, #f3f6ef); border-radius: 6px; padding: 3px; gap: 3px; }
-.dashboard .shared-files-tabs .tab-button { padding: 8px 12px; font-size: 11px; color: var(--fb-g-7d8e70, #7d8e70); border-radius: 4px; box-shadow: none; background: none; }
-.dashboard .shared-files-tabs .tab-button.active { background: #fff; color: var(--fb-g-456539, #456539); box-shadow: 0 1px 3px #30461b14; }
+.dashboard .shared-files-tabs { box-shadow: none; border: 1px solid var(--fb-g-e0e7d7, #e0e7d7); background: var(--fb-g-f3f6ef, #f3f6ef); border-radius: calc(6px * var(--fb-radius-scale, 1)); padding: 3px; gap: 3px; }
+.dashboard .shared-files-tabs .tab-button { padding: 8px 12px; font-size: 11px; color: var(--fb-g-7d8e70, #7d8e70); border-radius: calc(4px * var(--fb-radius-scale, 1)); box-shadow: none; background: none; }
+.dashboard .shared-files-tabs .tab-button.active { background: var(--fb-surface, #ffffff); color: var(--fb-g-456539, #456539); box-shadow: 0 1px 3px #30461b14; }
 .dashboard .shared-files-controls { margin-bottom: 22px; }
 .dashboard .shared-files-controls .search-box { display: block; padding: 0; border: 0; background: none; box-shadow: none; }
 .dashboard .shared-files-controls .search-input { padding-right: 36px; }
 .dashboard .shared-files-controls .search-icon { right: 12px; left: auto; top: 50%; transform: translateY(-50%); color: var(--fb-g-92a180, #92a180); }
-.dashboard .shared-files-controls .group-toggle { font-size: 11px; border: 1px solid var(--fb-g-dfe7d7, #dfe7d7); padding: 9px 12px; color: var(--fb-g-778c65, #778c65); background: #fff; border-radius: 6px; }
+.dashboard .shared-files-controls .group-toggle { font-size: 11px; border: 1px solid var(--fb-g-dfe7d7, #dfe7d7); padding: 9px 12px; color: var(--fb-g-778c65, #778c65); background: var(--fb-surface, #ffffff); border-radius: calc(6px * var(--fb-radius-scale, 1)); }
 .dashboard .shared-files-controls .group-toggle.active { background: var(--fb-g-e7efde, #e7efde); color: var(--fb-g-466439, #466439); }
 .dashboard .shared-files-content { padding: 20px 0 0; }
 .dashboard .shared-files-empty { margin: 0; }
 .dashboard .student-dashboard { height: auto; min-height: 100%; animation: none; }
 .dashboard .student-header { padding: 44px 42px 28px; border: 0; background: transparent; }
-.dashboard .student-header h1 { font-family: Georgia, serif; font-size: 36px; font-weight: 400; letter-spacing: -1px; color: var(--fb-g-2c402c, #2c402c); margin: 0 0 10px; }
+.dashboard .student-header h1 { font-family: var(--fb-heading-font, Georgia, 'Times New Roman', serif); font-size: 36px; font-weight: 400; letter-spacing: -1px; color: var(--fb-g-2c402c, #2c402c); margin: 0 0 10px; }
 .dashboard .student-header p { font-size: 13px; color: var(--fb-g-78856e, #78856e); }
 .dashboard .student-content { overflow: visible; }
 .dashboard .student-content > * { height: auto; }
@@ -41,18 +41,18 @@
 .dashboard .course-header h2 { font-family: var(--font-sans); font-size: 16px; color: var(--fb-g-586e49, #586e49); font-weight: 500; margin: 0; }
 .dashboard .course-header .btn-primary { flex: initial; }
 .dashboard .course-manager .empty-state { margin-top: 0; }
-.dashboard .course-card { box-shadow: none; border-radius: 7px; }
+.dashboard .course-card { box-shadow: none; border-radius: calc(7px * var(--fb-radius-scale, 1)); }
 .dashboard .course-card:hover { transform: none; }
 .dashboard .forums-header-actions { flex: initial; }
 .dashboard .forums-filters { padding-bottom: 18px; border-bottom: 1px solid var(--fb-g-e2e8da, #e2e8da); gap: 12px; }
 .dashboard .social-feed-container .empty-state { margin: 0; }
-.dashboard .post-card { box-shadow: none; border: 1px solid var(--fb-g-e0e8d6, #e0e8d6); border-radius: 8px; }
+.dashboard .post-card { box-shadow: none; border: 1px solid var(--fb-g-e0e8d6, #e0e8d6); border-radius: calc(8px * var(--fb-radius-scale, 1)); }
 .dashboard .team-folders-page > .team-folders-modal, .dashboard .file-requests-page > .file-requests-modal { padding: 0; margin: 0; width: 100%; max-width: none; max-height: none; background: transparent; box-shadow: none; border: 0; border-radius: 0; overflow: visible; }
 .dashboard :is(.team-folders-page, .file-requests-page) > .modal-content > .modal-header { padding: 0; border: 0; margin: 0 0 30px; }
-.dashboard :is(.team-folders-page, .file-requests-page) > .modal-content > .modal-header h2 { font-family: Georgia, serif; font-size: 36px; font-weight: 400; letter-spacing: -1px; color: var(--fb-g-2c402c, #2c402c); }
-.dashboard :is(.team-folders-page, .file-requests-page) .action-button { flex: initial; font-size: 12px; padding: 8px 14px; min-height: 36px; background: var(--fb-g-3f6543, #3f6543); color: #fff; border-radius: 6px; }
+.dashboard :is(.team-folders-page, .file-requests-page) > .modal-content > .modal-header h2 { font-family: var(--fb-heading-font, Georgia, 'Times New Roman', serif); font-size: 36px; font-weight: 400; letter-spacing: -1px; color: var(--fb-g-2c402c, #2c402c); }
+.dashboard :is(.team-folders-page, .file-requests-page) .action-button { flex: initial; font-size: 12px; padding: 8px 14px; min-height: 36px; background: var(--fb-g-3f6543, #3f6543); color: #fff; border-radius: calc(6px * var(--fb-radius-scale, 1)); }
 .dashboard .workspace-view .view-graph-btn { margin: 0; font-size: 12px; background: var(--fb-g-3f6543, #3f6543); box-shadow: none; }
-.dashboard :is(.integration-card, .resource-card, .template-card, .shortcut-card, .backup-card) { box-shadow: none; border: 1px solid var(--fb-g-e0e7d7, #e0e7d7); border-radius: 8px; }
+.dashboard :is(.integration-card, .resource-card, .template-card, .shortcut-card, .backup-card) { box-shadow: none; border: 1px solid var(--fb-g-e0e7d7, #e0e7d7); border-radius: calc(8px * var(--fb-radius-scale, 1)); }
 .dashboard :is(.integration-card, .resource-card, .template-card, .shortcut-card, .backup-card):hover { transform: none; box-shadow: none; border-color: var(--fb-g-a7bc96, #a7bc96); }
 @media (max-width: 1100px) {
   .dashboard .workspace-view > :is(.shared-files-container, .social-feed-container, .learning, .templates-library, .web-shortcuts, .secured-links, .cloud-backup, .integrations, .relationships-list-container, .security-dashboard, .team-folders-page, .file-requests-page) { padding: 35px 28px 24px; }
@@ -79,7 +79,7 @@
 .dashboard .signature-manager-page { width: 100%; padding: 44px 42px 30px; background: var(--fb-g-fdfdfb, #fdfdfb); }
 .dashboard .signature-manager-page .signature-manager-container { width: 100%; max-width: 860px; max-height: none; padding: 0; margin: 0; background: transparent; box-shadow: none; border-radius: 0; overflow: visible; }
 .dashboard .signature-manager-page .signature-manager-header { padding: 0; margin: 0 0 30px; border: 0; }
-.dashboard .signature-manager-page .signature-manager-header h2 { font-family: Georgia, 'Times New Roman', serif; font-size: 36px; font-weight: 400; letter-spacing: -1px; color: var(--fb-g-2c402c, #2c402c); }
+.dashboard .signature-manager-page .signature-manager-header h2 { font-family: var(--fb-heading-font, Georgia, 'Times New Roman', serif); font-size: 36px; font-weight: 400; letter-spacing: -1px; color: var(--fb-g-2c402c, #2c402c); }
 .dashboard .signature-manager-page .signature-manager-content { padding: 0; }
 @media (max-width: 1100px) { .dashboard .signature-manager-page { padding: 35px 28px 24px; } }
 @media (max-width: 600px) { .dashboard .signature-manager-page { padding: 28px 16px 20px; } }
