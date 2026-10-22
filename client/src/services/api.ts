@@ -1245,6 +1245,22 @@ export const preferencesAPI = {
   },
 };
 
+// My Files > Board: a person's own layout for a folder (where items sit, and the zones they drew).
+export type BoardZoneShape = 'rectangle' | 'rounded' | 'circle' | 'pill';
+export interface BoardZone { id: string; name: string; color: string; shape: BoardZoneShape; x: number; y: number; w: number; h: number }
+export interface BoardLayout { items: Record<string, { x: number; y: number }>; zones: BoardZone[] }
+
+export const boardsAPI = {
+  get: async (folderKey: string): Promise<BoardLayout> => {
+    const response = await api.get(`/boards/${folderKey}`);
+    return response.data;
+  },
+  save: async (folderKey: string, layout: BoardLayout): Promise<BoardLayout> => {
+    const response = await api.put(`/boards/${folderKey}`, layout);
+    return response.data;
+  },
+};
+
 export const activityAPI = {
   focus: async (fileId: string, seconds: number) => {
     await api.post('/activity/focus', { fileId, seconds });

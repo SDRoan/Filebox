@@ -7,7 +7,8 @@ import FileItemComponent from './FileItem';
 import FolderItem from './FolderItem';
 import UploadButton from './UploadButton';
 import CreateFolderModal from './CreateFolderModal';
-import FileSortFilter, { SortOption, SortOrder, FilterOption } from './FileSortFilter';
+import FileSortFilter, { SortOption, SortOrder, FilterOption, ViewMode } from './FileSortFilter';
+import FileBoard from './FileBoard';
 import OrganizeReview from './OrganizeReview';
 import { AIAssistantIcon, CloseIcon as DialogCloseIcon } from './Icons';
 import './AIPanels.css';
@@ -64,7 +65,22 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
   const [sortBy, setSortBy] = useState<SortOption>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [filterBy, setFilterBy] = useState<FilterOption>('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  // Grid, List or Board, remembered in this browser.
+  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
+    try {
+      const saved = localStorage.getItem('filebox-file-view');
+      return saved === 'list' || saved === 'board' ? saved : 'grid';
+    } catch { return 'grid'; }
+  });
+  const setViewMode = (mode: ViewMode) => {
+    setViewModeState(mode);
+    try { localStorage.setItem('filebox-file-view', mode); } catch { /* only for this visit */ }
+  };
+  const allowBoard = !showTrash && !showStarred;
+  const showBoard = allowBoard && viewMode === 'board';
+  const boardKey = isTeamFolder && teamFolderId
+    ? `team-${teamFolderId}${currentFolderId && currentFolderId !== teamFolderId ? `-${currentFolderId}` : ''}`
+    : (currentFolderId && currentFolderId !== 'root' ? currentFolderId : 'root');
   const { user, refreshUser } = useAuth();
   const socketRef = useRef<Socket | null>(null);
 
@@ -470,6 +486,36 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
 
   const itemCount = filteredAndSorted.folders.length + filteredAndSorted.files.length;
 
+  const renderFolder = (folder: Folder) => (
+    <FolderItem
+      key={folder._id}
+      folder={folder}
+      onClick={() => selectionMode ? toggleSelection(`folder-${folder._id}`) : onFolderClick(folder._id)}
+      onDelete={() => handleDelete(folder._id, 'folder')}
+      onRestore={() => handleRestore(folder._id, 'folder')}
+      onPermanentDelete={() => handlePermanentDelete(folder._id, 'folder')}
+      onMove={loadFiles}
+      showTrash={showTrash}
+      isSelected={selectionMode && selectedItems.has(`folder-${folder._id}`)}
+      selectionMode={selectionMode}
+    />
+  );
+  const renderFile = (file: FileItem) => (
+    <FileItemComponent
+      key={file._id}
+      file={file}
+      onDelete={() => handleDelete(file._id, 'file')}
+      onRestore={() => handleRestore(file._id, 'file')}
+      onPermanentDelete={() => handlePermanentDelete(file._id, 'file')}
+      onRename={loadFiles}
+      onMove={loadFiles}
+      showTrash={showTrash}
+      isSelected={selectionMode && selectedItems.has(`file-${file._id}`)}
+      selectionMode={selectionMode}
+      onSelect={() => toggleSelection(`file-${file._id}`)}
+    />
+  );
+
   return (
     <div
       className={`file-browser ${isDragging ? 'dragging' : ''}`}
@@ -536,7 +582,7 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
           </div>
         </div>
         <div className="file-browser-header">
-          <FileSortFilter sortBy={sortBy} sortOrder={sortOrder} filterBy={filterBy} viewMode={viewMode}
+          <FileSortFilter sortBy={sortBy} sortOrder={sortOrder} filterBy={filterBy} viewMode={showBoard ? 'board' : viewMode === 'board' ? 'grid' : viewMode} allowBoard={allowBoard}
             onSortChange={setSortBy} onSortOrderChange={setSortOrder} onFilterChange={setFilterBy} onViewModeChange={setViewMode} />
         </div>
         {selectionMode && <div className="file-selection-toolbar">
@@ -567,37 +613,20 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
             </div>
           </div>
         ) : (
+          showBoard ? (
+            <FileBoard
+              folderKey={boardKey}
+              entries={[
+                ...filteredAndSorted.folders.map(folder => ({ key: `folder-${folder._id}`, name: folder.name, render: () => renderFolder(folder) })),
+                ...filteredAndSorted.files.map(file => ({ key: `file-${file._id}`, name: file.originalName, render: () => renderFile(file) })),
+              ]}
+            />
+          ) : (
           <div className={`file-list ${viewMode === 'list' ? 'list-view' : 'grid-view'}`}>
-            {filteredAndSorted.folders.map((folder) => (
-              <FolderItem
-                key={folder._id}
-                folder={folder}
-                onClick={() => selectionMode ? toggleSelection(`folder-${folder._id}`) : onFolderClick(folder._id)}
-                onDelete={() => handleDelete(folder._id, 'folder')}
-                onRestore={() => handleRestore(folder._id, 'folder')}
-                onPermanentDelete={() => handlePermanentDelete(folder._id, 'folder')}
-                onMove={loadFiles}
-                showTrash={showTrash}
-                isSelected={selectionMode && selectedItems.has(`folder-${folder._id}`)}
-                selectionMode={selectionMode}
-              />
-            ))}
-            {filteredAndSorted.files.map((file) => (
-              <FileItemComponent
-                key={file._id}
-                file={file}
-                onDelete={() => handleDelete(file._id, 'file')}
-                onRestore={() => handleRestore(file._id, 'file')}
-                onPermanentDelete={() => handlePermanentDelete(file._id, 'file')}
-                onRename={loadFiles}
-                onMove={loadFiles}
-                showTrash={showTrash}
-                isSelected={selectionMode && selectedItems.has(`file-${file._id}`)}
-                selectionMode={selectionMode}
-                onSelect={() => toggleSelection(`file-${file._id}`)}
-              />
-            ))}
+            {filteredAndSorted.folders.map(renderFolder)}
+            {filteredAndSorted.files.map(renderFile)}
           </div>
+          )
         ))}
         <div className="file-canvas-footer"><span>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span><span>{showTrash ? 'Items are kept for 30 days' : `Sorted by ${sortBy === 'date' ? 'date added' : sortBy}`}</span></div>
         </div>
