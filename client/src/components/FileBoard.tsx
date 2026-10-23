@@ -39,17 +39,54 @@ const readCache = (folderKey: string): BoardLayout | null => {
 const writeCache = (folderKey: string, layout: BoardLayout) => {
   try { localStorage.setItem(cacheKey(folderKey), JSON.stringify(layout)); } catch { /* saved with the account anyway */ }
 };
+// Set while a change has not reached the account yet, so the next visit sends it instead of loading an older layout.
+const unsavedKey = (folderKey: string) => `filebox-board-unsaved-${folderKey}`;
+const markUnsaved = (folderKey: string, unsaved: boolean) => {
+  try {
+    if (unsaved) localStorage.setItem(unsavedKey(folderKey), '1');
+    else localStorage.removeItem(unsavedKey(folderKey));
+  } catch { /* nothing more to do */ }
+};
+const hasUnsaved = (folderKey: string) => {
+  try { return localStorage.getItem(unsavedKey(folderKey)) === '1'; } catch { return false; }
+};
 const newId = () => Math.random().toString(36).slice(2, 12);
 // File Box zooms the workspace for Settings > Customize > Text size; pointer moves are in screen pixels.
 const zoom = () => Number(getComputedStyle(document.documentElement).getPropertyValue('--fb-zoom')) || 1;
 
-/** Is a point inside a zone (circles and pills use their rounded outline)? */
-function inZone(zone: BoardZone, x: number, y: number) {
-  if (x < zone.x || y < zone.y || x > zone.x + zone.w || y > zone.y + zone.h) return false;
-  if (zone.shape !== 'circle') return true;
-  const rx = zone.w / 2;
-  const ry = zone.h / 2;
-  return ((x - zone.x - rx) / rx) ** 2 + ((y - zone.y - ry) / ry) ** 2 <= 1;
+/** Is a point (measured from the zone's top-left) inside its outline? Circles and pills are rounded. */
+function insideShape(zone: BoardZone, x: number, y: number) {
+  if (x < 0 || y < 0 || x > zone.w || y > zone.h) return false;
+  if (zone.shape === 'circle') {
+    const rx = zone.w / 2;
+    const ry = zone.h / 2;
+    return ((x - rx) / rx) ** 2 + ((y - ry) / ry) ** 2 <= 1;
+  }
+  if (zone.shape === 'pill') {
+    const r = Math.min(zone.w, zone.h) / 2;
+    const cx = Math.min(Math.max(x, r), zone.w - r);
+    const cy = Math.min(Math.max(y, r), zone.h - r);
+    return (x - cx) ** 2 + (y - cy) ** 2 <= r * r;
+  }
+  return true;
+}
+
+/** Is a point on the board inside a zone? */
+const inZone = (zone: BoardZone, x: number, y: number) => insideShape(zone, x - zone.x, y - zone.y);
+
+/** Keep a zone's name tag (w × h) fully inside the zone's outline, moving it toward the middle if needed. */
+function fitLabel(zone: BoardZone, x: number, y: number, w: number, h: number) {
+  const inset = zone.shape === 'rectangle' ? 4 : 8;
+  let lx = Math.min(Math.max(inset, x), Math.max(inset, zone.w - w - inset));
+  let ly = Math.min(Math.max(inset, y), Math.max(inset, zone.h - h - inset));
+  const fits = () => [[lx, ly], [lx + w, ly], [lx, ly + h], [lx + w, ly + h]].every(([px, py]) => insideShape(zone, px, py));
+  const midX = (zone.w - w) / 2;
+  const midY = (zone.h - h) / 2;
+  for (let i = 0; i < 200 && !fits(); i++) {
+    lx += Math.sign(midX - lx) * Math.min(4, Math.abs(midX - lx));
+    ly += Math.sign(midY - ly) * Math.min(4, Math.abs(midY - ly));
+  }
+  return { labelX: Math.round(lx), labelY: Math.round(ly) };
 }
 
 const FileBoard: React.FC<FileBoardProps> = ({ folderKey, entries }) => {
@@ -61,33 +98,60 @@ const FileBoard: React.FC<FileBoardProps> = ({ folderKey, entries }) => {
   const canvasRef = useRef<HTMLDivElement>(null);
   const sizes = useRef<Record<string, { w: number; h: number }>>({});
   const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  // The change waiting to be sent (which folder, and the layout).
+  const pending = useRef<{ folderKey: string; layout: BoardLayout } | null>(null);
   const latest = useRef(layout);
   latest.current = layout;
 
-  // The account's layout for this folder.
+  const send = useCallback((key: string, next: BoardLayout) => {
+    boardsAPI.save(key, next)
+      .then(() => {
+        // A newer change may already be waiting; it stays marked until it is sent too.
+        if (!pending.current || pending.current.folderKey !== key) markUnsaved(key, false);
+        setStatus('');
+      })
+      .catch(() => setStatus('Saved in this browser only (could not reach File Box). It will be sent next time.'));
+  }, []);
+
+  // Send a waiting change now (when leaving the board or the folder), instead of dropping it.
+  const flush = useCallback(() => {
+    clearTimeout(saveTimer.current);
+    const waiting = pending.current;
+    pending.current = null;
+    if (waiting) send(waiting.folderKey, waiting.layout);
+  }, [send]);
+
+  // The account's layout for this folder, unless this browser has newer changes it has not sent yet.
   useEffect(() => {
     let cancelled = false;
-    setLayout(readCache(folderKey) || { items: {}, zones: [] });
+    const cached = readCache(folderKey);
+    setLayout(cached || { items: {}, zones: [] });
     setSelectedZone(null);
-    boardsAPI.get(folderKey)
-      .then(saved => { if (!cancelled) { setLayout(saved); writeCache(folderKey, saved); } })
-      .catch(() => { /* keep the layout saved in this browser */ });
-    return () => { cancelled = true; };
-  }, [folderKey]);
+    if (cached && hasUnsaved(folderKey)) {
+      send(folderKey, cached);
+    } else {
+      boardsAPI.get(folderKey)
+        .then(saved => { if (!cancelled && !hasUnsaved(folderKey)) { setLayout(saved); writeCache(folderKey, saved); } })
+        .catch(() => { /* keep the layout saved in this browser */ });
+    }
+    return () => { cancelled = true; flush(); };
+  }, [folderKey, send, flush]);
 
-  useEffect(() => () => clearTimeout(saveTimer.current), []);
+  // Closing or reloading the tab: send what is waiting.
+  useEffect(() => {
+    window.addEventListener('pagehide', flush);
+    return () => window.removeEventListener('pagehide', flush);
+  }, [flush]);
 
   const commit = useCallback((next: BoardLayout) => {
     latest.current = next;
     setLayout(next);
     writeCache(folderKey, next);
+    markUnsaved(folderKey, true);
+    pending.current = { folderKey, layout: next };
     clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => {
-      boardsAPI.save(folderKey, latest.current)
-        .then(() => setStatus(''))
-        .catch(() => setStatus('Saved in this browser only (could not reach File Box)'));
-    }, SAVE_DELAY_MS);
-  }, [folderKey]);
+    saveTimer.current = setTimeout(flush, SAVE_DELAY_MS);
+  }, [folderKey, flush]);
 
   const sizeOf = (key: string) => sizes.current[key] || { w: CARD_WIDTH, h: 200 };
   const centerOf = (key: string, pos: { x: number; y: number }) => ({ x: pos.x + sizeOf(key).w / 2, y: pos.y + Math.min(sizeOf(key).h, 120) / 2 });
@@ -125,7 +189,7 @@ const FileBoard: React.FC<FileBoardProps> = ({ folderKey, entries }) => {
   const startDrag = (event: React.PointerEvent, onMove: (dx: number, dy: number) => void, onEnd: () => void) => {
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
-    const onHandle = target.closest('.board-item-handle, .board-zone-handle');
+    const onHandle = target.closest('.board-item-handle, .board-zone-label-grip');
     if (!onHandle && target.closest('button, a, input, textarea, select, summary, details, label, [role="menu"], [contenteditable="true"]')) return;
     event.preventDefault();
     const startX = event.clientX;
@@ -191,6 +255,31 @@ const FileBoard: React.FC<FileBoardProps> = ({ folderKey, entries }) => {
       next = { ...latest.current, zones: latest.current.zones.map(z => (z.id === zone.id ? { ...z, w: Math.max(160, zone.w + dx), h: Math.max(120, zone.h + dy) } : z)) };
       setLayout(next);
     }, () => commit(next));
+  };
+
+  // The zone's name tag: drag it anywhere inside the zone (kept within its outline).
+  const dragLabel = (zone: BoardZone) => (event: React.PointerEvent) => {
+    event.stopPropagation();
+    setSelectedZone(zone.id);
+    const label = (event.currentTarget as HTMLElement).closest<HTMLElement>('.board-zone-header');
+    if (!label) return;
+    const start = { x: label.offsetLeft, y: label.offsetTop };
+    const size = { w: label.offsetWidth, h: label.offsetHeight };
+    let next = latest.current;
+    startDrag(event, (dx, dy) => {
+      const spot = fitLabel(zone, start.x + dx, start.y + dy, size.w, size.h);
+      next = { ...latest.current, zones: latest.current.zones.map(z => (z.id === zone.id ? { ...z, ...spot } : z)) };
+      setLayout(next);
+    }, () => commit({ ...next, items: placed }));
+  };
+  const nudgeLabel = (zone: BoardZone, label: HTMLElement | null, dx: number, dy: number) => {
+    if (!label) return;
+    updateZone(zone.id, fitLabel(zone, label.offsetLeft + dx, label.offsetTop + dy, label.offsetWidth, label.offsetHeight));
+  };
+  const moveZoneBy = (zone: BoardZone, dx: number, dy: number) => {
+    const items = { ...placed };
+    zoneMembers(zone).forEach(key => { items[key] = { x: Math.max(0, items[key].x + dx), y: Math.max(0, items[key].y + dy) }; });
+    commit({ items, zones: latest.current.zones.map(z => (z.id === zone.id ? { ...z, x: Math.max(0, z.x + dx), y: Math.max(0, z.y + dy) } : z)) });
   };
 
   const updateZone = (id: string, patch: Partial<BoardZone>) =>
@@ -290,15 +379,11 @@ const FileBoard: React.FC<FileBoardProps> = ({ folderKey, entries }) => {
                 style={{ left: zone.x, top: zone.y, width: zone.w, height: zone.h, background: `${zone.color}cc`, borderColor: zone.color }}
                 aria-label={`${zone.name || 'Zone'}, ${count} ${count === 1 ? 'item' : 'items'}`}
                 onPointerDown={dragZone(zone)}>
-                <header className="board-zone-header">
-                  <button className="board-zone-handle" aria-label={`Move zone ${zone.name || ''}. Arrow keys move it with everything inside.`} title="Drag to move; arrow keys work too"
-                    onFocus={() => setSelectedZone(zone.id)}
-                    onKeyDown={(event) => nudge(event, (dx, dy) => {
-                      const members = zoneMembers(zone);
-                      const items = { ...placed };
-                      members.forEach(key => { items[key] = { x: Math.max(0, items[key].x + dx), y: Math.max(0, items[key].y + dy) }; });
-                      commit({ items, zones: latest.current.zones.map(z => (z.id === zone.id ? { ...z, x: Math.max(0, z.x + dx), y: Math.max(0, z.y + dy) } : z)) });
-                    })}>
+                <header className={`board-zone-header ${zone.labelX !== undefined ? 'placed' : ''}`}
+                  style={zone.labelX !== undefined ? { left: zone.labelX, top: zone.labelY } : undefined}>
+                  <button className="board-zone-label-grip" aria-label={`Move the name of ${zone.name || 'this zone'} inside the zone. Arrow keys move it.`} title="Drag to move the name inside the zone"
+                    onFocus={() => setSelectedZone(zone.id)} onPointerDown={dragLabel(zone)}
+                    onKeyDown={(event) => nudge(event, (dx, dy) => nudgeLabel(zone, (event.currentTarget as HTMLElement).closest('.board-zone-header'), dx, dy))}>
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.2" /><circle cx="9" cy="3" r="1.2" /><circle cx="3" cy="9" r="1.2" /><circle cx="9" cy="9" r="1.2" /></svg>
                   </button>
                   <input className="board-zone-name" value={zone.name} maxLength={60} placeholder="Name this zone" aria-label="Zone name"
@@ -321,6 +406,11 @@ const FileBoard: React.FC<FileBoardProps> = ({ folderKey, entries }) => {
                           onClick={() => updateZone(zone.id, shape.id === 'circle' ? { shape: shape.id, h: zone.w } : { shape: shape.id })}><span /></button>
                       ))}
                     </span>
+                    <button className="board-zone-move" aria-label={`Move zone ${zone.name || ''} with everything inside. Use arrow keys, or drag the zone itself.`} title="Arrow keys move the zone; or drag an empty part of it"
+                      onKeyDown={(event) => nudge(event, (dx, dy) => moveZoneBy(zone, dx, dy))}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3" /></svg>
+                    </button>
+                    {zone.labelX !== undefined && <button className="board-zone-label-reset" onClick={() => updateZone(zone.id, { labelX: undefined, labelY: undefined })} title="Put the name back in its usual spot">Reset name spot</button>}
                     <button className="board-zone-delete" onClick={() => removeZone(zone.id)} aria-label="Delete zone (files stay)" title="Delete zone (files stay)"><TrashIcon size={14} /></button>
                   </div>
                 )}

@@ -1247,7 +1247,8 @@ export const preferencesAPI = {
 
 // My Files > Board: a person's own layout for a folder (where items sit, and the zones they drew).
 export type BoardZoneShape = 'rectangle' | 'rounded' | 'circle' | 'pill';
-export interface BoardZone { id: string; name: string; color: string; shape: BoardZoneShape; x: number; y: number; w: number; h: number }
+// labelX/labelY: where the zone's name sits inside it (left out = the shape's usual spot).
+export interface BoardZone { id: string; name: string; color: string; shape: BoardZoneShape; x: number; y: number; w: number; h: number; labelX?: number; labelY?: number }
 export interface BoardLayout { items: Record<string, { x: number; y: number }>; zones: BoardZone[] }
 
 export const boardsAPI = {

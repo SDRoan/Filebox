@@ -35,6 +35,9 @@ function sanitizeLayout(body) {
       color: typeof zone.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(zone.color) ? zone.color.toLowerCase() : '#dbeafe',
       shape: SHAPES.includes(zone.shape) ? zone.shape : 'rounded',
       x, y, w: Math.max(120, w), h: Math.max(90, h),
+      // Where the zone's name sits inside it; left out means the shape's usual spot.
+      ...(coordinate(zone.labelX, 6000) !== null && coordinate(zone.labelY, 6000) !== null
+        ? { labelX: coordinate(zone.labelX, 6000), labelY: coordinate(zone.labelY, 6000) } : {}),
     };
   }).filter(Boolean);
   return { items, zones };
