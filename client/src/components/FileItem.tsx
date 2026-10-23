@@ -14,7 +14,10 @@ import FileComments from './FileComments';
 import FileActivity from './FileActivity';
 import FileRelationships from './FileRelationships';
 import ClassificationBadge from './ClassificationBadge';
-import { ImageIcon, VideoIcon, AudioIcon, DocumentIcon, SummaryIcon, AnalyticsIcon, EyeIcon, PackageIcon, CopyIcon, ShareIcon, ScrollIcon, CommentIcon, DownloadIcon, StarredIcon, TrashIcon, RestoreIcon, LinkIcon, EditIcon, AIAssistantIcon } from './Icons';
+import { ImageIcon, VideoIcon, AudioIcon, DocumentIcon, SummaryIcon, AnalyticsIcon, EyeIcon, PackageIcon, CopyIcon, ShareIcon, ScrollIcon, CommentIcon, DownloadIcon, StarredIcon, TrashIcon, RestoreIcon, LinkIcon, EditIcon, AIAssistantIcon, SignatureIcon } from './Icons';
+import SignPdfDialog from './SignPdfDialog';
+import ImageThumbnail from './ImageThumbnail';
+import ImageCaption from './ImageCaption';
 import './FileItem.css';
 
 interface FileItemProps {
@@ -48,6 +51,7 @@ const FileItem: React.FC<FileItemProps> = ({
   const [showShareModal, setShowShareModal] = useState(false);
   const [showAIDialog, setShowAIDialog] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
+  const [showSign, setShowSign] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
   const [showRelationships, setShowRelationships] = useState(false);
@@ -263,7 +267,7 @@ const FileItem: React.FC<FileItemProps> = ({
             onClick={(e) => e.stopPropagation()}
           />
         )}
-        <div className="file-icon" onClick={() => !selectionMode && canPreview() && !showTrash && setShowPreview(true)} style={{ cursor: !selectionMode && canPreview() && !showTrash ? 'pointer' : 'default' }}>{getFileIcon(file.mimeType)}</div>
+        <div className="file-icon" onClick={() => !selectionMode && canPreview() && !showTrash && setShowPreview(true)} style={{ cursor: !selectionMode && canPreview() && !showTrash ? 'pointer' : 'default' }}>{file.mimeType.startsWith('image/') && !showTrash ? <ImageThumbnail fileId={file._id} name={file.originalName} fallback={getFileIcon(file.mimeType)} /> : getFileIcon(file.mimeType)}</div>
         <div className="file-info" onClick={() => !selectionMode && canPreview() && !showTrash && !isRenaming && setShowPreview(true)} style={{ cursor: !selectionMode && canPreview() && !showTrash && !isRenaming ? 'pointer' : 'default', flex: 1 }}>
           {isRenaming ? (
             <input
@@ -287,6 +291,9 @@ const FileItem: React.FC<FileItemProps> = ({
             }}>
               {file.originalName}
             </div>
+          )}
+          {file.mimeType.startsWith('image/') && !showTrash && !isRenaming && (
+            <ImageCaption fileId={file._id} initial={file.aiCaption} canWrite={caps.canEdit} />
           )}
           <div className="file-meta">
             {formatSize(file.size)} • {showTrash && file.deletedAt ? (
@@ -331,7 +338,7 @@ const FileItem: React.FC<FileItemProps> = ({
                   <LinkIcon size={18} color="currentColor" />
                 </button>
               )}
-              <button onClick={() => setShowAIDialog(true)} className="icon-button" title="Ask File Box AI">
+              <button onClick={() => setShowAIDialog(true)} className="icon-button" title="Ask File Box">
                 <AIAssistantIcon size={18} color="currentColor" />
               </button>
               {caps.canRename && (
@@ -374,6 +381,11 @@ const FileItem: React.FC<FileItemProps> = ({
                   title={file.isStarred ? 'Unstar' : 'Star'}
                 >
                   <StarredIcon size={18} color="currentColor" />
+                </button>
+              )}
+              {caps.canEdit && /pdf/i.test(file.mimeType || '') && (
+                <button onClick={() => setShowSign(true)} className="icon-button" title="Sign">
+                  <SignatureIcon size={18} color="currentColor" />
                 </button>
               )}
               {caps.canViewVersions && (
@@ -450,6 +462,9 @@ const FileItem: React.FC<FileItemProps> = ({
       )}
       {showShareModal && (
         <ShareDialog fileId={file._id} fileName={file.originalName} onClose={() => setShowShareModal(false)} />
+      )}
+      {showSign && (
+        <SignPdfDialog file={file} onClose={() => setShowSign(false)} />
       )}
       {showVersions && (
         <FileVersions

@@ -1,0 +1,24 @@
+/* Settings > Customize: font dropdown */
+.font-select { position: relative; width: 100%; max-width: 520px; }
+.font-select h3 { margin: 0 0 10px; font-size: 11px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: var(--fb-g-6f7a66, #6f7a66); }
+.font-select-button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 46px; padding: 8px 14px; border: 1px solid var(--fb-g-dfe5d7, #dfe5d7); border-radius: calc(9px * var(--fb-radius-scale, 1)); background: var(--fb-surface, #ffffff); color: var(--fb-g-2c3829, #2c3829); font-size: 17px; text-align: left; cursor: pointer; }
+.font-select-button:hover, .font-select-button[aria-expanded='true'] { border-color: var(--fb-g-a7bc96, #a7bc96); }
+.font-select-button > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.font-select-button svg { flex: none; color: var(--fb-g-78856e, #78856e); }
+.font-select-sample { margin: 8px 0 0; font-size: 15px; color: var(--fb-g-56644c, #56644c); }
+.font-select-popover { position: absolute; top: 76px; left: 0; right: 0; z-index: 50; display: flex; flex-direction: column; max-height: 440px; border: 1px solid var(--fb-g-dfe5d7, #dfe5d7); border-radius: calc(10px * var(--fb-radius-scale, 1)); background: var(--fb-surface, #ffffff); box-shadow: 0 16px 36px #2a3a2024; overflow: hidden; }
+.font-select-search { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--fb-g-eff2ea, #eff2ea); color: var(--fb-g-87947b, #87947b); }
+.font-select-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; font: inherit; font-size: 14px; color: var(--fb-g-2f3c2b, #2f3c2b); }
+.font-select-filters { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 12px; border-bottom: 1px solid var(--fb-g-eff2ea, #eff2ea); }
+.font-select-filters button { padding: 4px 10px; border: 1px solid var(--fb-g-e2e8da, #e2e8da); border-radius: 999px; background: none; color: var(--fb-g-56644c, #56644c); font-size: 12px; cursor: pointer; }
+.font-select-filters button.selected { border-color: var(--fb-g-3f6543, #3f6543); background: var(--fb-g-3f6543, #3f6543); color: #fff; }
+.font-select-note { margin: 0; padding: 8px 14px; font-size: 12px; color: #7d5b3a; border-bottom: 1px solid var(--fb-g-eff2ea, #eff2ea); }
+.font-select-list { flex: 1; min-height: 0; margin: 0; padding: 4px 0 8px; list-style: none; overflow-y: auto; }
+.font-select-group { padding: 10px 14px 4px; font-size: 10px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: var(--fb-g-87937b, #87937b); }
+.font-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 14px; font-size: 17px; color: var(--fb-g-2c3829, #2c3829); cursor: pointer; }
+.font-option > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.font-option.active { background: var(--fb-g-f0f3eb, #f0f3eb); }
+.font-option svg { flex: none; color: var(--fb-g-3f6543, #3f6543); }
+.font-select-empty { padding: 16px 14px; font-size: 13px; color: var(--fb-g-78856e, #78856e); }
+.font-select-local { padding: 10px 14px; border: 0; border-top: 1px solid var(--fb-g-eff2ea, #eff2ea); background: none; color: var(--fb-g-3f6543, #3f6543); font-size: 13px; text-align: left; cursor: pointer; }
+.font-select-local:hover { background: var(--fb-g-f5f8f1, #f5f8f1); }

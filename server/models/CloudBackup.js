@@ -53,6 +53,16 @@ const cloudBackupSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  // What the last run did, shown on the sync's card.
+  lastResult: {
+    copied: { type: Number, default: 0 },
+    updated: { type: Number, default: 0 },
+    unchanged: { type: Number, default: 0 },
+    skippedCloudOnly: { type: Number, default: 0 },
+    skippedQuota: { type: Number, default: 0 },
+    skippedOther: { type: Number, default: 0 },
+    at: { type: Date, default: null },
+  },
   createdAt: {
     type: Date,
     default: Date.now

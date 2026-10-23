@@ -14,7 +14,7 @@
 
 .file-preview-container {
   background: #1a1a1a;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   width: 100%;
   max-width: 90vw;
   max-height: 90vh;
@@ -30,7 +30,7 @@
   padding: 20px;
   border-bottom: 1px solid #333;
   background: #252525;
-  border-radius: 12px 12px 0 0;
+  border-radius: calc(12px * var(--fb-radius-scale, 1)) calc(12px * var(--fb-radius-scale, 1)) 0 0;
 }
 
 .file-preview-title h3 {
@@ -56,7 +56,7 @@
 .preview-close-btn {
   padding: 8px 16px;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 14px;
   transition: background 0.3s;
@@ -174,20 +174,20 @@
   max-width: 100%;
   max-height: 80vh;
   object-fit: contain;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
 }
 
 .preview-video {
   max-width: 100%;
   max-height: 80vh;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
 }
 
 .preview-pdf {
   width: 100%;
   height: 80vh;
   border: none;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
 }
 
 .file-preview-content > .pdf-signature-viewer {
@@ -224,7 +224,7 @@
   background: #1e1e1e;
   color: #d4d4d4;
   padding: 20px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   max-width: 100%;
   max-height: 80vh;
   overflow: auto;
@@ -254,7 +254,7 @@
   background: #4b5563;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 14px;
 }
@@ -283,7 +283,7 @@
   max-height: 80vh;
   background: #252525;
   border: 1px solid #333;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
   overflow: hidden;
   z-index: 3000;

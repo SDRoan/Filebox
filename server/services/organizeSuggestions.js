@@ -90,8 +90,8 @@ async function aiProposals(files, folderNames, taken) {
 {"moves":[{"index":0,"folder":"Folder name","reason":"short reason"}],"renames":[{"index":0,"name":"new name without extension","reason":"short reason"}]}
 Rules: suggest a move only when 2 or more files clearly share a topic, using a short folder name (prefer an existing folder). Suggest renames only for files marked vagueName=true, based on their snippet; skip any file you are unsure about. Never invent content. Empty arrays are fine.`,
     content: JSON.stringify({ existingFolders: folderNames.map(f => f.name), files: list }),
+    task: 'organize',
     format: 'json',
-    options: { temperature: 0.1 },
   });
 
   let parsed;
@@ -222,7 +222,7 @@ async function applyProposals(userId, { actions = [], confirm = false } = {}) {
         if (String(file.parentFolder || '') === String(target._id)) throw new Error('Already in that folder');
         file.parentFolder = target._id;
         await file.save();
-        await Activity.create({ user: userId, file: file._id, action: 'moved', details: `Organized into ${target.name}` });
+        await Activity.create({ user: userId, file: file._id, action: 'moved', details: `Organized into ${target.name}`, source: 'filebox' });
         Object.assign(result, { success: true, message: `Moved "${file.originalName}" to "${target.name}"`, file });
       } else if (action.type === 'rename') {
         const newStem = cleanFileStem(stem(action.newName || ''));
@@ -231,7 +231,7 @@ async function applyProposals(userId, { actions = [], confirm = false } = {}) {
         const oldName = file.originalName;
         file.originalName = newName;
         await file.save();
-        await Activity.create({ user: userId, file: file._id, action: 'renamed', details: `Renamed from ${oldName}` });
+        await Activity.create({ user: userId, file: file._id, action: 'renamed', details: `Renamed from ${oldName}`, source: 'filebox' });
         Object.assign(result, { success: true, message: `Renamed "${oldName}" to "${newName}"`, file });
       } else {
         throw new Error('Unknown change type');
@@ -244,4 +244,4 @@ async function applyProposals(userId, { actions = [], confirm = false } = {}) {
   return { results, applied: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length };
 }
 
-module.exports = { suggestOrganization, applyProposals, isVagueName };
+module.exports = { suggestOrganization, applyProposals, isVagueName, ruleProposals };

@@ -14,7 +14,7 @@
 
 .file-editor-container {
   background: #1a1a1a;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   width: 100%;
   max-width: 95vw;
   max-height: 95vh;
@@ -30,7 +30,7 @@
   padding: 20px;
   border-bottom: 1px solid #333;
   background: #252525;
-  border-radius: 12px 12px 0 0;
+  border-radius: calc(12px * var(--fb-radius-scale, 1)) calc(12px * var(--fb-radius-scale, 1)) 0 0;
 }
 
 .editor-title {
@@ -61,7 +61,7 @@
 .editor-btn {
   padding: 8px 16px;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
@@ -178,7 +178,7 @@
   padding: 15px 20px;
   border-top: 1px solid #333;
   background: #252525;
-  border-radius: 0 0 12px 12px;
+  border-radius: 0 0 calc(12px * var(--fb-radius-scale, 1)) calc(12px * var(--fb-radius-scale, 1));
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -208,7 +208,7 @@
 
 .editor-textarea::-webkit-scrollbar-thumb {
   background: #444;
-  border-radius: 5px;
+  border-radius: calc(5px * var(--fb-radius-scale, 1));
 }
 
 .editor-textarea::-webkit-scrollbar-thumb:hover {

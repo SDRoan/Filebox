@@ -363,7 +363,7 @@ const SharedFiles: React.FC = () => {
             onSortChange={setSortBy}
             onSortOrderChange={setSortOrder}
             onFilterChange={setFilterBy}
-            onViewModeChange={setViewMode}
+            onViewModeChange={(mode) => { if (mode !== 'board') setViewMode(mode); }}
           />
         </div>
       </div>

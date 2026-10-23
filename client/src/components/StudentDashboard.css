@@ -110,7 +110,7 @@
 
 .course-view-tabs::-webkit-scrollbar-thumb {
   background: var(--border-medium);
-  border-radius: 2px;
+  border-radius: calc(2px * var(--fb-radius-scale, 1));
 }
 
 .course-view-tab {

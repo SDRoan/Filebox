@@ -24,7 +24,7 @@
   right: -8px;
   background: #f44336;
   color: white;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   padding: 4px 10px;
   font-size: 12px;
   font-weight: 600;
@@ -47,9 +47,9 @@
 .shared-files-tabs {
   display: flex;
   gap: 8px;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   padding: 4px;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
@@ -57,7 +57,7 @@
   padding: 10px 20px;
   border: none;
   background: transparent;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
@@ -93,7 +93,7 @@
   width: 100%;
   padding: 10px 40px 10px 16px;
   border: 2px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   font-size: 14px;
   transition: all 0.2s;
 }
@@ -121,9 +121,9 @@
 .filter-select {
   padding: 10px 16px;
   border: 2px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   font-size: 14px;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -136,8 +136,8 @@
 .group-toggle {
   padding: 10px 16px;
   border: 2px solid #e0e0e0;
-  border-radius: 8px;
-  background: white;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
+  background: var(--fb-surface, #ffffff);
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
@@ -246,8 +246,8 @@
 }
 
 .shared-file-item {
-  background: white;
-  border-radius: 12px;
+  background: var(--fb-surface, #ffffff);
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   overflow: hidden;
   transition: all 0.2s;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
@@ -280,7 +280,7 @@
   width: 64px;
   height: 64px;
   background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   margin: 0 auto;
 }
 
@@ -298,7 +298,7 @@
   top: -6px;
   right: -6px;
   padding: 4px 8px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   font-size: 11px;
   font-weight: 600;
   white-space: nowrap;
@@ -306,7 +306,7 @@
 }
 
 .permission-badge.view {
-  background: #4caf50;
+  background: var(--fb-g-4caf50, #4caf50);
   color: white;
 }
 
@@ -382,7 +382,7 @@
   gap: 4px;
   padding: 4px 8px;
   background: #f0f0f0;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   font-size: 11px;
   color: #333;
 }
@@ -396,7 +396,7 @@
   align-items: center;
   padding: 4px 8px;
   background: #e0e0e0;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   font-size: 11px;
   color: #666;
 }
@@ -417,7 +417,7 @@
   padding: 8px 12px;
   border: none;
   background: #f0f0f0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 16px;
   transition: all 0.2s;
@@ -437,7 +437,7 @@
 }
 
 .action-button.download-btn:hover {
-  background: #4caf50;
+  background: var(--fb-g-4caf50, #4caf50);
   color: white;
 }
 
@@ -473,14 +473,14 @@
   color: #666;
   padding: 2px 6px;
   background: #f0f0f0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
 }
 
 .activity-panel {
   margin-top: 12px;
   padding: 16px;
   background: #f8f9fa;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   border-top: 2px solid #6b7280;
 }
 
@@ -501,8 +501,8 @@
   align-items: center;
   gap: 12px;
   padding: 8px;
-  background: white;
-  border-radius: 6px;
+  background: var(--fb-surface, #ffffff);
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 13px;
 }
 

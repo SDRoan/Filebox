@@ -40,7 +40,7 @@ interface StorageViewProps {
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
-  Documents: '#4f7a46', Images: '#5f7fa3', Videos: '#a0745a', Audio: '#8a6aa5', Archives: '#b59a4a', Other: '#9aa58f',
+  Documents: 'var(--fb-g-4f7a46, #4f7a46)', Images: '#5f7fa3', Videos: '#a0745a', Audio: '#8a6aa5', Archives: '#b59a4a', Other: 'var(--fb-g-9aa58f, #9aa58f)',
 };
 
 const StorageView: React.FC<StorageViewProps> = ({ onOpenFolder, onOpenTrash }) => {

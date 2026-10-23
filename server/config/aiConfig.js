@@ -11,10 +11,20 @@ module.exports = {
     ocrModel: process.env.OLLAMA_OCR_MODEL || 'glm-ocr',
     // Used for "Describe image" only when this model is installed locally.
     visionModel: process.env.OLLAMA_VISION_MODEL || 'llama3.2-vision',
+    // Reads each chat request (a short JSON reply). Defaults to the assistant model so only one language
+    // model is loaded: on a 16 GB laptop a second model pushed everything into swap and made answers slower.
+    // With memory to spare, OLLAMA_UNDERSTANDING_MODEL=llama3.2:3b reads requests about 2.5x faster.
+    understandingModel: process.env.OLLAMA_UNDERSTANDING_MODEL || process.env.OLLAMA_ASSISTANT_PLANNER_MODEL || process.env.OLLAMA_ASSISTANT_MODEL || 'llama3.1:8b',
+    // Local embedding model: File Box AI matches requests to files by meaning ("my CV" -> a resume).
+    embeddingModel: process.env.OLLAMA_EMBEDDING_MODEL || 'nomic-embed-text',
     summaryModel: process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
     assistantModel: process.env.OLLAMA_ASSISTANT_MODEL || process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
     plannerModel: process.env.OLLAMA_ASSISTANT_PLANNER_MODEL || process.env.OLLAMA_ASSISTANT_MODEL || process.env.OLLAMA_SUMMARY_MODEL || 'llama3.1:8b',
-    assistantTemperature: parseFloat(process.env.OLLAMA_ASSISTANT_TEMPERATURE || '0.25'),
+    // Generation settings are per task in services/ollamaClient.js (TASK_PROFILES).
+    // Explicit context window: Ollama's default (4096 tokens) silently cuts long prompts from the front.
+    contextWindow: parseInt(process.env.OLLAMA_CONTEXT_WINDOW, 10) || 8192,
+    // Fixed seed so the same request with the same files gives the same answer or plan.
+    seed: Number.isFinite(parseInt(process.env.OLLAMA_SEED, 10)) ? parseInt(process.env.OLLAMA_SEED, 10) : 42,
     assistantHistoryTurns: parseInt(process.env.OLLAMA_ASSISTANT_HISTORY_TURNS, 10) || 8,
     assistantMaxFileContextChars: parseInt(process.env.OLLAMA_ASSISTANT_MAX_FILE_CONTEXT_CHARS, 10) || 12000,
     timeoutMs: parseInt(process.env.OLLAMA_TIMEOUT_MS, 10) || 120000,

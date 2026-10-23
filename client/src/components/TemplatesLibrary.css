@@ -43,7 +43,7 @@
   width: 100%;
   padding: 0.75rem 1rem 0.75rem 2.5rem;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   font-size: 0.95rem;
 }
 
@@ -53,8 +53,8 @@
   gap: 0.5rem;
   padding: 0.75rem 1rem;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  background: white;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
+  background: var(--fb-surface, #ffffff);
 }
 
 .category-filter select {
@@ -71,9 +71,9 @@
 }
 
 .template-card {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   padding: 1.5rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   transition: all 0.2s;
@@ -145,7 +145,7 @@
   background: #f3f4f6;
   color: #4b5563;
   padding: 0.25rem 0.75rem;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   font-size: 0.75rem;
   font-weight: 500;
 }
@@ -178,7 +178,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
 }
 
 .btn-icon-small:hover {
@@ -192,7 +192,7 @@
   color: white;
   border: none;
   padding: 0.75rem;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-weight: 500;
   transition: background 0.2s;
@@ -222,7 +222,7 @@
   color: white;
   border: none;
   padding: 0.75rem 1.5rem;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -245,7 +245,7 @@
   color: #374151;
   border: none;
   padding: 0.75rem 1.5rem;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-weight: 500;
   transition: background 0.2s;
@@ -269,8 +269,8 @@
 }
 
 .modal-content {
-  background: white;
-  border-radius: 12px;
+  background: var(--fb-surface, #ffffff);
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   padding: 2rem;
   max-width: 500px;
   width: 90%;
@@ -306,7 +306,7 @@
   width: 100%;
   padding: 0.75rem;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   font-size: 0.95rem;
   font-family: inherit;
 }

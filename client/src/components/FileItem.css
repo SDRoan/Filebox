@@ -3,8 +3,8 @@
   flex-direction: column;
   align-items: center;
   padding: 1.5rem 1.25rem;
-  background: #ffffff;
-  border-radius: 12px;
+  background: var(--fb-surface, #ffffff);
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   cursor: pointer;
@@ -100,8 +100,8 @@
   margin-bottom: 0.25rem;
   padding: 2px 6px;
   border: 2px solid var(--primary);
-  border-radius: 4px;
-  background: #ffffff;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
+  background: var(--fb-surface, #ffffff);
   outline: none;
   font-family: inherit;
   letter-spacing: -0.015em;

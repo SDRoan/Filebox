@@ -14,7 +14,7 @@
 
 .relationship-graph-container {
   background: #1a1a1a;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   width: 95vw;
   height: 95vh;
   max-width: 95vw;
@@ -32,7 +32,7 @@
   padding: 1.5rem;
   border-bottom: 1px solid #333;
   background: #252525;
-  border-radius: 12px 12px 0 0;
+  border-radius: calc(12px * var(--fb-radius-scale, 1)) calc(12px * var(--fb-radius-scale, 1)) 0 0;
 }
 
 .graph-header h2 {
@@ -52,7 +52,7 @@
   background: #444;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   width: 32px;
   height: 32px;
   cursor: pointer;
@@ -127,7 +127,7 @@
   right: 1rem;
   background: #252525;
   border: 1px solid #333;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   padding: 1rem;
   color: white;
   max-width: 300px;
@@ -160,7 +160,7 @@
   color: white;
   border: none;
   padding: 0.5rem 1rem;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.85rem;
   transition: background 0.2s;
@@ -189,7 +189,7 @@
   right: 1rem;
   background: #252525;
   border: 1px solid #333;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   padding: 1rem;
   color: white;
   max-width: 300px;
@@ -242,7 +242,7 @@
   margin: 1rem 0;
   padding: 1rem;
   background: #1a1a1a;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   border: 1px solid #333;
 }
 
@@ -259,7 +259,7 @@
   background: #1a1a1a;
   color: #fff;
   border: 1px solid #444;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
   font-size: 0.95rem;
   cursor: pointer;
   margin-top: 0.5rem;
@@ -281,7 +281,7 @@
   background: #6b7280;
   color: white;
   border: none;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.9rem;
   font-weight: 500;
@@ -312,7 +312,7 @@
   color: white;
   border: none;
   padding: 0.5rem 1rem;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.85rem;
   transition: background 0.2s;
@@ -336,7 +336,7 @@
   padding: 1rem 1.5rem;
   border-top: 1px solid #333;
   background: #252525;
-  border-radius: 0 0 12px 12px;
+  border-radius: 0 0 calc(12px * var(--fb-radius-scale, 1)) calc(12px * var(--fb-radius-scale, 1));
 }
 
 .legend-section {

@@ -7,7 +7,8 @@ import FileItemComponent from './FileItem';
 import FolderItem from './FolderItem';
 import UploadButton from './UploadButton';
 import CreateFolderModal from './CreateFolderModal';
-import FileSortFilter, { SortOption, SortOrder, FilterOption } from './FileSortFilter';
+import FileSortFilter, { SortOption, SortOrder, FilterOption, ViewMode } from './FileSortFilter';
+import FileBoard from './FileBoard';
 import OrganizeReview from './OrganizeReview';
 import { AIAssistantIcon, CloseIcon as DialogCloseIcon } from './Icons';
 import './AIPanels.css';
@@ -64,7 +65,22 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
   const [sortBy, setSortBy] = useState<SortOption>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [filterBy, setFilterBy] = useState<FilterOption>('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  // Grid, List or Board, remembered in this browser.
+  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
+    try {
+      const saved = localStorage.getItem('filebox-file-view');
+      return saved === 'list' || saved === 'board' ? saved : 'grid';
+    } catch { return 'grid'; }
+  });
+  const setViewMode = (mode: ViewMode) => {
+    setViewModeState(mode);
+    try { localStorage.setItem('filebox-file-view', mode); } catch { /* only for this visit */ }
+  };
+  const allowBoard = !showTrash && !showStarred;
+  const showBoard = allowBoard && viewMode === 'board';
+  const boardKey = isTeamFolder && teamFolderId
+    ? `team-${teamFolderId}${currentFolderId && currentFolderId !== teamFolderId ? `-${currentFolderId}` : ''}`
+    : (currentFolderId && currentFolderId !== 'root' ? currentFolderId : 'root');
   const { user, refreshUser } = useAuth();
   const socketRef = useRef<Socket | null>(null);
 
@@ -419,6 +435,8 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
     let filteredFolders = [...folders];
 
     // Apply filters
+    // A file-type view (Images, Videos, Documents) shows only those files, not folders.
+    if (filterBy !== 'all' && filterBy !== 'folders') filteredFolders = [];
     if (filterBy === 'folders') {
       filteredFiles = [];
     } else if (filterBy === 'images') {
@@ -468,6 +486,36 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
 
   const itemCount = filteredAndSorted.folders.length + filteredAndSorted.files.length;
 
+  const renderFolder = (folder: Folder) => (
+    <FolderItem
+      key={folder._id}
+      folder={folder}
+      onClick={() => selectionMode ? toggleSelection(`folder-${folder._id}`) : onFolderClick(folder._id)}
+      onDelete={() => handleDelete(folder._id, 'folder')}
+      onRestore={() => handleRestore(folder._id, 'folder')}
+      onPermanentDelete={() => handlePermanentDelete(folder._id, 'folder')}
+      onMove={loadFiles}
+      showTrash={showTrash}
+      isSelected={selectionMode && selectedItems.has(`folder-${folder._id}`)}
+      selectionMode={selectionMode}
+    />
+  );
+  const renderFile = (file: FileItem) => (
+    <FileItemComponent
+      key={file._id}
+      file={file}
+      onDelete={() => handleDelete(file._id, 'file')}
+      onRestore={() => handleRestore(file._id, 'file')}
+      onPermanentDelete={() => handlePermanentDelete(file._id, 'file')}
+      onRename={loadFiles}
+      onMove={loadFiles}
+      showTrash={showTrash}
+      isSelected={selectionMode && selectedItems.has(`file-${file._id}`)}
+      selectionMode={selectionMode}
+      onSelect={() => toggleSelection(`file-${file._id}`)}
+    />
+  );
+
   return (
     <div
       className={`file-browser ${isDragging ? 'dragging' : ''}`}
@@ -512,7 +560,7 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
         <div className="file-page-heading">
           <div>
             <h1>{showTrash ? 'Trash' : showStarred ? 'Starred' : breadcrumbFolders.length > 0 ? breadcrumbFolders[breadcrumbFolders.length - 1].name : 'Your files'}<span className="page-heading-period">.</span></h1>
-            <p>{showTrash ? 'Items here are deleted forever 30 days after you delete them. Restore anything you still need.' : showStarred ? 'The things you want to keep close.' : 'A home for everything you’re working on.'}</p>
+            <p>{showTrash ? 'Items here are deleted forever 30 days after you delete them. Restore anything you still need.' : showStarred ? 'The things you want to keep close.' : isTeamFolder ? 'Files shared with this Team Space.' : 'Your drive. File Box can help organize it.'}</p>
           </div>
           <div className="file-page-actions">
             {showTrash && files.length + folders.length > 0 && (
@@ -527,14 +575,14 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
             }}>
               <summary aria-label="More file actions" title="More file actions"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></summary>
               <div className="file-more-options">
-                {!showTrash && !showStarred && !isTeamFolder && <button onClick={(event) => { setShowSmartOrg(true); event.currentTarget.closest('details')?.removeAttribute('open'); }}><SmartOrganizeIcon size={16} />Organize with File Box AI</button>}
+                {!showTrash && !showStarred && !isTeamFolder && <button onClick={(event) => { setShowSmartOrg(true); event.currentTarget.closest('details')?.removeAttribute('open'); }}><SmartOrganizeIcon size={16} />Let File Box organize this</button>}
                 <button disabled={files.length + folders.length === 0} onClick={(event) => { setSelectionMode(true); event.currentTarget.closest('details')?.removeAttribute('open'); }}><CheckIcon size={16} />Select items</button>
               </div>
             </details>
           </div>
         </div>
         <div className="file-browser-header">
-          <FileSortFilter sortBy={sortBy} sortOrder={sortOrder} filterBy={filterBy} viewMode={viewMode}
+          <FileSortFilter sortBy={sortBy} sortOrder={sortOrder} filterBy={filterBy} viewMode={showBoard ? 'board' : viewMode === 'board' ? 'grid' : viewMode} allowBoard={allowBoard}
             onSortChange={setSortBy} onSortOrderChange={setSortOrder} onFilterChange={setFilterBy} onViewModeChange={setViewMode} />
         </div>
         {selectionMode && <div className="file-selection-toolbar">
@@ -551,12 +599,12 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
           <div className="empty-state">
             <div className="empty-state-content">
               <svg className="empty-folder-illustration" width="156" height="126" viewBox="0 0 156 126" fill="none" aria-hidden="true">
-                <path d="M30 39a5 5 0 0 1 5-5h29l9 9h47a5 5 0 0 1 5 5v55H30z" fill="#d7e0cd" stroke="#a7b698" strokeWidth="1.3"/>
-                <g transform="rotate(-9 76 63)"><rect x="47" y="20" width="65" height="79" rx="3" fill="#f8f9f4" stroke="#b5c0a9" strokeWidth="1.3"/><path d="M58 37h37M58 46h37M58 55h24" stroke="#d3d9cb" strokeWidth="2" strokeLinecap="round"/></g>
-                <path d="M25 57h108l-10 49H35z" fill="#e8eddf" stroke="#a7b698" strokeWidth="1.3" strokeLinejoin="round"/>
-                <rect x="60" y="75" width="37" height="13" rx="2" fill="#f8f9f4" stroke="#c2cdb7"/>
-                <path d="M70 81.5h17" stroke="#b1bea4" strokeWidth="1.4" strokeLinecap="round"/>
-                <path d="M23 108h112" stroke="#d8dfd0" strokeWidth="1.3" strokeLinecap="round"/>
+                <path d="M30 39a5 5 0 0 1 5-5h29l9 9h47a5 5 0 0 1 5 5v55H30z" strokeWidth="1.3" style={{ fill: 'var(--fb-g-d7e0cd, #d7e0cd)', stroke: 'var(--fb-g-a7b698, #a7b698)' }}/>
+                <g transform="rotate(-9 76 63)"><rect x="47" y="20" width="65" height="79" rx="3" strokeWidth="1.3" style={{ fill: 'var(--fb-g-f8f9f4, #f8f9f4)', stroke: 'var(--fb-g-b5c0a9, #b5c0a9)' }}/><path d="M58 37h37M58 46h37M58 55h24" strokeWidth="2" strokeLinecap="round" style={{ stroke: 'var(--fb-g-d3d9cb, #d3d9cb)' }}/></g>
+                <path d="M25 57h108l-10 49H35z" strokeWidth="1.3" strokeLinejoin="round" style={{ fill: 'var(--fb-g-e8eddf, #e8eddf)', stroke: 'var(--fb-g-a7b698, #a7b698)' }}/>
+                <rect x="60" y="75" width="37" height="13" rx="2" style={{ fill: 'var(--fb-g-f8f9f4, #f8f9f4)', stroke: 'var(--fb-g-c2cdb7, #c2cdb7)' }}/>
+                <path d="M70 81.5h17" strokeWidth="1.4" strokeLinecap="round" style={{ stroke: 'var(--fb-g-b1bea4, #b1bea4)' }}/>
+                <path d="M23 108h112" strokeWidth="1.3" strokeLinecap="round" style={{ stroke: 'var(--fb-g-d8dfd0, #d8dfd0)' }}/>
               </svg>
               <h2 className="empty-state-title">{filterBy !== 'all' ? 'Nothing in this view yet' : showTrash ? 'All clear.' : showStarred ? 'Keep your favorites here.' : 'Good things start with a file.'}</h2>
               <p className="empty-state-description">{filterBy !== 'all' ? 'Try another file type, or head back to all files.' : showTrash ? 'Deleted items stay here for 30 days, just in case.' : showStarred ? 'Star a file or folder and it will be easy to find here.' : 'Keep your documents, images, and projects together. Add a file to get started.'}</p>
@@ -565,37 +613,20 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
             </div>
           </div>
         ) : (
+          showBoard ? (
+            <FileBoard
+              folderKey={boardKey}
+              entries={[
+                ...filteredAndSorted.folders.map(folder => ({ key: `folder-${folder._id}`, name: folder.name, render: () => renderFolder(folder) })),
+                ...filteredAndSorted.files.map(file => ({ key: `file-${file._id}`, name: file.originalName, render: () => renderFile(file) })),
+              ]}
+            />
+          ) : (
           <div className={`file-list ${viewMode === 'list' ? 'list-view' : 'grid-view'}`}>
-            {filteredAndSorted.folders.map((folder) => (
-              <FolderItem
-                key={folder._id}
-                folder={folder}
-                onClick={() => selectionMode ? toggleSelection(`folder-${folder._id}`) : onFolderClick(folder._id)}
-                onDelete={() => handleDelete(folder._id, 'folder')}
-                onRestore={() => handleRestore(folder._id, 'folder')}
-                onPermanentDelete={() => handlePermanentDelete(folder._id, 'folder')}
-                onMove={loadFiles}
-                showTrash={showTrash}
-                isSelected={selectionMode && selectedItems.has(`folder-${folder._id}`)}
-                selectionMode={selectionMode}
-              />
-            ))}
-            {filteredAndSorted.files.map((file) => (
-              <FileItemComponent
-                key={file._id}
-                file={file}
-                onDelete={() => handleDelete(file._id, 'file')}
-                onRestore={() => handleRestore(file._id, 'file')}
-                onPermanentDelete={() => handlePermanentDelete(file._id, 'file')}
-                onRename={loadFiles}
-                onMove={loadFiles}
-                showTrash={showTrash}
-                isSelected={selectionMode && selectedItems.has(`file-${file._id}`)}
-                selectionMode={selectionMode}
-                onSelect={() => toggleSelection(`file-${file._id}`)}
-              />
-            ))}
+            {filteredAndSorted.folders.map(renderFolder)}
+            {filteredAndSorted.files.map(renderFile)}
           </div>
+          )
         ))}
         <div className="file-canvas-footer"><span>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span><span>{showTrash ? 'Items are kept for 30 days' : `Sorted by ${sortBy === 'date' ? 'date added' : sortBy}`}</span></div>
         </div>
@@ -623,7 +654,7 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
           <div className="ai-panel-dialog wide" role="dialog" aria-modal="true" aria-labelledby="organize-title">
             <header className="ai-panel-header">
               <div>
-                <h2 id="organize-title"><AIAssistantIcon size={18} /> Organize with File Box AI</h2>
+                <h2 id="organize-title"><AIAssistantIcon size={18} /> Let File Box organize this</h2>
                 <p>Review each suggestion; nothing changes until you confirm.</p>
               </div>
               <button className="ai-panel-close" onClick={() => setShowSmartOrg(false)} aria-label="Close"><DialogCloseIcon size={18} /></button>

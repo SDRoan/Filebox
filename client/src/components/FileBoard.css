@@ -1,0 +1,64 @@
+/* My Files > Board */
+.file-board { display: flex; flex-direction: column; }
+.file-board-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; padding: 12px 16px; border-bottom: 1px solid var(--fb-g-edf0e7, #edf0e7); }
+.file-board-add { display: inline-flex; align-items: center; gap: 4px; }
+.file-board-hint { flex: 1; min-width: 200px; font-size: 12px; color: var(--fb-g-78856e, #78856e); }
+.file-board-status { margin: 0; padding: 8px 16px; font-size: 12px; color: #7d5b3a; }
+.file-board-shape { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 1px solid var(--fb-g-dfe4d8, #dfe4d8); border-radius: calc(6px * var(--fb-radius-scale, 1)); background: var(--fb-surface, #ffffff); cursor: pointer; }
+.file-board-shape:hover, .file-board-shape.active { border-color: var(--fb-g-3f6543, #3f6543); }
+.file-board-shape span { display: block; width: 16px; height: 12px; border: 1.6px solid var(--fb-g-56644c, #56644c); }
+.file-board-shape.shape-rounded span { border-radius: 4px; }
+.file-board-shape.shape-circle span { width: 14px; height: 14px; border-radius: 50%; }
+.file-board-shape.shape-pill span { width: 18px; height: 10px; border-radius: 999px; }
+
+.file-board-scroll { overflow: auto; }
+.file-browser .file-list.file-board-canvas { display: block; position: relative; padding: 0; min-height: 560px;
+  background-image: radial-gradient(var(--fb-g-dfe4d8, #dfe4d8) 1px, transparent 1.2px); background-size: 22px 22px; }
+
+/* No z-index on cards or zones: a card's own dialogs (preview, share, move) must not be trapped under other cards.
+   Zones come first in the page, so cards show above them; only the card being dragged is raised. */
+.board-item { position: absolute; touch-action: none; }
+.board-item.dragging { z-index: 4; }
+.board-item.dragging > * { box-shadow: 0 14px 30px #2a3a2026; }
+.board-item > :not(.board-item-handle) { width: 100%; }
+.board-item-handle { position: absolute; top: 6px; left: 6px; z-index: 3; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: var(--fb-surface, #ffffff); color: var(--fb-g-87937b, #87937b); box-shadow: 0 0 0 1px var(--fb-g-e2e7db, #e2e7db); cursor: grab; opacity: 0; transition: opacity 120ms; }
+.board-item:hover .board-item-handle, .board-item-handle:focus-visible { opacity: 1; }
+.board-item:hover > .file-item, .board-item:hover > .folder-item { cursor: grab; }
+body.board-dragging, body.board-dragging * { cursor: grabbing !important; user-select: none; }
+
+.board-zone { position: absolute; border: 2px solid; touch-action: none; cursor: grab; transition: box-shadow 120ms; }
+.board-zone.shape-rectangle { border-radius: calc(4px * var(--fb-radius-scale, 1)); }
+.board-zone.shape-rounded { border-radius: calc(22px * var(--fb-radius-scale, 1)); }
+.board-zone.shape-circle { border-radius: 50%; }
+.board-zone.shape-pill { border-radius: 9999px; }
+.board-zone.selected { box-shadow: 0 0 0 2px var(--fb-g-3f6543, #3f6543); }
+.board-zone.drop-target { box-shadow: 0 0 0 3px var(--fb-g-3f6543, #3f6543), 0 10px 30px #2a3a2020; }
+/* The name tag is only as wide as its contents, so it can be moved around inside the zone. */
+.board-zone-header { display: flex; align-items: center; gap: 6px; width: max-content; max-width: calc(100% - 16px); height: 44px; padding: 0 12px; }
+.board-zone.shape-circle .board-zone-header { margin: 12% auto 0; }
+.board-zone.shape-pill .board-zone-header { padding-left: 40px; }
+.board-zone-header.placed { position: absolute; height: 40px; padding: 0 6px; margin: 0; border-radius: 8px; }
+.board-zone-header.placed:hover { background: #ffffff59; }
+.board-zone.shape-circle .board-zone-header.placed, .board-zone.shape-pill .board-zone-header.placed { margin: 0; padding: 0 6px; }
+.board-zone-label-grip { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; background: #ffffff99; color: #3f4a3a; cursor: move; touch-action: none; }
+.board-zone-label-grip:hover { background: #ffffffe6; }
+.board-zone-move { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--fb-g-56644c, #56644c); cursor: pointer; }
+.board-zone-move:hover, .board-zone-move:focus-visible { background: var(--fb-g-eef2e7, #eef2e7); }
+.board-zone-label-reset { padding: 4px 8px; border: 1px solid var(--fb-g-dfe4d8, #dfe4d8); border-radius: 6px; background: none; color: var(--fb-g-56644c, #56644c); font-size: 11px; cursor: pointer; }
+.board-zone-name { width: 170px; min-width: 60px; padding: 4px 6px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #26301f; font: inherit; font-size: 14px; font-weight: 600; }
+.board-zone-name:hover { border-color: #00000022; }
+.board-zone-name:focus { outline: 0; border-color: #0000004d; background: #ffffffb3; }
+.board-zone-count { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: #ffffffb3; color: #3f4a3a; font-size: 11px; text-align: center; }
+.board-zone.dark .board-zone-name, .board-zone.dark .board-zone-label-grip { color: #f4f6f2; }
+.board-zone.dark .board-zone-label-grip, .board-zone.dark .board-zone-count { background: #00000033; color: #f4f6f2; }
+.board-zone-tools { position: absolute; top: -48px; left: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 1px solid var(--fb-g-dfe5d7, #dfe5d7); border-radius: calc(9px * var(--fb-radius-scale, 1)); background: var(--fb-surface, #ffffff); box-shadow: 0 8px 22px #2a3a201f; cursor: default; white-space: nowrap; }
+.board-zone-colors, .board-zone-shapes { display: inline-flex; align-items: center; gap: 4px; }
+.board-zone-colors button { width: 20px; height: 20px; padding: 0; border: 1px solid #0000001f; border-radius: 50%; cursor: pointer; }
+.board-zone-colors button[aria-pressed='true'] { box-shadow: 0 0 0 2px var(--fb-surface, #ffffff), 0 0 0 3.5px var(--fb-g-3f6543, #3f6543); }
+.board-zone-custom input { width: 22px; height: 22px; padding: 0; border: 0; background: none; cursor: pointer; }
+.board-zone-shapes .file-board-shape { width: 28px; height: 28px; }
+.board-zone-delete { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; color: #a54a3a; cursor: pointer; }
+.board-zone-delete:hover { background: #fbeae6; }
+.board-zone-resize { position: absolute; right: 6px; bottom: 6px; width: 16px; height: 16px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, #00000033 50%, #00000033 60%, transparent 60%, transparent 70%, #00000033 70%, #00000033 80%, transparent 80%); }
+.board-zone.shape-circle .board-zone-resize { right: 15%; bottom: 15%; }
+.board-zone.shape-pill .board-zone-resize { right: 22px; }

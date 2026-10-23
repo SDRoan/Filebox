@@ -129,7 +129,7 @@
 }
 
 .type-project_work {
-  background: #d1fae5;
+  background: var(--fb-g-d1fae5, #d1fae5);
   color: #065f46;
 }
 

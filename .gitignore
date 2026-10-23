@@ -44,3 +44,4 @@ Thumbs.db
 # Local recovery copies and nested checkout
 server/node_modules.offloaded/
 Filebox-repo/
+server/ai-accuracy/live-cases.json

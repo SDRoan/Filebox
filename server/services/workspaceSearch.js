@@ -7,6 +7,14 @@ const { readableFileFilter, filterReadable } = require('./permissions');
 
 const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+// "resumes" also matches "Resume.pdf"; separators in names count as spaces.
+const singular = (word) => (word.length > 3 && word.endsWith('s') ? word.slice(0, -1) : word);
+const nameHasEveryWord = (name = '', query = '') => {
+  const words = query.toLowerCase().split(/[^a-z0-9]+/).filter(word => word.length > 1);
+  const normalized = name.toLowerCase().replace(/[_\-.]+/g, ' ');
+  return words.length > 0 && words.every(word => normalized.includes(singular(word)));
+};
+
 /**
  * Search files by content and name, plus the user's folders by name.
  * Fully local and deterministic, so it works when Ollama is not running.
@@ -14,10 +22,12 @@ const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
  * scope 'owned'      - only the user's own files (header search)
  * scope 'accessible' - everything the shared permission rules allow: owned, active direct shares, Team Spaces
  * includeTrash       - also the user's own trashed files (Trash is private to its owner)
+ * preferNames        - when some file names contain every query word, return only those
+ *                      ("find my resume" means a resume, not a file that mentions one)
  *
  * Every returned file carries `access` ({ role, source: 'owned' | 'shared' | 'team', teamName }).
  */
-async function searchWorkspace(userId, query, { limit = config.search.maxResults, scope = 'owned', includeTrash = false } = {}) {
+async function searchWorkspace(userId, query, { limit = config.search.maxResults, scope = 'owned', includeTrash = false, preferNames = false } = {}) {
   const base = scope === 'accessible' ? await readableFileFilter(userId) : { owner: userId, isTrashed: { $ne: true } };
   const filter = includeTrash ? { $or: [base, { owner: userId, isTrashed: true }] } : base;
   // parentFolder stays an id: Team Space files have a TeamFolder parent, and the permission
@@ -49,7 +59,7 @@ async function searchWorkspace(userId, query, { limit = config.search.maxResults
   ].sort((a, b) => b.score - a.score);
 
   const seen = new Set();
-  const uniqueFiles = [];
+  let uniqueFiles = [];
   ranked.forEach(({ file }) => {
     const id = file._id.toString();
     if (!seen.has(id)) {
@@ -57,6 +67,15 @@ async function searchWorkspace(userId, query, { limit = config.search.maxResults
       uniqueFiles.push(file);
     }
   });
+
+  let hiddenContentMatches = 0;
+  if (preferNames) {
+    const nameMatches = uniqueFiles.filter(file => nameHasEveryWord(file.originalName, query));
+    if (nameMatches.length) {
+      hiddenContentMatches = uniqueFiles.length - nameMatches.length;
+      uniqueFiles = nameMatches;
+    }
+  }
 
   const folders = await Folder.find({
     owner: userId,
@@ -88,7 +107,8 @@ async function searchWorkspace(userId, query, { limit = config.search.maxResults
       contentKeywordResults: keywordResults.length,
       filenameOnlyResults: filenameOnlyResults.length,
       filesWithContent: indexed.length,
-      totalFiles: files.length
+      totalFiles: files.length,
+      hiddenContentMatches
     }
   };
 }

@@ -6,7 +6,6 @@ const archiver = require('archiver');
 const auth = require('../middleware/auth');
 const File = require('../models/File');
 const Folder = require('../models/Folder');
-const TeamFolder = require('../models/TeamFolder');
 const User = require('../models/User');
 const FileVersion = require('../models/FileVersion');
 const FileContent = require('../models/FileContent');
@@ -17,6 +16,10 @@ const StudyGroup = require('../models/StudyGroup');
 const FileMemory = require('../models/FileMemory');
 const { assertAvailable } = require('../utils/optionalModule');
 const { authorizeFile, authorizeFolder, sendDenied, capabilitiesFor, getFileRole, readableFileFilter } = require('../services/permissions');
+const { logView } = require('../services/activityLog');
+const { extractInBackground } = require('../services/backgroundExtraction');
+const imageCaption = require('../services/imageCaption');
+const { restorableParent } = require('../services/fileResolver');
 const { snapshotCurrentVersion, replaceFileContents, newLivePath } = require('../services/fileVersions');
 const { purgeFile, purgeFolderTree, purgeTrash, trashSize, RECOVERY_DAYS } = require('../services/trash');
 const { buildStorageSummary, recalculateStorage } = require('../services/storageSummary');
@@ -44,19 +47,6 @@ const resolveOwnedParentFolder = async (parentFolder, userId) => {
   if (!parentFolder || parentFolder === 'root') return { id: null };
   const folder = await Folder.findOne({ _id: parentFolder, owner: userId, isTrashed: { $ne: true } }).select('_id').catch(() => null);
   return folder ? { id: folder._id } : { error: 'Folder not found' };
-};
-
-// A restored item goes back to its folder only if that folder still exists, is not in Trash,
-// and is not inside a trashed folder; otherwise it returns to My Files.
-const restorableParent = async (parentId, userId) => {
-  let current = parentId;
-  for (let depth = 0; current && depth < 32; depth += 1) {
-    const folder = await Folder.findOne({ _id: current, owner: userId }).select('isTrashed parentFolder').lean();
-    if (!folder) return Boolean(await TeamFolder.exists({ _id: current })); // Team Space files keep their space
-    if (folder.isTrashed) return false;
-    current = folder.parentFolder;
-  }
-  return Boolean(parentId);
 };
 
 // Configure multer for file uploads
@@ -391,44 +381,10 @@ router.post('/upload', auth, upload.single('file'), async (req, res) => {
     // Send response before background processing
     res.status(201).json(file);
 
-    // Extract text in background (non-blocking)
-    setImmediate(async () => {
-      try {
-        const textExtractor = require('../services/textExtractor');
-        const FileContent = require('../models/FileContent');
-        const aiSearch = require('../services/aiSearch');
-
-        if (textExtractor.isSupported(file.mimeType)) {
-          console.log(`[Extraction] Starting extraction for: ${file.originalName}`);
-          const extractedText = await textExtractor.extractText(file.path, file.mimeType);
-          console.log(`[Extraction] Extracted ${extractedText.length} characters from ${file.originalName}`);
-
-          if (extractedText && extractedText.length > 0) {
-            console.log(`[Extraction] Generating embedding for: ${file.originalName}`);
-            const embedding = await aiSearch.generateEmbedding(extractedText);
-            console.log(`[Extraction] Generated embedding (length: ${embedding.length}) for: ${file.originalName}`);
-
-            const fileContent = new FileContent({
-              file: file._id,
-              extractedText,
-              embedding,
-              extractionStatus: 'completed'
-            });
-
-            // Summaries are generated on demand by File Box AI (Ollama), not on upload.
-            await fileContent.save();
-            console.log(`[Extraction] ✅ Completed: ${file.originalName}`);
-          } else {
-            console.log(`[Extraction] ⚠️ No text extracted from: ${file.originalName}`);
-          }
-        } else {
-          console.log(`[Extraction] ⏭️ Skipping unsupported type: ${file.mimeType} (${file.originalName})`);
-        }
-      } catch (error) {
-        console.error('Background text extraction error:', error);
-        // Don't fail the upload if extraction fails
-      }
-    });
+    // Read the file's text in the background so File Box AI can search and answer from it.
+    extractInBackground(file);
+    // Pictures also get a fun caption from the local vision model.
+    imageCaption.captionInBackground(file);
   } catch (error) {
     console.error('Upload error:', error);
     // Clean up uploaded file if it exists
@@ -476,6 +432,35 @@ router.post('/folder', auth, async (req, res) => {
   }
 });
 
+// A picture's AI caption (cards ask while it is being written).
+router.get('/:id/caption', auth, async (req, res) => {
+  try {
+    const access = await authorizeFile(req.params.id, req.user._id, 'viewer');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
+    res.json({ canCaption: imageCaption.canCaption(file), caption: file.aiCaption || null });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Ask for a caption (or a different one). Saved on the file, so it needs edit access.
+router.post('/:id/caption', auth, async (req, res) => {
+  try {
+    const access = await authorizeFile(req.params.id, req.user._id, 'editor');
+    if (sendDenied(res, access)) return;
+    const { file } = access;
+    if (!imageCaption.canCaption(file)) return res.status(400).json({ message: 'Captions are only for pictures.' });
+    const again = Boolean(file.aiCaption?.text);
+    if (!imageCaption.captionInBackground(file, { again })) {
+      return res.status(503).json({ message: 'File Box AI is turned off.' });
+    }
+    res.status(202).json({ caption: { ...(file.aiCaption?.toObject?.() || {}), status: 'writing', error: '' } });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
 // Download file
 router.get('/download/:id', auth, async (req, res) => {
   try {
@@ -494,13 +479,25 @@ router.get('/download/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'File not found on disk. The file may have been deleted.' });
     }
 
+    // Card thumbnails for images: shown while browsing, so they are not counted as views or downloads.
+    if (req.query.purpose === 'thumbnail') {
+      if (!String(file.mimeType || '').startsWith('image/')) return res.status(415).json({ message: 'Only images have thumbnails.' });
+      res.set('Cache-Control', 'private, max-age=300');
+      return res.type(file.mimeType).sendFile(require('path').resolve(file.path));
+    }
+
     // Track activity - notify owner if this is a shared file
     const isSharedFile = file.owner.toString() !== req.user._id.toString();
 
-    // Log activity
-    await logActivity(req.user._id, 'downloaded', file._id, null, file.originalName);
+    // Opening a file to look at it (previews ask with ?purpose=view) is a view, not a download.
+    const isView = req.query.purpose === 'view';
+    if (isView) {
+      await logView(req.user._id, file);
+    } else {
+      await logActivity(req.user._id, 'downloaded', file._id, null, file.originalName);
+    }
     // Record analytics
-    await analytics.recordActivity(file._id, req.user._id, 'download', {
+    await analytics.recordActivity(file._id, req.user._id, isView ? 'view' : 'download', {
       fileName: file.originalName,
       isSharedFile
     });
@@ -1155,6 +1152,7 @@ router.get('/preview-text/:id', auth, async (req, res) => {
     const access = await authorizeFile(req.params.id, req.user._id, 'viewer');
     if (sendDenied(res, access)) return;
     const { file } = access;
+    await logView(req.user._id, file);
 
     // Check if we have extracted text in FileContent
     let fileContent = await FileContent.findOne({ file: file._id });

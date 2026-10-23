@@ -1,3 +1,4 @@
+import type { ImageCaption } from '../types';
 import axios from 'axios';
 import { LOCAL_PREVIEW_ENABLED } from '../config/localPreview';
 
@@ -24,12 +25,17 @@ const getLocalSession = () => {
   return localSessionRequest;
 };
 
-// Ensure a real session exists before sending any workspace request.
-api.interceptors.request.use(async (config) => {
+const currentToken = async (url = '') => {
   let token = LOCAL_PREVIEW_ENABLED ? sessionStorage.getItem('filebox-local-token') : localStorage.getItem('token');
-  if (LOCAL_PREVIEW_ENABLED && !token && !config.url?.startsWith('/auth/')) {
+  if (LOCAL_PREVIEW_ENABLED && !token && !url.startsWith('/auth/')) {
     token = (await getLocalSession()).token;
   }
+  return token;
+};
+
+// Ensure a real session exists before sending any workspace request.
+api.interceptors.request.use(async (config) => {
+  const token = await currentToken(config.url);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -164,11 +170,25 @@ export const filesAPI = {
     const response = await api.post('/files/folder', { name, parentFolder });
     return response.data;
   },
-  downloadFile: async (fileId: string) => {
-    const response = await api.get(`/files/download/${fileId}`, {
+  // { view: true } when a file is only being opened to look at it (preview, editor), not saved to disk.
+  downloadFile: async (fileId: string, options: { view?: boolean } = {}) => {
+    const response = await api.get(`/files/download/${fileId}${options.view ? '?purpose=view' : ''}`, {
       responseType: 'blob',
     });
     return response.data;
+  },
+  // An image for a file card; not recorded as a view or download.
+  getThumbnail: async (fileId: string) => {
+    const response = await api.get(`/files/download/${fileId}?purpose=thumbnail`, { responseType: 'blob' });
+    return response.data as Blob;
+  },
+  getCaption: async (fileId: string) => {
+    const response = await api.get(`/files/${fileId}/caption`);
+    return response.data as { canCaption: boolean; caption: ImageCaption | null };
+  },
+  newCaption: async (fileId: string) => {
+    const response = await api.post(`/files/${fileId}/caption`);
+    return response.data as { caption: ImageCaption };
   },
   deleteFile: async (fileId: string) => {
     const response = await api.delete(`/files/${fileId}?type=file`);
@@ -1100,6 +1120,20 @@ export const signaturesAPI = {
     const response = await api.delete(`/signatures/${signatureId}`);
     return response.data;
   },
+  // Pages of a PDF for placing a signature: sizes, then each page as an image (object URL).
+  getPdfPages: async (fileId: string): Promise<{ total: number; pages: { width: number; height: number }[]; protected?: boolean; protectedMessage?: string }> => {
+    const response = await api.get(`/signatures/document/${fileId}/pages`);
+    return response.data;
+  },
+  getPdfPageImage: async (fileId: string, page: number): Promise<string> => {
+    const response = await api.get(`/signatures/document/${fileId}/pages/${page}`, { responseType: 'blob' });
+    return URL.createObjectURL(response.data);
+  },
+  /** Sign a PDF: position is the signature's top-left corner and width, as fractions of the page. */
+  signPdf: async (fileId: string, data: { signatureId: string; pageNumber: number; position: { x: number; y: number; width: number } }) => {
+    const response = await api.post(`/signatures/apply/${fileId}`, data);
+    return response.data;
+  },
   applySignature: async (fileId: string, data: { signatureId: string; pageNumber: number; position: { x: number; y: number; width: number; height: number } }) => {
     const response = await api.post(`/signatures/apply/${fileId}`, data);
     return response.data;
@@ -1110,15 +1144,216 @@ export const signaturesAPI = {
   },
 };
 
-// AI Assistant API (local Ollama)
-export type AssistantHistoryMessage = { role: 'user' | 'assistant'; content: string };
+// Home overview (local data only; works when File Box AI is offline)
+export interface HomeSuggestion {
+  id: string;
+  fingerprint: string;
+  noticed: string;
+  why: string;
+  recommendation: string;
+  action: { label: string; type: 'navigate' | 'duplicates' | 'organize'; to?: string };
+}
+export interface HomeActivity {
+  _id: string;
+  action: string;
+  source: 'user' | 'filebox';
+  details: string;
+  fileName: string | null;
+  folderName: string | null;
+  createdAt: string;
+  count: number;
+}
+export interface HomeOverview {
+  continueWorking: any[];
+  suggestions: HomeSuggestion[];
+  suggestionsAvailable: number;
+  activity: HomeActivity[];
+}
 
-export const aiAssistantAPI = {
-  chat: async (question: string, fileId?: string, context?: string, history?: AssistantHistoryMessage[]) => {
-    const response = await api.post('/ai-assistant/chat', { question, fileId, context, history });
+export const homeAPI = {
+  getOverview: async (): Promise<HomeOverview> => {
+    const response = await api.get('/home');
     return response.data;
   },
-  confirmAction: async (action: { type: string; question: string; fileId?: string | null }) => {
+  getDay: async (date?: string): Promise<DayOverview> => {
+    const response = await api.get('/home/day', { params: { date, tz: new Date().getTimezoneOffset() } });
+    return response.data;
+  },
+  // Starts writing the day's summary in the background; getDay reports it when ready.
+  writeDaySummary: async (date: string, force = false): Promise<{ writing: boolean }> => {
+    const response = await api.post('/home/day/summary', { date, force, tz: new Date().getTimezoneOffset() });
+    return response.data;
+  },
+};
+
+// "Your day" on Home: what was done in File Box on a date and File Box AI's summary of it.
+export interface DayFile {
+  fileId: string;
+  name: string;
+  kind: string;
+  about: string;
+  exists: boolean;
+  parentFolder: string | null;
+  minutes: number;
+  actions: Record<string, number>;
+  firstAt: string;
+  lastAt: string;
+}
+export interface DayFacts {
+  date: string;
+  totals: { activeMinutes: number; filesWorkedOn: number; uploaded: number; edited: number; viewed: number; downloaded: number; shared: number; organized: number; questions: number };
+  files: DayFile[];
+  questions: { question: string; at: string }[];
+  folders: { action: string; name: string; at: string }[];
+  fileboxActions: number;
+  timeline: { hour: number; items: string[] }[];
+  empty: boolean;
+}
+export interface DaySummary {
+  summary: string;
+  highlights: string[];
+  suggestions: string[];
+  basic: boolean;
+  generatedAt?: string;
+}
+export interface DayOverview {
+  facts: DayFacts;
+  summary: DaySummary | null;
+  writing: boolean;
+  days: { date: string; count: number }[];
+}
+
+export const preferencesAPI = {
+  get: async (): Promise<{ accentColor: string | null; appearance: unknown | null }> => {
+    const response = await api.get('/users/preferences');
+    return response.data;
+  },
+  setAppearance: async (appearance: unknown): Promise<{ appearance: unknown }> => {
+    const response = await api.put('/users/preferences', { appearance });
+    return response.data;
+  },
+  getBackground: async (): Promise<{ image: string | null }> => {
+    const response = await api.get('/users/preferences/background');
+    return response.data;
+  },
+  setBackground: async (image: string | null): Promise<void> => {
+    await api.put('/users/preferences/background', { image });
+  },
+  setAccent: async (accentColor: string | null): Promise<{ accentColor: string | null }> => {
+    const response = await api.put('/users/preferences', { accentColor });
+    return response.data;
+  },
+};
+
+// My Files > Board: a person's own layout for a folder (where items sit, and the zones they drew).
+export type BoardZoneShape = 'rectangle' | 'rounded' | 'circle' | 'pill';
+// labelX/labelY: where the zone's name sits inside it (left out = the shape's usual spot).
+export interface BoardZone { id: string; name: string; color: string; shape: BoardZoneShape; x: number; y: number; w: number; h: number; labelX?: number; labelY?: number }
+export interface BoardLayout { items: Record<string, { x: number; y: number }>; zones: BoardZone[] }
+
+export const boardsAPI = {
+  get: async (folderKey: string): Promise<BoardLayout> => {
+    const response = await api.get(`/boards/${folderKey}`);
+    return response.data;
+  },
+  save: async (folderKey: string, layout: BoardLayout): Promise<BoardLayout> => {
+    const response = await api.put(`/boards/${folderKey}`, layout);
+    return response.data;
+  },
+};
+
+export const activityAPI = {
+  focus: async (fileId: string, seconds: number) => {
+    await api.post('/activity/focus', { fileId, seconds });
+  },
+};
+
+// AI Assistant API (local Ollama)
+export type AssistantHistoryMessage = { role: 'user' | 'assistant'; content: string };
+// Choices made from a "which one do you mean?" list, sent back with the original request.
+export type AssistantResolved = { files?: Record<string, string>; folder?: string; route?: Record<string, unknown> };
+export interface AssistantChoice {
+  id: string;
+  kind: 'file' | 'folder';
+  name: string;
+  location: string;
+  source: 'owned' | 'shared' | 'team';
+  sourceLabel: string;
+  updatedAt?: string;
+}
+
+// File Box AI as a companion: its name, tone, how often it speaks up, and what it remembers.
+export type CompanionTone = 'friendly' | 'concise' | 'professional' | 'playful';
+export type CompanionProactivity = 'quiet' | 'balanced' | 'chatty';
+export interface CompanionMemory { id: string; text: string; createdAt: string }
+export interface CompanionProfile { name: string; tone: CompanionTone; proactivity: CompanionProactivity; memoryOn: boolean; memories: CompanionMemory[] }
+
+export const companionAPI = {
+  get: async (): Promise<CompanionProfile> => (await api.get('/companion')).data,
+  update: async (settings: Partial<Omit<CompanionProfile, 'memories'>>): Promise<CompanionProfile> => (await api.put('/companion', settings)).data,
+  remember: async (text: string): Promise<CompanionProfile> => (await api.post('/companion/memories', { text })).data,
+  forget: async (id: string): Promise<CompanionProfile> => (await api.delete(`/companion/memories/${id}`)).data,
+  forgetAll: async (): Promise<CompanionProfile> => (await api.delete('/companion/memories')).data,
+};
+
+export const aiAssistantAPI = {
+  chat: async (question: string, fileId?: string, context?: string, history?: AssistantHistoryMessage[], resolved?: AssistantResolved) => {
+    const response = await api.post('/ai-assistant/chat', { question, fileId, context, history, resolved });
+    return response.data;
+  },
+  /**
+   * Same as chat, but the answer arrives piece by piece (onToken) while File Box AI writes it.
+   * Resolves with the full reply; errors carry `response.data` like axios errors.
+   */
+  chatStream: async (
+    body: { question: string; fileId?: string; history?: AssistantHistoryMessage[]; resolved?: AssistantResolved; context?: string },
+    onToken: (text: string) => void,
+    onReset?: () => void,
+  ) => {
+    const token = await currentToken('/ai-assistant/chat');
+    const response = await fetch(`${API_URL}/ai-assistant/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ ...body, stream: true }),
+    });
+    const fail = (status: number, data: any) => Object.assign(new Error(data?.message || 'File Box AI could not answer.'), { response: { status, data } });
+    if (!response.ok || !response.body) throw fail(response.status, await response.json().catch(() => ({})));
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.type === 'token') onToken(event.text);
+        else if (event.type === 'reset') onReset?.();
+        else if (event.type === 'done') return event.reply;
+        else if (event.type === 'error') throw fail(event.status, event.body);
+      }
+    }
+    throw fail(500, { message: 'File Box AI stopped before finishing the answer.' });
+  },
+  presence: async () => {
+    await api.post('/ai-assistant/presence');
+  },
+  feedback: async (body: {
+    question: string; answer: string; rating: 'up' | 'down'; intent?: string; action?: string; phrase?: string;
+    shownFileIds?: string[]; correctFileId?: string; note?: string;
+  }): Promise<{ ok: boolean; learned: boolean }> => {
+    const response = await api.post('/ai-assistant/feedback', body);
+    return response.data;
+  },
+  readingStatus: async (): Promise<{ total: number; done: number; pending: number }> => {
+    const response = await api.get('/ai-assistant/reading-status');
+    return response.data;
+  },
+  confirmAction: async (action: { type: string; question: string; fileId?: string | null; fileIds?: string[] }) => {
     const response = await api.post('/ai-assistant/confirm', { ...action, fileId: action.fileId || undefined });
     return response.data;
   },

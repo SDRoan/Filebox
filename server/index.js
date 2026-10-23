@@ -13,6 +13,8 @@ const authRoutes = require('./routes/auth');
 const fileRoutes = require('./routes/files');
 const shareRoutes = require('./routes/share');
 const userRoutes = require('./routes/users');
+const boardRoutes = require('./routes/boards');
+const companionRoutes = require('./routes/companion');
 const commentRoutes = require('./routes/comments');
 const teamFolderRoutes = require('./routes/teamFolders');
 const fileRequestRoutes = require('./routes/fileRequests');
@@ -53,6 +55,8 @@ app.use(cors({
   },
   credentials: true
 }));
+// Settings > Customize > Background: an uploaded picture is larger than other requests.
+app.use('/api/users/preferences/background', express.json({ limit: '4mb' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -66,6 +70,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/files', fileRoutes);
 app.use('/api/share', shareRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/boards', boardRoutes);
+app.use('/api/companion', companionRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/team-folders', teamFolderRoutes);
 app.use('/api/file-requests', fileRequestRoutes);
@@ -80,6 +86,8 @@ app.use('/api/collections', require('./routes/collections'));
 app.use('/api/summaries', require('./routes/summaries'));
 app.use('/api/signatures', require('./routes/signatures'));
 app.use('/api/ai-assistant', require('./routes/aiAssistant'));
+app.use('/api/home', require('./routes/home'));
+app.use('/api/activity', require('./routes/activity'));
 app.use('/api/file-memory', require('./routes/fileMemory'));
 app.use('/api/predictive-org', optionalRoute(path.join(__dirname, 'routes/predictiveOrganization.js'), [path.join(__dirname, 'services/predictiveOrganization.js')]));
 app.use('/api/cloud-backup', require('./routes/cloudBackup'));
@@ -152,39 +160,33 @@ setInterval(cleanupTrash, 24 * 60 * 60 * 1000); // 24 hours in milliseconds
 // Also run immediately on server start
 setTimeout(cleanupTrash, 60000); // Run after 1 minute of server startup
 
-// Cloud Backup Scheduler
+// Folder Sync scheduler (services/cloudBackup.js): runs syncs that are due, each for its own account.
 const runCloudBackups = async () => {
   try {
     const CloudBackup = require('./models/CloudBackup');
     const cloudBackupService = require('./services/cloudBackup');
-    
-    const now = new Date();
-    const backupsToRun = await CloudBackup.find({
+    if (!cloudBackupService.isEnabled()) return;
+    const due = await CloudBackup.find({
       enabled: true,
-      $or: [
-        { nextBackupAt: { $lte: now } },
-        { nextBackupAt: null }
-      ]
+      status: { $ne: 'backing_up' },
+      $or: [{ nextBackupAt: { $lte: new Date() } }, { nextBackupAt: null }],
     });
-
-    for (const backup of backupsToRun) {
+    for (const backup of due) {
       try {
-        console.log(`[Cloud Backup] Running backup for ${backup.sourceType} (${backup._id})`);
-        await cloudBackupService.performBackup(backup._id);
-        console.log(`[Cloud Backup] ✅ Backup completed for ${backup.sourceType}`);
+        await cloudBackupService.performBackup(backup._id, backup.user);
       } catch (error) {
-        console.error(`[Cloud Backup] ❌ Backup failed for ${backup.sourceType}:`, error.message);
+        console.error(`[Folder Sync] ${backup.sourcePath}:`, error.message);
       }
     }
   } catch (error) {
-    console.error('[Cloud Backup] Error in backup scheduler:', error);
+    console.error('[Folder Sync] Scheduler error:', error);
   }
 };
 
-// Run cloud backups every hour
-setInterval(runCloudBackups, 60 * 60 * 1000); // 1 hour
-// Also run after 2 minutes of server startup
-setTimeout(runCloudBackups, 120000); // Run after 2 minutes
+setInterval(runCloudBackups, 60 * 60 * 1000); // every hour
+setTimeout(runCloudBackups, 120000); // and 2 minutes after start
+// Syncs that were running when the server stopped did not finish.
+require('./services/cloudBackup').resetInterrupted().catch(() => {});
 
 const PORT = appConfig.server.port;
 const CLIENT_URL = appConfig.server.clientUrl;
@@ -200,6 +202,9 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log(`🌐 Frontend App: http://localhost:${CLIENT_PORT}`);
   console.log('═'.repeat(70));
   
+  // File Box AI notes what each file is in the background (local Ollama only, skipped when it is off).
+  require('./services/fileProfiler').start();
+
   // The learning library is a student feature; only refresh it when those features are enabled.
   if (STUDENT_FEATURES_ENABLED) {
     try {

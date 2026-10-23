@@ -1,21 +1,22 @@
 .workspace-search-bar-container { position: relative; width: min(360px, 45%); margin-left: auto; }
 .workspace-search-input-wrapper { position: relative; display: flex; align-items: center; }
-.workspace-search-input { width: 100%; height: 35px; padding: 8px 58px 8px 35px; border: 1px solid #e7e9e1; border-radius: 6px; background: #f5f6f1; color: #364331; font-size: 12px; transition: border-color 120ms; }
+.workspace-search-input { width: 100%; height: 35px; padding: 8px 58px 8px 35px; border: 1px solid var(--fb-g-e7e9e1, #e7e9e1); border-radius: calc(6px * var(--fb-radius-scale, 1)); background: var(--fb-g-f5f6f1, #f5f6f1); color: var(--fb-g-364331, #364331); font-size: 12px; transition: border-color 120ms; }
 .workspace-search-input::placeholder { color: #7d8773; }
-.workspace-search-input:focus { outline: none; border-color: #8c9f81; box-shadow: 0 0 0 2px #dfe7d880; background: #fff; }
+.workspace-search-input:focus { outline: none; border-color: var(--fb-g-8c9f81, #8c9f81); box-shadow: 0 0 0 2px #dfe7d880; background: var(--fb-surface, #ffffff); }
 .workspace-search-icon { position: absolute; left: 11px; color: #8c9583; pointer-events: none; }
 .workspace-search-shortcut-hint { position: absolute; right: 9px; display: flex; gap: 3px; pointer-events: none; }
-.workspace-search-shortcut-hint kbd { font-family: inherit; font-size: 10px; color: #959e8c; line-height: 18px; }
+.workspace-search-shortcut-hint kbd { font-family: inherit; font-size: 10px; color: var(--fb-g-959e8c, #959e8c); line-height: 18px; }
 .workspace-search-input:focus ~ .workspace-search-shortcut-hint { opacity: 0; }
-.workspace-search-results { position: absolute; top: calc(100% + 8px); left: 0; right: 0; background: #fff; border: 1px solid #e0e4d9; border-radius: 8px; box-shadow: 0 12px 32px #26342112; max-height: 400px; overflow-y: auto; z-index: 110; }
+.workspace-search-results { position: absolute; top: calc(100% + 8px); left: 0; right: 0; background: var(--fb-surface, #ffffff); border: 1px solid var(--fb-g-e0e4d9, #e0e4d9); border-radius: calc(8px * var(--fb-radius-scale, 1)); box-shadow: 0 12px 32px #26342112; max-height: 400px; overflow-y: auto; z-index: 110; }
 .workspace-search-section { padding: 8px 0; }
 .workspace-search-section-title { padding: 6px 14px; font-size: 10px; color: #8b9483; text-transform: uppercase; letter-spacing: 1px; }
 .workspace-search-result-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; }
-.workspace-search-result-item:hover { background: #f1f5ed; }
-.workspace-result-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: #394a31; }
+.workspace-search-result-item:hover { background: var(--fb-g-f1f5ed, #f1f5ed); }
+.workspace-result-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--fb-g-394a31, #394a31); }
 .workspace-result-meta { font-size: 10px; color: #8b9483; }
 .workspace-search-loading, .workspace-search-no-results { padding: 22px 14px; font-size: 12px; color: #7e8777; text-align: center; }
 @media (max-width: 600px) { .workspace-search-bar-container { width: 100%; } }
 
-.workspace-search-ask-ai { display: block; width: 100%; padding: 10px 14px; border: 0; border-top: 1px solid #edf0e8; background: none; color: #3f6543; font-size: 12px; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.workspace-search-ask-ai:hover { background: #f2f5ee; }
+.workspace-search-ask-ai { display: block; width: 100%; padding: 10px 14px; border: 0; border-top: 1px solid var(--fb-g-edf0e8, #edf0e8); background: none; color: var(--fb-g-3f6543, #3f6543); font-size: 12px; text-align: left; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-search-ask-ai:hover { background: var(--fb-g-f2f5ee, #f2f5ee); }
+.workspace-search-enter { margin-left: 6px; padding: 1px 6px; border: 1px solid var(--fb-g-e2e8da, #e2e8da); border-radius: calc(4px * var(--fb-radius-scale, 1)); font-size: 10px; color: var(--fb-g-8a967e, #8a967e); }

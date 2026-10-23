@@ -1,0 +1,58 @@
+/* Settings > Customize: page-wide rules driven by theme/appearance.ts. Without any choices, nothing here changes File Box. */
+
+/* Text and interface size: the whole workspace is zoomed, and full-height areas still fill the window. */
+html .dashboard { zoom: var(--fb-zoom, 1); }
+html :is(.dashboard, .dashboard-content, .dashboard .sidebar) { height: calc(100dvh / var(--fb-zoom, 1)); }
+
+/* Body font: reaches controls too, which browsers otherwise draw in their own font. */
+.fb-custom-body-font body, .fb-custom-body-font .dashboard :is(button, input, textarea, select) { font-family: var(--font-sans); }
+
+/* Sidebar on the right */
+.dashboard.sidebar-right { flex-direction: row-reverse; }
+.dashboard.sidebar-right .sidebar { border-right: 0; border-left: 1px solid var(--fb-g-e5e6df, #e5e6df); }
+
+/* Icons-only sidebar (names show as tooltips) */
+@media (min-width: 901px) {
+  .sidebar.sidebar-icons { width: 72px; }
+  .sidebar-icons .sidebar-header { justify-content: center; padding: 0; }
+  .sidebar-icons .logo-text, .sidebar-icons .nav-section-title, .sidebar-icons .nav-item > span,
+  .sidebar-icons .sidebar-new-button > span, .sidebar-icons .sidebar-storage-info, .sidebar-icons .sidebar-user-details { display: none; }
+  .sidebar-icons .sidebar-new { margin: 0 14px 14px; }
+  .sidebar-icons .sidebar-new-button { justify-content: center; padding: 9px 0; }
+  .sidebar-icons .sidebar-new-menu { right: auto; width: 180px; }
+  .sidebar-icons .nav-item { justify-content: center; padding-inline: 0; }
+  .sidebar-icons .sidebar-footer { padding: 12px 14px 14px; }
+  .sidebar-icons .sidebar-user-info { justify-content: center; flex-direction: column; }
+  .sidebar-icons .nav-section + .nav-section { border-top: 1px solid var(--fb-g-e5e6df, #e5e6df); padding-top: 8px; }
+}
+
+/* Dark mode: the page is turned around (light becomes dark, colors keep their hue). Pictures, video and
+   previews are turned back so they show as they are, and so are color samples in Customize. */
+html.fb-dark { filter: invert(1) hue-rotate(180deg); background: #fff; }
+html.fb-dark :is(img, video, canvas, iframe, object, embed, .fb-true-color) { filter: invert(1) hue-rotate(180deg); }
+html.fb-dark :is(.fb-true-color) :is(img, video, canvas) { filter: none; }
+html.fb-dark :is(.accent-wheel, .accent-swatch, .accent-presets button, .accent-exact input, .accent-brightness input) { filter: invert(1) hue-rotate(180deg); }
+
+/* Calmer motion */
+.fb-reduce-motion *, .fb-reduce-motion *::before, .fb-reduce-motion *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Background (Customize > Background): a layer behind the workspace, faded with the page color so text
+   stays readable. Turned back in dark mode so pictures keep their real colors. */
+.dashboard-backdrop { display: none; }
+html.fb-has-backdrop .dashboard { position: relative; }
+html.fb-has-backdrop .dashboard-backdrop {
+  display: block; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background: var(--fb-bg-image); filter: blur(var(--fb-bg-blur, 0px));
+}
+html.fb-dark.fb-has-backdrop .dashboard-backdrop { filter: invert(1) hue-rotate(180deg) blur(var(--fb-bg-blur, 0px)); }
+html.fb-has-backdrop .dashboard-content { position: relative; z-index: 1; background: color-mix(in srgb, var(--fb-page-bg, #fdfdfb) var(--fb-bg-fade), transparent); }
+html.fb-has-backdrop .dashboard-header { background: color-mix(in srgb, var(--fb-header-bg, var(--fb-page-bg, #fdfdfb)) var(--fb-bg-header), transparent); backdrop-filter: blur(12px); }
+@media (min-width: 901px) {
+  html.fb-has-backdrop .dashboard .sidebar { position: relative; }
+  html.fb-backdrop-sidebar .dashboard .sidebar { background: color-mix(in srgb, var(--fb-sidebar-bg, #f5f5f0) var(--fb-bg-header), transparent); backdrop-filter: blur(14px); }
+}

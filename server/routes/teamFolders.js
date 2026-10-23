@@ -2,6 +2,7 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const TeamFolder = require('../models/TeamFolder');
 const TeamFolderMessage = require('../models/TeamFolderMessage');
+const { extractInBackground } = require('../services/backgroundExtraction');
 const File = require('../models/File');
 const Folder = require('../models/Folder');
 const User = require('../models/User');
@@ -717,6 +718,9 @@ router.post('/:id/upload', auth, upload.single('file'), async (req, res) => {
 
     await file.populate('owner', 'name email');
     res.status(201).json(file);
+
+    // Team Space files are read like personal uploads, so File Box AI can search and answer from them.
+    extractInBackground(file);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
