@@ -4,6 +4,7 @@ import './index.css';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
 import { AppearanceProvider } from './context/AppearanceContext';
+import { CompanionProvider } from './context/CompanionContext';
 import { applyAccent, storedAccent } from './theme/accent';
 import { applyAppearance, applyBackgroundImage, storedAppearance, storedBackgroundImage } from './theme/appearance';
 
@@ -20,7 +21,9 @@ root.render(
   <React.StrictMode>
     <AuthProvider>
       <AppearanceProvider>
-        <App />
+        <CompanionProvider>
+          <App />
+        </CompanionProvider>
       </AppearanceProvider>
     </AuthProvider>
   </React.StrictMode>

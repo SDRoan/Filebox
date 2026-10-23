@@ -1282,6 +1282,20 @@ export interface AssistantChoice {
   updatedAt?: string;
 }
 
+// File Box AI as a companion: its name, tone, how often it speaks up, and what it remembers.
+export type CompanionTone = 'friendly' | 'concise' | 'professional' | 'playful';
+export type CompanionProactivity = 'quiet' | 'balanced' | 'chatty';
+export interface CompanionMemory { id: string; text: string; createdAt: string }
+export interface CompanionProfile { name: string; tone: CompanionTone; proactivity: CompanionProactivity; memoryOn: boolean; memories: CompanionMemory[] }
+
+export const companionAPI = {
+  get: async (): Promise<CompanionProfile> => (await api.get('/companion')).data,
+  update: async (settings: Partial<Omit<CompanionProfile, 'memories'>>): Promise<CompanionProfile> => (await api.put('/companion', settings)).data,
+  remember: async (text: string): Promise<CompanionProfile> => (await api.post('/companion/memories', { text })).data,
+  forget: async (id: string): Promise<CompanionProfile> => (await api.delete(`/companion/memories/${id}`)).data,
+  forgetAll: async (): Promise<CompanionProfile> => (await api.delete('/companion/memories')).data,
+};
+
 export const aiAssistantAPI = {
   chat: async (question: string, fileId?: string, context?: string, history?: AssistantHistoryMessage[], resolved?: AssistantResolved) => {
     const response = await api.post('/ai-assistant/chat', { question, fileId, context, history, resolved });
@@ -1292,7 +1306,7 @@ export const aiAssistantAPI = {
    * Resolves with the full reply; errors carry `response.data` like axios errors.
    */
   chatStream: async (
-    body: { question: string; fileId?: string; history?: AssistantHistoryMessage[]; resolved?: AssistantResolved },
+    body: { question: string; fileId?: string; history?: AssistantHistoryMessage[]; resolved?: AssistantResolved; context?: string },
     onToken: (text: string) => void,
     onReset?: () => void,
   ) => {

@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useCompanion } from '../context/CompanionContext';
+import CompanionGreeting from './CompanionGreeting';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { aiAssistantAPI, filesAPI, AssistantHistoryMessage, AssistantChoice, AssistantResolved, FileAIActionsInfo } from '../services/api';
 import DuplicateReview from './DuplicateReview';
@@ -67,6 +69,8 @@ interface Message {
   sources?: AnswerSource[];
   feedback?: 'up' | 'down';
   feedbackOpen?: boolean;
+  // When it was said (ms), so File Box AI can tell a new visit from the same conversation.
+  at?: number;
 }
 
 interface AssistantStatus {
@@ -81,7 +85,9 @@ interface FileOption {
   originalName: string;
 }
 
-const SUGGESTIONS = [
+export type AssistantSuggestion = { label: string; prompt: string };
+
+const SUGGESTIONS: AssistantSuggestion[] = [
   { label: 'Find a document', prompt: 'Find documents about ' },
   { label: 'Search inside documents', prompt: 'Which document mentions ' },
   { label: 'Summarize a file', prompt: 'Summarize this file' },
@@ -114,8 +120,18 @@ const readHistory = (key: string): Message[] => {
   }
 };
 
-const AIAssistant: React.FC = () => {
+// A new visit: nothing said for this long (or never), so the companion checks in again.
+const NEW_VISIT_MS = 3 * 60 * 60 * 1000;
+
+interface AIAssistantProps {
+  // 'panel': inside the companion side panel (no page header; knows which page the person is on).
+  variant?: 'page' | 'panel';
+  suggestions?: AssistantSuggestion[];
+}
+
+const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions = SUGGESTIONS }) => {
   const { user } = useAuth();
+  const companion = useCompanion();
   const navigate = useNavigate();
   const location = useLocation();
   const historyKey = `filebox-ai-history-${user?.id || 'local'}`;
@@ -193,7 +209,7 @@ const AIAssistant: React.FC = () => {
   const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const appendMessage = (message: Omit<Message, 'id'>, id = newId()) => {
     if (message.panel) livePanelIds.current.add(id);
-    setMessages(prev => [...prev, { ...message, id }]);
+    setMessages(prev => [...prev, { at: Date.now(), ...message, id }]);
   };
 
   const updateMessage = (id: string, patch: Partial<Message>) =>
@@ -219,7 +235,7 @@ const AIAssistant: React.FC = () => {
     let streamed = '';
     try {
       const response = await aiAssistantAPI.chatStream(
-        { question, fileId: fileId || undefined, history, resolved },
+        { question, fileId: fileId || undefined, history, resolved, context: variant === 'panel' ? companion.pageContext : 'The person is on the File Box AI page.' },
         (piece) => {
           if (!streamed) appendMessage({ role: 'assistant', content: piece }, streamId);
           streamed += piece;
@@ -249,6 +265,7 @@ const AIAssistant: React.FC = () => {
         route: response.route ? { intent: response.route.intent, action: response.route.action, phrase: response.route.phrase } : undefined,
         sources: response.sources?.length ? response.sources : undefined,
       };
+      if (response.memoryChanged) companion.refresh();
       if (streamed) {
         if (reply.panel) livePanelIds.current.add(streamId);
         updateMessage(streamId, reply);
@@ -413,22 +430,27 @@ const AIAssistant: React.FC = () => {
     return `Yours · ${file.folder}`;
   };
 
-  const applySuggestion = (suggestion: typeof SUGGESTIONS[number]) => {
+  const applySuggestion = (suggestion: AssistantSuggestion) => {
     setInput(suggestion.prompt);
     inputRef.current?.focus();
   };
 
   const ready = Boolean(status?.ready);
+  // Opening File Box AI after a while (or for the first time): it checks in before the conversation.
+  const [visitStart] = useState(() => Date.now());
+  const lastAt = [...messages].reverse().find(message => message.at)?.at || 0;
+  const isNewVisit = !messages.some(message => (message.at || 0) >= visitStart) && (!messages.length || visitStart - lastAt > NEW_VISIT_MS);
+  const lastTopic = messages.length ? [...messages].reverse().find(message => message.role === 'user')?.content : undefined;
   // Only the newest review panel stays live, so old results never act on stale suggestions.
   const lastPanelId = [...messages].reverse().find(message => message.panel && livePanelIds.current.has(message.id))?.id;
   const modelMissing = Boolean(status?.reachable && !status?.assistantModelAvailable);
 
   return (
-    <div className="filebox-ai">
+    <div className={`filebox-ai ${variant === 'panel' ? 'filebox-ai-panel' : ''}`}>
       <header className="filebox-ai-header">
         <div>
-          <h1>File Box AI</h1>
-          <p>Ask about your files or tell File Box what you want done.</p>
+          <h1>{companion.name}</h1>
+          <p>Your companion in File Box. Ask about your files, tell me what to do, or ask me to remember something.</p>
         </div>
         <span className={`filebox-ai-status ${ready ? 'online' : 'offline'}`} role="status">
           <span className="filebox-ai-status-dot" aria-hidden="true" />
@@ -507,9 +529,19 @@ const AIAssistant: React.FC = () => {
         </div>
       )}
 
+      {isNewVisit && (
+        <CompanionGreeting
+          lastTopic={lastTopic}
+          onAsk={(text) => send(text, selectedFileId)}
+          onPrefill={(text) => { setInput(text); inputRef.current?.focus(); }}
+          onOpenFile={(file) => openFile({ ...file, source: 'owned' } as FoundFile)}
+          onNavigate={(page) => navigate(pagePath(page))}
+        />
+      )}
+
       {messages.length === 0 && (
         <div className="filebox-ai-suggestions" aria-label="Suggested actions">
-          {SUGGESTIONS.map(suggestion => (
+          {suggestions.map(suggestion => (
             <button key={suggestion.label} onClick={() => applySuggestion(suggestion)}>
               {suggestion.label}
             </button>

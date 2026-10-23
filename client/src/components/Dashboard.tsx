@@ -8,6 +8,7 @@ import RecentView from './RecentView';
 import SettingsView from './SettingsView';
 import CustomizeView from './CustomizeView';
 import TopBarColor from './TopBarColor';
+import CompanionPanel from './CompanionPanel';
 import StorageView from './StorageView';
 import TeamFolders from './TeamFolders';
 import FileRequests from './FileRequests';
@@ -26,9 +27,10 @@ import SignatureManager from './SignatureManager';
 import { FileRowItem } from './FileRowList';
 import { useAuth } from '../context/AuthContext';
 import { useAppearance } from '../context/AppearanceContext';
+import { useCompanion } from '../context/CompanionContext';
 import { FileItemType } from '../types';
 import { getWorkspacePage, pagePath } from '../config/workspaceNavigation';
-import { preferencesAPI } from '../services/api';
+import { filesAPI, preferencesAPI } from '../services/api';
 import { applyAccent, rememberAccent } from '../theme/accent';
 import './Dashboard.css';
 import './WorkspacePages.css';
@@ -53,6 +55,22 @@ const Dashboard: React.FC = () => {
   const [pendingUploads, setPendingUploads] = useState<{ id: number; files: File[] } | null>(null);
 
   const currentFolderId = folderStack[folderStack.length - 1];
+
+  // Tell File Box AI where the person is, so "this folder" or "here" mean something to it.
+  const { setPageContext } = useCompanion();
+  useEffect(() => {
+    let cancelled = false;
+    const base = `The person is on the "${page.label}" page of File Box.`;
+    setPageContext(base);
+    if (currentView === 'files' && currentFolderId && currentFolderId !== 'root') {
+      filesAPI.getFolder(currentFolderId)
+        .then(folder => { if (!cancelled && folder?.name) setPageContext(`${base} They are inside their folder "${folder.name}".`); })
+        .catch(() => { /* the page is enough */ });
+    } else if (currentView === 'files') {
+      setPageContext(`${base} They are at the top level of My Files.`);
+    }
+    return () => { cancelled = true; };
+  }, [page.label, currentView, currentFolderId, setPageContext]);
 
   // The account's accent color (Settings > Appearance), so it follows the person to other browsers.
   useEffect(() => {
@@ -277,6 +295,7 @@ const Dashboard: React.FC = () => {
       {currentView === 'analytics' && (
         <AnalyticsDashboard onClose={() => setCurrentView('settings')} />
       )}
+      <CompanionPanel currentView={currentView} />
     </div>
   );
 };

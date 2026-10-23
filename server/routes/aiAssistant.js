@@ -15,6 +15,7 @@ const { noteActivity, readingStatus } = require('../services/fileProfiler');
 const { recordFeedback } = require('../services/aiFeedback');
 const { fileById } = require('../services/fileResolver');
 const { logQuestion } = require('../services/activityLog');
+const companion = require('../services/companion');
 
 // Questions asked in File Box AI go into the day's activity (choices picked from a list are not new questions).
 const recordQuestion = (turn, reply) => {
@@ -121,14 +122,30 @@ router.post('/chat', auth, async (req, res) => {
       });
     }
 
+    // File Box AI as a companion: its name, tone and what the person asked it to remember.
+    const profile = await companion.getProfile(req.user._id);
+    const memoryReply = await companion.handleMemoryCommand(req.user._id, question, profile);
+    const persona = companion.personaFor(profile, req.user.name);
+
     const turn = {
       userId: req.user._id,
       question,
       fileId,
       history,
-      context,
+      // Where the person is in File Box (sent by the page), and their saved notes.
+      context: [context.slice(0, 1500), companion.memoryNote(profile)].filter(Boolean).join('\n\n'),
       resolved: sanitizeResolved(req.body?.resolved),
+      persona,
     };
+
+    if (memoryReply) {
+      const reply = { provider: 'local-rules', fileId: null, timestamp: new Date(), answer: memoryReply.answer, memoryChanged: Boolean(memoryReply.memoryChanged), route: { intent: 'memory' } };
+      if (req.body?.stream === true) {
+        res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+        return res.end(`${JSON.stringify({ type: 'done', reply })}\n`);
+      }
+      return res.json(reply);
+    }
 
     // Streaming: one JSON object per line - { type: 'token', text } while the answer is written,
     // then { type: 'done', reply } or { type: 'error', status, body }.
