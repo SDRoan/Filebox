@@ -1296,6 +1296,9 @@ export const companionAPI = {
   forgetAll: async (): Promise<CompanionProfile> => (await api.delete('/companion/memories')).data,
 };
 
+// What Ask File Box is looking at, sent with each question (ids are re-checked on the server).
+export interface AssistantFocus { fileId?: string; fileIds?: string[]; folderId?: string; page?: string }
+
 export const aiAssistantAPI = {
   chat: async (question: string, fileId?: string, context?: string, history?: AssistantHistoryMessage[], resolved?: AssistantResolved) => {
     const response = await api.post('/ai-assistant/chat', { question, fileId, context, history, resolved });
@@ -1306,7 +1309,7 @@ export const aiAssistantAPI = {
    * Resolves with the full reply; errors carry `response.data` like axios errors.
    */
   chatStream: async (
-    body: { question: string; fileId?: string; history?: AssistantHistoryMessage[]; resolved?: AssistantResolved; context?: string },
+    body: { question: string; fileId?: string; history?: AssistantHistoryMessage[]; resolved?: AssistantResolved; context?: string; focus?: AssistantFocus },
     onToken: (text: string) => void,
     onReset?: () => void,
   ) => {

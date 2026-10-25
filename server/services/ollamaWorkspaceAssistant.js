@@ -94,7 +94,8 @@ class OllamaWorkspaceAssistant {
       }
       case 'create_folder': {
         const folderName = actionResult?.data?.folderName || 'the folder';
-        return `Created the folder "${folderName}" for you. It is in your drive now.`;
+        const parentName = actionResult?.data?.parentName;
+        return parentName ? `Created the folder "${folderName}" inside "${parentName}".` : `Created the folder "${folderName}" for you. It is in your drive now.`;
       }
       case 'rename_file': {
         const oldName = actionResult?.data?.oldName;
@@ -693,6 +694,14 @@ Respond to the latest user request now.`,
     return { intent, action, target, destination, newName, searchTerms, lookFor, source, rule, confidence, mode };
   }
 
+  /** The file the person meant can't be used: gone (deleted or no longer shared), or only its owner may change it. */
+  async unavailableAnswer(userId, fileId, { level, verb, many = false }) {
+    if (level === 'owner' && await fileById(userId, fileId, { level: 'viewer' })) {
+      return `Only the owner of ${many ? 'those files' : 'this file'} can ${verb || 'change'} ${many ? 'them' : 'it'}.`;
+    }
+    return many ? 'Those files are no longer available.' : 'This file is no longer available.';
+  }
+
   noMatchAnswer(resolution, { level, trashed, verb }) {
     const { phrase, otherAccess } = resolution;
     if (trashed) return `I couldn't find "${phrase}" in your Trash.`;
@@ -707,7 +716,7 @@ Respond to the latest user request now.`,
    * The files a request names, each resolved to exactly one permitted file.
    * Returns { files } or { reply } (a question back to the user).
    */
-  async resolveTargets(route, question, userId, { fileId, resolved = {}, level, trashed = false, verb }) {
+  async resolveTargets(route, question, userId, { fileId, fileIds = [], resolved = {}, level, trashed = false, verb }) {
     const source = route.target || (FILE_INTENTS.includes(route.intent) ? route.normalized : '');
     let explicit = aiActionExecutor.extractFileNames(source || '') || [];
     if (explicit.length && route.intent === 'action' && route.action !== 'rename_file') {
@@ -729,7 +738,15 @@ Respond to the latest user request now.`,
         continue;
       }
 
-      // "this", "it", "this PDF" or nothing at all: the file selected in the panel.
+      // "these", "them", "the selected files": the files the person has selected.
+      if (fileIds.length && (intentRouter.SELECTION_REFERENCE.test(phrase.trim()) || (!key && !fileId))) {
+        const selected = (await Promise.all(fileIds.map(id => fileById(userId, id, { level, trashed })))).filter(Boolean);
+        if (!selected.length) return { reply: this.reply(route, { answer: await this.unavailableAnswer(userId, fileIds[0], { level, verb, many: true }) }) };
+        files.push(...selected);
+        continue;
+      }
+
+      // "this", "it", "this PDF" or nothing at all: the file the person is looking at.
       if (!key || intentRouter.SELF_REFERENCE.test(phrase.trim())) {
         if (fileId) {
           const file = await fileById(userId, fileId, { level, trashed });
@@ -737,7 +754,7 @@ Respond to the latest user request now.`,
             files.push(file);
             continue;
           }
-          return { reply: this.reply(route, { answer: level === 'owner' ? `Only the file's owner can ${verb || 'change'} it.` : "I can't open the selected file." }) };
+          return { reply: this.reply(route, { answer: await this.unavailableAnswer(userId, fileId, { level, verb }) }) };
         }
         return { reply: this.reply(route, { answer: verb ? `Which file should I ${verb}? Mention its name or select it first.` : 'Which file do you mean? Mention its name or select it first.' }) };
       }
@@ -794,11 +811,17 @@ Respond to the latest user request now.`,
   }
 
   /** Destination folder for a move. Returns { folder } or { reply }. */
-  async resolveDestination(route, question, userId, { fileId, resolved = {} }) {
+  async resolveDestination(route, question, userId, { fileId, folderId, resolved = {} }) {
     if (resolved.folder) {
       const folder = await folderById(userId, resolved.folder);
       if (!folder) return { reply: this.reply(route, { answer: "That folder isn't available anymore. Ask again and I'll look it up." }) };
       return { folder };
+    }
+    // "here", "this folder": the folder the person is in.
+    if (route.destination && intentRouter.HERE_REFERENCE.test(route.destination.trim())) {
+      const here = folderId ? await folderById(userId, folderId) : null;
+      if (here) return { folder: here };
+      return { reply: this.reply(route, { answer: 'Which folder do you mean? Open it first, or tell me its name.' }) };
     }
     if (!route.destination) {
       return { reply: this.reply(route, { answer: "Which folder should I move it into? For example \"Move report.pdf into Archive\"." }) };
@@ -834,7 +857,7 @@ Respond to the latest user request now.`,
     });
   }
 
-  async handleAction(route, { userId, question, fileId, resolved }) {
+  async handleAction(route, { userId, question, fileId, fileIds = [], folderId, resolved }) {
     const type = route.action;
     if (!type) {
       // The model said "do something" but no rule knows what: ask rather than guess an action.
@@ -847,10 +870,12 @@ Respond to the latest user request now.`,
       if (recipientQuestion) return this.reply(route, { answer: recipientQuestion, needsInput: 'email' });
     }
 
-    const context = { selectedFileId: null, selectedFile: null, newName: route.newName };
+    // A new folder goes where the person is (like the New button), unless they name another place.
+    const here = type === 'create_folder' && folderId ? await folderById(userId, folderId) : null;
+    const context = { selectedFileId: null, selectedFile: null, newName: route.newName, parentFolder: here };
     if (FILE_ACTIONS[type]) {
       const { verb, trashed } = FILE_ACTIONS[type];
-      const targets = await this.resolveTargets(route, question, userId, { fileId, resolved, level: 'owner', trashed, verb });
+      const targets = await this.resolveTargets(route, question, userId, { fileId, fileIds, resolved, level: 'owner', trashed, verb });
       if (targets.reply) return targets.reply;
       if (type === 'rename_file' && targets.files.length > 1) {
         return this.reply(route, { answer: 'I can rename one file at a time. Which file should I rename first?' });
@@ -858,7 +883,7 @@ Respond to the latest user request now.`,
       context.targetFiles = targets.files;
 
       if (type === 'move_file') {
-        const destination = await this.resolveDestination(route, question, userId, { fileId, resolved });
+        const destination = await this.resolveDestination(route, question, userId, { fileId, folderId, resolved });
         if (destination.reply) return destination.reply;
         context.targetFolder = destination.folder;
       }
@@ -887,12 +912,12 @@ Respond to the latest user request now.`,
     });
   }
 
-  async handleFileRequest(route, { userId, question, fileId, resolved, history, context, persona, onToken }) {
+  async handleFileRequest(route, { userId, question, fileId, fileIds = [], resolved, history, context, persona, onToken }) {
     const verb = { summarize: 'summarize', explain: 'explain' }[route.intent];
-    const targets = await this.resolveTargets(route, question, userId, { fileId, resolved, level: 'viewer', verb });
+    const targets = await this.resolveTargets(route, question, userId, { fileId, fileIds, resolved, level: 'viewer', verb });
     if (targets.reply) return targets.reply;
     if (targets.files.length > 1) {
-      return this.reply(route, { answer: 'I can work with one file at a time. Ask about each file separately.' });
+      return this.reply(route, { answer: `I can ${verb || 'work with'} one file at a time for now. Which one first: ${targets.files.slice(0, 5).map(f => `"${f.originalName}"`).join(', ')}? Open it, or say its name.` });
     }
     const [file] = targets.files;
     await this.requireModel();
@@ -1162,6 +1187,8 @@ Be brief and direct.`,
   async understand({ question, fileId, history, resolved }) {
     noteActivity();
     if (resolved.route) return resolved.route;
+    const focused = this.routeByFocus(question, { fileId, history });
+    if (focused) return focused;
     const hasSelectedFile = Boolean(fileId);
     const status = await this.getStatus();
     if (status.reachable) {
@@ -1181,14 +1208,32 @@ Be brief and direct.`,
   }
 
   /**
+   * Requests whose meaning is fixed by what the person is looking at, decided before the model so it
+   * never drifts: "make it shorter" changes the last answer; "what date does it mention?" with a file
+   * open is about that file (not a search across all files).
+   */
+  routeByFocus(question, { fileId, history = [] }) {
+    const q = question.trim();
+    const base = { source: 'rule', confidence: 0.95, mode: 'ai', normalized: q };
+    if (intentRouter.FOLLOW_UP_EDIT.test(q) && history.some(m => m.role === 'assistant')) {
+      return { ...base, intent: 'chat', rule: 'focus:follow-up-edit', target: '' };
+    }
+    const isQuestion = /\?\s*$/.test(q) || intentRouter.QUESTION_START.test(q);
+    if (fileId && isQuestion && intentRouter.POINTS_AT_FOCUS.test(q) && !intentRouter.SEARCH_START.test(q)) {
+      return { ...base, intent: 'file_question', rule: 'focus:about-this-file', target: 'this' };
+    }
+    return null;
+  }
+
+  /**
    * One chat turn: understand the request, resolve the files it names among those the user may access
    * (asking when several match), then search, act (with the usual confirmations) or answer.
    *
    * `resolved` carries choices the user made from an earlier list: { files: { "<name>": id }, folder: id }.
    */
-  async chat({ userId, question, fileId, history = [], context = '', resolved = {}, persona, onToken, onReset }) {
+  async chat({ userId, question, fileId, fileIds = [], folderId, history = [], context = '', resolved = {}, persona, onToken, onReset }) {
     const route = await this.understand({ question, fileId, history, resolved });
-    const turn = { userId, question, fileId, history, context, resolved, persona, onToken, onReset };
+    const turn = { userId, question, fileId, fileIds, folderId, history, context, resolved, persona, onToken, onReset };
 
     switch (route.intent) {
       case 'busy':

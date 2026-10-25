@@ -96,3 +96,8 @@
 .filebox-ai-feedback-form select, .filebox-ai-feedback-form input { padding: 6px 8px; border: 1px solid var(--fb-g-dfe6d6, #dfe6d6); border-radius: calc(6px * var(--fb-radius-scale, 1)); font-size: 12px; max-width: 100%; }
 .filebox-ai-feedback-form div { display: flex; gap: 6px; }
 .filebox-ai-reading { margin: 0 0 14px; padding: 8px 12px; border-radius: calc(8px * var(--fb-radius-scale, 1)); background: var(--fb-g-f2f6ec, #f2f6ec); color: var(--fb-g-4f6b43, #4f6b43); font-size: 12px; }
+
+/* A note in the conversation ("Context changed to Budget.pdf") */
+.filebox-ai-notice { display: flex; align-items: center; gap: 10px; margin: 6px 0; font-size: 11px; color: var(--fb-g-87937b, #87937b); }
+.filebox-ai-notice::before, .filebox-ai-notice::after { content: ''; flex: 1; height: 1px; background: var(--fb-g-e2e8da, #e2e8da); }
+.filebox-ai-notice span { max-width: 80%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -111,7 +111,12 @@ router.get('/status', auth, async (req, res) => {
 router.post('/chat', auth, async (req, res) => {
   try {
     const question = typeof req.body?.question === 'string' ? req.body.question.trim() : '';
-    const fileId = typeof req.body?.fileId === 'string' && req.body.fileId.trim() ? req.body.fileId.trim() : undefined;
+    // What the person is looking at (Ask File Box): the open file, selected files, the folder they are in.
+    // Only ids; every one is checked against their access before it is used.
+    const focus = req.body?.focus && typeof req.body.focus === 'object' ? req.body.focus : {};
+    const focusFileIds = (Array.isArray(focus.fileIds) ? focus.fileIds : []).filter(isId).slice(0, 20);
+    const fileId = typeof req.body?.fileId === 'string' && req.body.fileId.trim() ? req.body.fileId.trim()
+      : isId(focus.fileId) ? focus.fileId : (focusFileIds.length === 1 ? focusFileIds[0] : undefined);
     const context = typeof req.body?.context === 'string' ? req.body.context.trim() : '';
     const history = sanitizeHistory(req.body?.history);
 
@@ -137,6 +142,8 @@ router.post('/chat', auth, async (req, res) => {
       context: [(profile.screenAware === false ? context.split('\n\n')[0] : context).slice(0, 5000), companion.memoryNote(profile)].filter(Boolean).join('\n\n'),
       resolved: sanitizeResolved(req.body?.resolved),
       persona,
+      fileIds: focusFileIds,
+      folderId: isId(focus.folderId) ? focus.folderId : undefined,
     };
 
     if (memoryReply) {

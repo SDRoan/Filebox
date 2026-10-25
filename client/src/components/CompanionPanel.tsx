@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AIAssistant, { AssistantSuggestion } from './AIAssistant';
-import { useCompanion } from '../context/CompanionContext';
+import { CompanionFocus, useCompanion } from '../context/CompanionContext';
 import { companionAPI, homeAPI, CompanionProactivity, CompanionTone } from '../services/api';
 import { pagePath } from '../config/workspaceNavigation';
 import { AIAssistantIcon, CloseIcon, SettingsIcon, TrashIcon, ArrowRightIcon, EyeIcon } from './Icons';
@@ -57,6 +57,19 @@ const PROACTIVITY: Array<{ id: CompanionProactivity; label: string; hint: string
   { id: 'balanced', label: 'Balanced', hint: 'A dot on the button when it has something for you' },
   { id: 'chatty', label: 'Chatty', hint: 'Also a short note once a day' },
 ];
+
+/** The context line under the title: what Ask File Box is looking at. */
+export function focusLabel(focus: CompanionFocus) {
+  if (focus.kind === 'file' && focus.file) return { lead: 'Looking at', name: focus.file.name };
+  if (focus.kind === 'selection' && focus.selection) {
+    const n = focus.selection.length;
+    const allFiles = focus.selection.every(item => item.type === 'file');
+    const allFolders = focus.selection.every(item => item.type === 'folder');
+    return { lead: '', name: `${n} ${allFiles ? (n === 1 ? 'file' : 'files') : allFolders ? (n === 1 ? 'folder' : 'folders') : 'items'} selected` };
+  }
+  if (focus.kind === 'folder' && focus.folder) return { lead: 'Current folder', name: focus.folder.name };
+  return { lead: 'On', name: focus.page || 'File Box' };
+}
 
 const CompanionSettings: React.FC<{ onDone: () => void }> = ({ onDone }) => {
   const { profile, setProfile, name } = useCompanion();
@@ -148,7 +161,8 @@ interface CompanionPanelProps {
 
 const CompanionPanel: React.FC<CompanionPanelProps> = ({ currentView }) => {
   const navigate = useNavigate();
-  const { open, setOpen, name, profile, setProfile, ask } = useCompanion();
+  const { open, setOpen, name, profile, setProfile, ask, focus } = useCompanion();
+  const context = focusLabel(focus);
   const [screen, setScreen] = useState<ScreenGlance>({});
   const [view, setView] = useState<'chat' | 'settings'>('chat');
   const [news, setNews] = useState<{ key: string; text: string } | null>(null);
@@ -250,7 +264,14 @@ const CompanionPanel: React.FC<CompanionPanelProps> = ({ currentView }) => {
         <aside ref={panelRef} className="companion-panel" aria-label={name}>
           <header className="companion-panel-header">
             <span className="companion-avatar" aria-hidden="true"><AIAssistantIcon size={16} /></span>
-            <strong>{view === 'settings' ? `${name} settings` : name}</strong>
+            <span className="companion-title">
+              <strong>Ask File Box{view === 'settings' ? ' · Settings' : ''}</strong>
+              {view === 'chat' && (
+                <small className="companion-context" aria-live="polite" title={`${context.lead ? `${context.lead}: ` : ''}${context.name}`}>
+                  {context.lead && `${context.lead}: `}<b>{context.name}</b>
+                </small>
+              )}
+            </span>
             <span className="companion-panel-actions">
               <button className={`companion-eye ${profile.screenAware ? 'on' : ''}`} onClick={toggleAware} aria-pressed={profile.screenAware}
                 aria-label={profile.screenAware ? `${name} can see your File Box screen. Turn off` : `${name} can't see your screen. Turn on`}
@@ -262,12 +283,9 @@ const CompanionPanel: React.FC<CompanionPanelProps> = ({ currentView }) => {
           </header>
           {view === 'chat' && profile.screenAware && (
             <div className="companion-seeing" aria-label="Help with what's on screen">
-              <span className="companion-seeing-label"><EyeIcon size={13} />
-                {screen.viewingFile ? <>Looking at <strong>{screen.viewingFile.name}</strong></> : screen.dialog ? <>Looking at <strong>{screen.dialog}</strong></> : <>Looking at your screen</>}
-              </span>
               <span className="companion-seeing-actions">
                 <button onClick={() => ask('What am I looking at right now?')}>What am I looking at?</button>
-                {screen.viewingFile && <button onClick={() => ask(`Summarize ${screen.viewingFile!.name}`, screen.viewingFile!.id)}>Summarize this file</button>}
+                {focus.file && <button onClick={() => ask('Summarize this')}>Summarize this file</button>}
                 {screen.problem && <button onClick={() => ask(`I see this message: "${screen.problem}". What does it mean and what should I do?`)}>Help with this message</button>}
                 <button onClick={() => ask('What was I just doing? Help me pick up from there.')}>What was I doing?</button>
               </span>

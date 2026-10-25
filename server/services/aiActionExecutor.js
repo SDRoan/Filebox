@@ -561,32 +561,38 @@ class AIActionExecutor {
       };
     }
 
+    // Inside the folder the person is in (Ask File Box), or at the top of My Files.
+    const parent = context.parentFolder || null;
     const existing = await Folder.findOne({
       name: folderName,
       owner: userId,
+      parentFolder: parent ? parent._id : null,
       isTrashed: { $ne: true },
     });
 
     if (existing) {
       return {
         success: false,
-        message: `A folder named "${folderName}" already exists.`,
+        message: `A folder named "${folderName}" already exists${parent ? ` in "${parent.name}"` : ''}.`,
       };
     }
 
     const folder = new Folder({
       name: folderName,
       owner: userId,
+      parentFolder: parent ? parent._id : null,
     });
 
     await folder.save();
 
     return {
       success: true,
-      message: `Successfully created folder "${folderName}".`,
+      message: `Successfully created folder "${folderName}"${parent ? ` in "${parent.name}"` : ''}.`,
       data: {
         folderId: folder._id,
         folderName: folder.name,
+        parentFolder: parent ? parent._id : null,
+        parentName: parent ? parent.name : null,
       },
     };
   }

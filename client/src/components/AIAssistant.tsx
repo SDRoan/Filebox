@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useCompanion } from '../context/CompanionContext';
 import CompanionGreeting from './CompanionGreeting';
-import { glance, recentActivity, screenContext } from '../companion/screen';
+import { recentActivity, screenContext } from '../companion/screen';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { aiAssistantAPI, filesAPI, AssistantHistoryMessage, AssistantChoice, AssistantResolved, FileAIActionsInfo } from '../services/api';
 import DuplicateReview from './DuplicateReview';
@@ -72,6 +72,8 @@ interface Message {
   feedbackOpen?: boolean;
   // When it was said (ms), so File Box AI can tell a new visit from the same conversation.
   at?: number;
+  // A note in the conversation, not something said ("Context changed to Budget.pdf").
+  notice?: boolean;
 }
 
 interface AssistantStatus {
@@ -133,6 +135,9 @@ interface AIAssistantProps {
 const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions = SUGGESTIONS }) => {
   const { user } = useAuth();
   const companion = useCompanion();
+  // The latest focus and settings, read when a question is sent (send() itself is kept between renders).
+  const companionNow = useRef(companion);
+  companionNow.current = companion;
   const navigate = useNavigate();
   const location = useLocation();
   const historyKey = `filebox-ai-history-${user?.id || 'local'}`;
@@ -222,6 +227,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
 
     // Files shown in earlier answers go along, so "share it" or "move that one" can refer to them.
     const history: AssistantHistoryMessage[] = messages
+      .filter(message => !message.notice)
       .slice(-10)
       .map(message => {
         const shown = [...(message.files || []), ...(message.choices?.options || [])].map(file => file.name);
@@ -229,14 +235,20 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
       });
 
     // Screen awareness: what is on their File Box screen and what they just did, read when they ask.
-    const aware = companion.profile.screenAware;
-    const where = variant === 'panel' ? companion.pageContext : 'The person is on the File Box AI page.';
+    const now = companionNow.current;
+    const aware = now.profile.screenAware;
+    const where = variant === 'panel' ? now.pageContext : 'The person is on the File Box AI page.';
     const seen = aware ? (variant === 'panel' ? screenContext() : (recentActivity() && `What they did recently in File Box (oldest first):\n${recentActivity()}`)) : '';
     const context = [where, seen].filter(Boolean).join('\n\n');
-    // "Summarize this" while a file is open in the preview means that file.
-    const viewing = aware && variant === 'panel' && !fileId ? glance().viewingFile : undefined;
-    const refersToIt = /\b(this|that|it|here|the file|the picture|what i'?m (looking at|viewing|seeing|reading)|what am i (looking at|viewing|seeing|reading))\b/i.test(question);
-    const effectiveFileId = fileId || (viewing?.id && refersToIt ? viewing.id : undefined);
+    // What Ask File Box is looking at goes with every question, so "this", "these" and "here" (and
+    // follow-ups like "make it shorter") keep meaning the same file, selection or folder.
+    const { focus } = now;
+    const sentFocus = variant === 'panel' ? {
+      fileId: focus.file?.id,
+      fileIds: focus.selection?.filter(item => item.type === 'file').map(item => item.id),
+      folderId: focus.folder?.id,
+      page: focus.page,
+    } : undefined;
 
     appendMessage({ role: 'user', content: shownAs || question });
     if (!resolved) setInput('');
@@ -246,7 +258,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
     let streamed = '';
     try {
       const response = await aiAssistantAPI.chatStream(
-        { question, fileId: effectiveFileId || undefined, history, resolved, context },
+        { question, fileId: fileId || undefined, history, resolved, context, focus: sentFocus },
         (piece) => {
           if (!streamed) appendMessage({ role: 'assistant', content: piece }, streamId);
           streamed += piece;
@@ -299,6 +311,24 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
     // `messages` is read for history only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sending, messages]);
+
+  // When what Ask File Box is looking at changes mid-conversation, say so (it never keeps using the old file).
+  const focusKey = companion.focus.key;
+  const lastFocusKey = useRef(focusKey);
+  useEffect(() => {
+    if (variant !== 'panel' || lastFocusKey.current === focusKey) return;
+    lastFocusKey.current = focusKey;
+    const { focus } = companion;
+    // Going back to just the page (closing a file) is not announced; a new file, selection or folder is.
+    if (focus.kind === 'page') return;
+    const label = focus.kind === 'file' ? focus.file?.name
+      : focus.kind === 'selection' ? `${focus.selection?.length} selected items`
+        : focus.kind === 'folder' ? `the folder ${focus.folder?.name}` : focus.page;
+    setMessages(prev => (prev.length && !prev[prev.length - 1].notice
+      ? [...prev, { id: newId(), role: 'assistant', content: `Context changed to ${label}`, notice: true, at: Date.now() }]
+      : prev.length ? [...prev.slice(0, -1), { ...prev[prev.length - 1], content: `Context changed to ${label}` }] : prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusKey, variant]);
 
   // The companion panel's buttons ("What am I looking at?") ask through this chat.
   const { setAskHandler } = companion;
@@ -548,7 +578,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
         </div>
       )}
 
-      {isNewVisit && (
+      {isNewVisit && (variant === 'page' || companion.focus.kind === 'page') && (
         <CompanionGreeting
           lastTopic={lastTopic}
           onAsk={(text) => send(text, selectedFileId)}
@@ -574,7 +604,9 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
             <h2>Conversation</h2>
             <button className="filebox-ai-clear" onClick={() => setMessages([])}>Clear</button>
           </div>
-          {messages.map(message => (
+          {messages.map(message => message.notice ? (
+            <p key={message.id} className="filebox-ai-notice" role="status"><span>{message.content}</span></p>
+          ) : (
             <article key={message.id} className={`filebox-ai-message ${message.role} ${message.error ? 'error' : ''}`}>
               <div className="filebox-ai-message-body">{message.content}</div>
               {message.offline && <p className="filebox-ai-mode">Offline mode: basic matching until File Box AI is running.</p>}

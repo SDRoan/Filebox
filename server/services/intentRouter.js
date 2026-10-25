@@ -23,6 +23,18 @@ const INTENTS = [
 // Phrases that only point at "the file I'm looking at" rather than naming one.
 const SELF_REFERENCE = /^(?:(?:this|that|it|the selected|the current|the open|selected)(?:\s+(?:one|file|document|doc|pdf|code|script|image|photo|picture|screenshot|spreadsheet|sheet|resume|cv|report|presentation|deck|note|notes|text))?)$/i;
 
+// Phrases that point at the files the person has selected ("move these into School").
+const SELECTION_REFERENCE = /^(?:these|those|them|both(?: of them)?|all of them|all (?:these|those)|(?:these|those|the selected|selected) (?:files?|items?|ones|documents?|pictures?|photos?))$/i;
+
+// Changing the previous answer ("make it shorter", "in bullet points"): a follow-up, not a new task.
+const FOLLOW_UP_EDIT = /^(?:(?:can|could) you\s+|please\s+|now\s+|ok(?:ay)?,?\s+)?(?:make (?:it|that|this) (?:shorter|longer|simpler|clearer|more \w+|less \w+|easier(?: to understand)?)|shorter|longer|simpler|(?:explain|say) (?:it|that) (?:again|differently|more simply|in simpler words)|(?:put it|write it|give it(?: to me)?|show it) (?:as|in) (?:bullet points|bullets|a list|a table|one sentence|\d+ words)|in (?:bullet points|bullets|one sentence|plain english|simpler words)|more detail|go deeper|tl;?dr|rephrase(?: (?:it|that))?)\b/i;
+
+// A question about "it" / "this" (the file the person is looking at), not a search across files.
+const POINTS_AT_FOCUS = /\b(?:it|its|this|that|this (?:file|document|doc|pdf|picture|image|photo|one)|the (?:file|document|pdf|picture|image))\b/i;
+
+// Phrases that point at the folder the person is in ("move it here", "in this folder").
+const HERE_REFERENCE = /^(?:here|in here|this folder|the current folder|current folder|this one|the folder i'?m in|where i am)$/i;
+
 const NOT_A_FILE = /^(?:drive|my drive|files|folders|documents|everything|trash|bin|account|file box|workspace|team spaces?|shared(?: files)?)$/i;
 
 const QUESTION_START = /^(?:what|when|who|whom|whose|why|how|does|do|did|is|are|was|were|has|have|can|could|will|would|should|list|tell me|give me|show me the)\b/i;
@@ -174,7 +186,7 @@ function routeIntent(question, options = {}) {
 
 module.exports = {
   INTENTS,
-  SELF_REFERENCE,
+  SELF_REFERENCE, SELECTION_REFERENCE, HERE_REFERENCE, FOLLOW_UP_EDIT, POINTS_AT_FOCUS, QUESTION_START, SEARCH_START,
   normalize,
   routeByRules,
   routeIntent,

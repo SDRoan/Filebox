@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { companionAPI, CompanionProfile } from '../services/api';
 import { useAuth } from './AuthContext';
 
@@ -6,6 +6,24 @@ import { useAuth } from './AuthContext';
  * File Box AI as a companion, shared by the side panel and the File Box AI page: its profile (name,
  * tone, proactivity, memories), whether the panel is open, and where the person is in File Box.
  */
+
+export interface FocusFile { id: string; name: string; mimeType?: string }
+export interface FocusItem { id: string; name: string; type: 'file' | 'folder'; mimeType?: string }
+export interface FocusFolder { id: string; name: string }
+
+/**
+ * What the person is looking at, most specific first: a file open in the preview (or the one selected
+ * file), several selected items, the folder they are in, or just the page.
+ */
+export interface CompanionFocus {
+  kind: 'file' | 'selection' | 'folder' | 'page';
+  file?: FocusFile;
+  selection?: FocusItem[];
+  folder?: FocusFolder;
+  page: string;
+  // Changes whenever what is being looked at changes (for "Context changed to …").
+  key: string;
+}
 
 interface CompanionContextType {
   profile: CompanionProfile;
@@ -20,6 +38,13 @@ interface CompanionContextType {
   // Ask File Box AI something from outside the chat (the panel's "what am I looking at?" buttons).
   ask: (text: string, fileId?: string) => void;
   setAskHandler: (handler: ((text: string, fileId?: string) => void) | null) => void;
+  focus: CompanionFocus;
+  // Reported by the screens themselves: the preview, the file browser and the page.
+  showFile: (file: FocusFile) => void;
+  hideFile: (id: string) => void;
+  setSelection: (items: FocusItem[]) => void;
+  setFolder: (folder: FocusFolder | null) => void;
+  setPage: (page: string) => void;
 }
 
 const DEFAULT_PROFILE: CompanionProfile = { name: '', tone: 'friendly', proactivity: 'balanced', memoryOn: true, screenAware: true, memories: [] };
@@ -36,6 +61,27 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const setAskHandler = useCallback((handler: ((text: string, fileId?: string) => void) | null) => { askHandler.current = handler; }, []);
   const ask = useCallback((text: string, fileId?: string) => askHandler.current?.(text, fileId), []);
 
+  const [previewFile, setPreviewFile] = useState<FocusFile | null>(null);
+  const [selection, setSelectionState] = useState<FocusItem[]>([]);
+  const [folder, setFolderState] = useState<FocusFolder | null>(null);
+  const [page, setPage] = useState('');
+  const showFile = useCallback((file: FocusFile) => setPreviewFile(file), []);
+  // Only clears if that file is still the one shown (another preview may have opened since).
+  const hideFile = useCallback((id: string) => setPreviewFile(current => (current?.id === id ? null : current)), []);
+  const setSelection = useCallback((items: FocusItem[]) => setSelectionState(current =>
+    (current.map(i => i.id).join() === items.map(i => i.id).join() ? current : items)), []);
+  const setFolder = useCallback((next: FocusFolder | null) => setFolderState(current =>
+    (current?.id === next?.id && current?.name === next?.name ? current : next)), []);
+
+  const focus = useMemo<CompanionFocus>(() => {
+    const single = selection.length === 1 && selection[0].type === 'file' ? selection[0] : null;
+    if (previewFile) return { kind: 'file', file: previewFile, folder: folder || undefined, page, key: `file:${previewFile.id}` };
+    if (single) return { kind: 'file', file: { id: single.id, name: single.name, mimeType: single.mimeType }, folder: folder || undefined, page, key: `file:${single.id}` };
+    if (selection.length) return { kind: 'selection', selection, folder: folder || undefined, page, key: `selection:${selection.map(i => i.id).join(',')}` };
+    if (folder) return { kind: 'folder', folder, page, key: `folder:${folder.id}` };
+    return { kind: 'page', page, key: `page:${page}` };
+  }, [previewFile, selection, folder, page]);
+
   const refresh = useCallback(() => {
     companionAPI.get().then(setProfile).catch(() => { /* keep the defaults */ });
   }, []);
@@ -47,7 +93,7 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   return (
-    <CompanionContext.Provider value={{ profile, name: profile.name.trim() || 'File Box AI', refresh, setProfile, open, setOpen, pageContext, setPageContext, ask, setAskHandler }}>
+    <CompanionContext.Provider value={{ profile, name: profile.name.trim() || 'File Box AI', refresh, setProfile, open, setOpen, pageContext, setPageContext, ask, setAskHandler, focus, showFile, hideFile, setSelection, setFolder, setPage }}>
       {children}
     </CompanionContext.Provider>
   );

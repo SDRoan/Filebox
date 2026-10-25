@@ -9,6 +9,7 @@ import FileEditor from './FileEditor';
 import { MemoryIcon, DownloadIcon, CloseIcon, EditIcon, SignatureIcon } from './Icons';
 import SignPdfDialog from './SignPdfDialog';
 import { capabilitiesFor, AccessRole } from '../utils/permissions';
+import { useCompanion } from '../context/CompanionContext';
 import './FilePreview.css';
 
 interface FilePreviewProps {
@@ -17,6 +18,12 @@ interface FilePreviewProps {
 }
 
 const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
+  // Ask File Box knows which file is open while the preview shows.
+  const { showFile, hideFile } = useCompanion();
+  useEffect(() => {
+    showFile({ id: file._id, name: file.originalName, mimeType: file.mimeType });
+    return () => hideFile(file._id);
+  }, [file._id, file.originalName, file.mimeType, showFile, hideFile]);
   useFileFocus(file._id);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

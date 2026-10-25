@@ -58,22 +58,29 @@ const Dashboard: React.FC = () => {
   const currentFolderId = folderStack[folderStack.length - 1];
 
   // Tell File Box AI where the person is, so "this folder" or "here" mean something to it.
-  const { setPageContext } = useCompanion();
+  const { setPageContext, setPage, setFolder } = useCompanion();
+  useEffect(() => { setPage(page.label); }, [page.label, setPage]);
   useEffect(() => { startWatching(); }, []);
   useEffect(() => { noteActivity(`Went to ${page.label}`); }, [page.label]);
   useEffect(() => {
     let cancelled = false;
     const base = `The person is on the "${page.label}" page of File Box.`;
     setPageContext(base);
-    if (currentView === 'files' && currentFolderId && currentFolderId !== 'root') {
+    const inFolder = (currentView === 'files' || currentView === 'teams') && currentFolderId && currentFolderId !== 'root';
+    if (inFolder) {
       filesAPI.getFolder(currentFolderId)
-        .then(folder => { if (!cancelled && folder?.name) setPageContext(`${base} They are inside their folder "${folder.name}".`); })
-        .catch(() => { /* the page is enough */ });
-    } else if (currentView === 'files') {
-      setPageContext(`${base} They are at the top level of My Files.`);
+        .then(folder => {
+          if (cancelled || !folder?.name) return;
+          setPageContext(`${base} They are inside their folder "${folder.name}".`);
+          setFolder({ id: currentFolderId, name: folder.name });
+        })
+        .catch(() => setFolder(null));
+    } else {
+      setFolder(null);
+      if (currentView === 'files') setPageContext(`${base} They are at the top level of My Files.`);
     }
     return () => { cancelled = true; };
-  }, [page.label, currentView, currentFolderId, setPageContext]);
+  }, [page.label, currentView, currentFolderId, setPageContext, setFolder]);
 
   // The account's accent color (Settings > Appearance), so it follows the person to other browsers.
   useEffect(() => {

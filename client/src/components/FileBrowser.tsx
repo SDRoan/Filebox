@@ -9,6 +9,7 @@ import UploadButton from './UploadButton';
 import CreateFolderModal from './CreateFolderModal';
 import FileSortFilter, { SortOption, SortOrder, FilterOption, ViewMode } from './FileSortFilter';
 import FileBoard from './FileBoard';
+import { useCompanion } from '../context/CompanionContext';
 import OrganizeReview from './OrganizeReview';
 import { AIAssistantIcon, CloseIcon as DialogCloseIcon } from './Icons';
 import './AIPanels.css';
@@ -76,6 +77,22 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
     setViewModeState(mode);
     try { localStorage.setItem('filebox-file-view', mode); } catch { /* only for this visit */ }
   };
+  // Ask File Box knows which items are selected ("compare these", "move these").
+  const { setSelection } = useCompanion();
+  useEffect(() => {
+    const items = Array.from(selectedItems).map(key => {
+      const [type, id] = [key.slice(0, key.indexOf('-')), key.slice(key.indexOf('-') + 1)];
+      if (type === 'file') {
+        const found = files.find(f => f._id === id);
+        return found ? { id, name: found.originalName, type: 'file' as const, mimeType: found.mimeType } : null;
+      }
+      const found = folders.find(f => f._id === id);
+      return found ? { id, name: found.name, type: 'folder' as const } : null;
+    }).filter((item): item is NonNullable<typeof item> => item !== null);
+    setSelection(selectionMode ? items : []);
+  }, [selectedItems, selectionMode, files, folders, setSelection]);
+  useEffect(() => () => setSelection([]), [setSelection]);
+
   const allowBoard = !showTrash && !showStarred;
   const showBoard = allowBoard && viewMode === 'board';
   const boardKey = isTeamFolder && teamFolderId
