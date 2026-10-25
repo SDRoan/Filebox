@@ -114,7 +114,7 @@ router.post('/chat', auth, async (req, res) => {
     // What the person is looking at (Ask File Box): the open file, selected files, the folder they are in.
     // Only ids; every one is checked against their access before it is used.
     const focus = req.body?.focus && typeof req.body.focus === 'object' ? req.body.focus : {};
-    const focusFileIds = (Array.isArray(focus.fileIds) ? focus.fileIds : []).filter(isId).slice(0, 20);
+    const focusFileIds = [...new Set((Array.isArray(focus.fileIds) ? focus.fileIds : []).filter(isId))].slice(0, 20);
     const fileId = typeof req.body?.fileId === 'string' && req.body.fileId.trim() ? req.body.fileId.trim()
       : isId(focus.fileId) ? focus.fileId : (focusFileIds.length === 1 ? focusFileIds[0] : undefined);
     const context = typeof req.body?.context === 'string' ? req.body.context.trim() : '';

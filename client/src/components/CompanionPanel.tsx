@@ -101,18 +101,21 @@ export function quickActionsFor(focus: CompanionFocus, problem?: string): QuickA
     return [{ label: 'What is this?', text: 'What is this file?' }, ...changes, ...help];
   }
   if (focus.kind === 'selection' && focus.selection) {
+    // Summarize and Compare work on selected files (the server allows up to 8 and 2-5 of them).
+    const files = focus.selection.filter(item => item.type === 'file').length;
     return [
-      { label: 'Move', text: 'Move these into ', mode: 'prefill' },
-      { label: 'Star', text: 'Star these' },
+      ...(files >= 2 ? [{ label: 'Summarize', text: 'Summarize these' }] : []),
+      ...(files >= 2 && files <= 5 ? [{ label: 'Compare', text: 'Compare these' }] : []),
+      ...(files >= 1 ? [{ label: 'Move', text: 'Move these into ', mode: 'prefill' as const }] : []),
       ...help,
     ];
   }
   if (focus.kind === 'folder') {
     return [
-      { label: "What's in here?", text: "What's in this folder?" },
-      { label: 'Organize', text: 'Organize my files' },
+      { label: 'Summarize folder', text: 'Summarize this folder' },
+      { label: 'Organize', text: 'Organize this folder' },
       { label: 'Find duplicates', text: 'Find duplicate files' },
-      { label: 'New folder here', text: 'Create a folder here called ', mode: 'prefill' },
+      { label: 'Find related files', text: 'Find related files' },
       ...help,
     ];
   }

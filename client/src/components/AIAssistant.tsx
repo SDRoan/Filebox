@@ -74,6 +74,8 @@ interface Message {
   at?: number;
   // A note in the conversation, not something said ("Context changed to Budget.pdf").
   notice?: boolean;
+  // The folder an Organize review covers (asked about from inside that folder).
+  panelFolderId?: string;
 }
 
 interface AssistantStatus {
@@ -279,6 +281,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
         files: response.files?.length ? response.files : undefined,
         pendingAction: response.pendingAction,
         panel: response.panel,
+        panelFolderId: response.panel === 'organize' && sentFocus?.folderId && !sentFocus.fileId ? sentFocus.folderId : undefined,
         choices: response.choices?.options?.length ? response.choices : undefined,
         resume: response.resume,
         offline: response.route?.mode === 'offline',
@@ -669,7 +672,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
               )}
               {message.panel && message.id === lastPanelId && (
                 <div className="filebox-ai-panel">
-                  {message.panel === 'duplicates' ? <DuplicateReview explain={Boolean(status?.ready)} /> : <OrganizeReview />}
+                  {message.panel === 'duplicates' ? <DuplicateReview explain={Boolean(status?.ready)} /> : <OrganizeReview folderId={message.panelFolderId || null} />}
                 </div>
               )}
               {message.panel && message.id !== lastPanelId && (

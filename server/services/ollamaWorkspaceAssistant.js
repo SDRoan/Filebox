@@ -740,8 +740,14 @@ Respond to the latest user request now.`,
 
       // "these", "them", "the selected files": the files the person has selected.
       if (fileIds.length && (intentRouter.SELECTION_REFERENCE.test(phrase.trim()) || (!key && !fileId))) {
-        const selected = (await Promise.all(fileIds.map(id => fileById(userId, id, { level, trashed })))).filter(Boolean);
+        const checked = await Promise.all(fileIds.map(id => fileById(userId, id, { level, trashed })));
+        const selected = checked.filter(Boolean);
         if (!selected.length) return { reply: this.reply(route, { answer: await this.unavailableAnswer(userId, fileIds[0], { level, verb, many: true }) }) };
+        // Never quietly work on fewer files than were selected.
+        if (selected.length < fileIds.length) {
+          const missing = fileIds.length - selected.length;
+          return { reply: this.reply(route, { answer: `${missing} of the ${fileIds.length} selected files ${missing === 1 ? 'is' : 'are'} no longer available${level === 'owner' ? ', or only their owner can change them' : ''}. Select the files again and ask once more.` }) };
+        }
         files.push(...selected);
         continue;
       }
@@ -917,13 +923,31 @@ Respond to the latest user request now.`,
     const targets = await this.resolveTargets(route, question, userId, { fileId, fileIds, resolved, level: 'viewer', verb });
     if (targets.reply) return targets.reply;
     if (targets.files.length > 1) {
-      return this.reply(route, { answer: `I can ${verb || 'work with'} one file at a time for now. Which one first: ${targets.files.slice(0, 5).map(f => `"${f.originalName}"`).join(', ')}? Open it, or say its name.` });
+      const scope = require('./companionScope');
+      if (route.intent !== 'summarize') {
+        return this.reply(route, { answer: `I can ${verb || 'work with'} one file at a time. Which one first: ${targets.files.slice(0, 5).map(f => `"${f.originalName}"`).join(', ')}? Open it, or say its name. (To look at them side by side, ask me to compare them.)` });
+      }
+      if (targets.files.length > scope.MAX_SUMMARY_FILES) {
+        return this.reply(route, { answer: `You've selected ${targets.files.length} files. I can summarize up to ${scope.MAX_SUMMARY_FILES} at once, so please select fewer and ask again.` });
+      }
+      await this.requireModel();
+      const answer = await scope.summarizeFiles(targets.files, { question, persona, onToken });
+      return this.reply(route, { answer, provider: 'ollama', model: config.ollama.assistantModel, files: targets.files.map(f => this.plainFileItem(f)) });
     }
     const [file] = targets.files;
     await this.requireModel();
 
-    // A picture is looked at with the vision model (it has no text to summarize).
+    // A picture: "read the text" uses the existing text extraction (OCR); anything else is looked at.
     const { isPicture, lookAtPicture } = require('./companionVision');
+    if (isPicture(file) && intentRouter.READ_TEXT.test(question)) {
+      const result = await require('./fileAIActions').runAction(file, 'extract_text');
+      const text = /^No readable text was found/i.test(result.result) ? '' : result.result.trim();
+      return this.reply(route, {
+        answer: text ? `Here's the text in "${file.originalName}":\n\n${text}` : `I couldn't find any text in "${file.originalName}".`,
+        provider: result.provider,
+        fileId: file._id,
+      });
+    }
     if (isPicture(file)) {
       try {
         const answer = await lookAtPicture(file, question, persona);
@@ -1184,10 +1208,10 @@ Be brief and direct.`,
    * running, simple rules stand in and the reply is marked offline. A choice from an earlier list carries
    * the original interpretation, so it is not re-read.
    */
-  async understand({ question, fileId, folderId, history, resolved }) {
+  async understand({ question, fileId, fileIds = [], folderId, history, resolved }) {
     noteActivity();
     if (resolved.route) return resolved.route;
-    const focused = this.routeByFocus(question, { fileId, folderId, history });
+    const focused = this.routeByFocus(question, { fileId, fileIds, folderId, history });
     if (focused) return focused;
     const hasSelectedFile = Boolean(fileId);
     const status = await this.getStatus();
@@ -1205,6 +1229,58 @@ Be brief and direct.`,
     // Offline rules only when Ollama is not running at all.
     const fileNames = aiActionExecutor.extractFileNames(question) || [];
     return { ...intentRouter.routeIntent(question, { hasSelectedFile, fileNames }), mode: 'offline' };
+  }
+
+  /** A file as the chat lists it (clickable in the answer). */
+  plainFileItem(file) {
+    return { id: String(file._id), name: file.originalName, folder: '', mimeType: file.mimeType, size: file.size, parentFolder: file.parentFolder ? String(file.parentFolder) : null, source: 'owned' };
+  }
+
+  /** "Compare these" (the selection) or "compare a.pdf and b.pdf": 2 to 5 files, each access-checked. */
+  async handleCompare(route, { userId, question, fileId, fileIds = [], resolved, persona, onToken }) {
+    const scope = require('./companionScope');
+    const targets = await this.resolveTargets({ ...route, target: route.target || route.normalized }, question, userId, { fileId, fileIds, resolved, level: 'viewer', verb: 'compare' });
+    if (targets.reply) return targets.reply;
+    const files = targets.files.filter((file, i, all) => all.findIndex(f => String(f._id) === String(file._id)) === i);
+    const { min, max } = scope.COMPARE_RANGE;
+    if (files.length < min) return this.reply(route, { answer: 'Comparing needs at least 2 files. Select the files you want to compare, or name them (for example "Compare budget.pdf and plan.pdf").' });
+    if (files.length > max) return this.reply(route, { answer: `I can compare up to ${max} files at once, and you've selected ${files.length}. Please select fewer and ask again.` });
+    await this.requireModel();
+    const answer = await scope.compareFiles(files, { question, persona, onToken });
+    return this.reply(route, { answer, provider: 'ollama', model: config.ollama.assistantModel, files: files.map(f => this.plainFileItem(f)) });
+  }
+
+  /** "Summarize this folder": what is directly inside the folder they are in (never deeper, never elsewhere). */
+  async handleFolderSummary(route, { userId, question, folderId, persona, onToken }) {
+    const folder = folderId ? await folderById(userId, folderId) : null;
+    if (!folder) return this.reply(route, { answer: folderId ? 'This folder is no longer available.' : 'Which folder do you mean? Open it first, then ask again.' });
+    await this.requireModel();
+    const { answer, files } = await require('./companionScope').summarizeFolder(folder, { question, persona, onToken });
+    return this.reply(route, { answer, provider: files.length ? 'ollama' : 'local-rules', files: files.slice(0, 12).map(f => this.plainFileItem(f)) });
+  }
+
+  /** "Find related files": for the open file, the selection, or the current folder. */
+  async handleRelated(route, { userId, fileId, fileIds = [], folderId }) {
+    let file = null;
+    let folder = null;
+    if (fileId || fileIds.length === 1) {
+      file = await fileById(userId, fileId || fileIds[0], { level: 'viewer' });
+      if (!file) return this.reply(route, { answer: 'This file is no longer available.' });
+    } else if (folderId) {
+      folder = await folderById(userId, folderId);
+      if (!folder) return this.reply(route, { answer: 'This folder is no longer available.' });
+    } else {
+      return this.reply(route, { answer: 'Related to what? Open a file or a folder first, then ask again.' });
+    }
+    const { related, basis } = await require('./companionScope').relatedFiles(userId, { file, folder });
+    const subject = file ? `"${file.originalName}"` : `the files in "${folder.name}"`;
+    if (!related.length) {
+      return this.reply(route, { answer: basis === 'empty-folder' ? `"${folder.name}" is empty, so there's nothing to compare other files with yet.` : `I didn't find files clearly related to ${subject}.` });
+    }
+    return this.reply(route, {
+      answer: `Files related to ${subject}:\n${related.map(r => `• ${r.file.originalName}${r.reasons.length ? ` (${r.reasons.slice(0, 3).join(' · ')})` : ''}`).join('\n')}`,
+      files: related.map(r => this.plainFileItem(r.file)),
+    });
   }
 
   /** "What's in here?": the folder's subfolders and files, listed from the folder itself. */
@@ -1235,11 +1311,28 @@ Be brief and direct.`,
    * never drifts: "make it shorter" changes the last answer; "what date does it mention?" with a file
    * open is about that file (not a search across all files).
    */
-  routeByFocus(question, { fileId, folderId, history = [] }) {
+  routeByFocus(question, { fileId, fileIds = [], folderId, history = [] }) {
     const q = question.trim();
     const base = { source: 'rule', confidence: 0.95, mode: 'ai', normalized: q };
     if (folderId && !fileId && intentRouter.FOLDER_CONTENTS.test(q)) {
       return { ...base, intent: 'folder_contents', rule: 'focus:folder-contents', target: '' };
+    }
+    if (folderId && !fileId && !fileIds.length && intentRouter.FOLDER_SUMMARY.test(q)) {
+      return { ...base, intent: 'folder_summary', rule: 'focus:folder-summary', target: '' };
+    }
+    if ((fileId || folderId || fileIds.length) && intentRouter.RELATED.test(q)) {
+      return { ...base, intent: 'related_files', rule: 'focus:related', target: '' };
+    }
+    // Several files selected: "compare these" / "summarize these" work on the selection.
+    if (fileIds.length >= 2 && intentRouter.COMPARE.test(q)) {
+      return { ...base, intent: 'compare', rule: 'focus:compare-selection', target: 'these' };
+    }
+    if (fileIds.length >= 2 && /\b(?:summari[sz]e|summary|sum up|recap|tl;?dr|gist)\b/i.test(q)) {
+      return { ...base, intent: 'summarize', rule: 'focus:summarize-selection', target: 'these' };
+    }
+    // "Compare a.pdf and b.pdf" names its files.
+    if (intentRouter.COMPARE.test(q) && (aiActionExecutor.extractFileNames(q) || []).length >= 2) {
+      return { ...base, intent: 'compare', rule: 'focus:compare-named', target: '' };
     }
     if (intentRouter.FOLLOW_UP_EDIT.test(q) && history.some(m => m.role === 'assistant')) {
       return { ...base, intent: 'chat', rule: 'focus:follow-up-edit', target: '' };
@@ -1258,7 +1351,7 @@ Be brief and direct.`,
    * `resolved` carries choices the user made from an earlier list: { files: { "<name>": id }, folder: id }.
    */
   async chat({ userId, question, fileId, fileIds = [], folderId, history = [], context = '', resolved = {}, persona, onToken, onReset }) {
-    const route = await this.understand({ question, fileId, folderId, history, resolved });
+    const route = await this.understand({ question, fileId, fileIds, folderId, history, resolved });
     const turn = { userId, question, fileId, fileIds, folderId, history, context, resolved, persona, onToken, onReset };
 
     switch (route.intent) {
@@ -1277,12 +1370,15 @@ Be brief and direct.`,
           panel: groups.length ? 'duplicates' : undefined,
         });
       }
-      case 'organize':
-        // Organizing is always a proposal the user reviews; the panel fetches and applies suggestions.
+      case 'organize': {
+        // Organizing is always a proposal the user reviews; the panel fetches and applies suggestions
+        // (for the folder they are in, when asked from inside one).
+        const here = folderId ? await folderById(userId, folderId) : null;
         return this.reply(route, {
-          answer: "I'll suggest changes for My Files. Review each one, keep the ones you want, and nothing changes until you confirm.",
+          answer: `I'll suggest changes for ${here ? `"${here.name}"` : 'My Files'}. Review each one, keep the ones you want, and nothing changes until you confirm.`,
           panel: 'organize',
         });
+      }
       case 'search':
       case 'smart_search':
         // Answered from local search: needs no model, works offline, never invents files.
@@ -1295,6 +1391,12 @@ Be brief and direct.`,
         return this.handleFileRequest(route, turn);
       case 'folder_contents':
         return this.handleFolderContents(route, turn);
+      case 'folder_summary':
+        return this.handleFolderSummary(route, turn);
+      case 'compare':
+        return this.handleCompare(route, turn);
+      case 'related_files':
+        return this.handleRelated(route, turn);
       case 'drive_question':
         return this.handleDriveQuestion(route, turn);
       default: {

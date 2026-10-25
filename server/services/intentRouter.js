@@ -18,6 +18,11 @@ const INTENTS = [
   'action', // one specific change: create folder, rename, move, star, share, trash, restore, ...
   'help', // how File Box works
   'chat',
+  // Ask File Box, decided by what the person is looking at (see ollamaWorkspaceAssistant.routeByFocus):
+  'compare', // compare 2-5 files
+  'folder_contents', // "what's in here?"
+  'folder_summary', // summarize the folder they are in (its direct contents)
+  'related_files', // files related to the open file or the current folder
 ];
 
 // Phrases that only point at "the file I'm looking at" rather than naming one.
@@ -34,6 +39,18 @@ const POINTS_AT_FOCUS = /\b(?:it|its|this|that|this (?:file|document|doc|pdf|pic
 
 // "What's in here?" with a folder open: list it, straight from the folder.
 const FOLDER_CONTENTS = /^(?:what(?:'s| is) (?:in|inside) (?:here|this folder|this one|the folder)|what (?:do i have|have i got|files are|is) (?:in |inside )?(?:here|this folder)|show (?:me )?(?:what'?s|everything) (?:in )?(?:here|this folder)|list (?:what'?s in )?(?:here|this folder|the files here))\??$/i;
+
+// Comparing files ("compare these", "what's the difference", "how do they differ", "a.pdf vs b.pdf").
+const COMPARE = /\b(?:compare|comparison|contrast|difference|differences|differ|vs\.?|versus|which (?:one )?is better|how are (?:they|these) (?:different|alike))\b/i;
+
+// Summarizing the folder itself ("summarize this folder", "what is this folder about?").
+const FOLDER_SUMMARY = /^(?:(?:please |can you |could you )?(?:summari[sz]e|sum up|give (?:me )?(?:a )?(?:summary|overview) of|recap) (?:this|the|my current) folder|what(?:'s| is) (?:this|the) folder (?:about|for)|(?:give me )?(?:an )?overview of (?:this|the) folder)\??\.?$/i;
+
+// Files related to what is open ("find related files", "similar files", "files like this").
+const RELATED = /\b(?:related|similar|connected|matching) (?:files?|documents?|docs|pictures?|items?)\b|\bfiles? (?:like|related to|similar to) (?:this|these|that|it|here|this folder)\b|\bwhat (?:else )?(?:goes|belongs) with (?:this|it)\b|^find related\b/i;
+
+// Reading the text in a picture ("read the text", "what does this picture say?").
+const READ_TEXT = /\b(?:read|extract|copy|transcribe|ocr|get)\b.{0,20}\btext\b|\bwhat (?:text|words?)\b.{0,30}\b(?:in|on)\b|\bwhat does (?:it|this|the (?:picture|image|photo|screenshot)|this (?:picture|image|photo|screenshot)) say\b|\btext (?:is )?(?:written )?(?:in|on) (?:it|this|the)\b/i;
 
 // Phrases that point at the folder the person is in ("move it here", "in this folder").
 const HERE_REFERENCE = /^(?:here|in here|this folder|the current folder|current folder|this one|the folder i'?m in|where i am)$/i;
@@ -189,7 +206,7 @@ function routeIntent(question, options = {}) {
 
 module.exports = {
   INTENTS,
-  SELF_REFERENCE, SELECTION_REFERENCE, HERE_REFERENCE, FOLLOW_UP_EDIT, FOLDER_CONTENTS, POINTS_AT_FOCUS, QUESTION_START, SEARCH_START,
+  SELF_REFERENCE, SELECTION_REFERENCE, HERE_REFERENCE, FOLLOW_UP_EDIT, FOLDER_CONTENTS, COMPARE, FOLDER_SUMMARY, RELATED, READ_TEXT, POINTS_AT_FOCUS, QUESTION_START, SEARCH_START,
   normalize,
   routeByRules,
   routeIntent,
