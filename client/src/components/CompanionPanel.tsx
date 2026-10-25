@@ -4,7 +4,7 @@ import AIAssistant, { AssistantSuggestion } from './AIAssistant';
 import { CompanionFocus, useCompanion } from '../context/CompanionContext';
 import { companionAPI, homeAPI, CompanionProactivity, CompanionTone } from '../services/api';
 import { pagePath } from '../config/workspaceNavigation';
-import { AIAssistantIcon, CloseIcon, SettingsIcon, TrashIcon, ArrowRightIcon, EyeIcon } from './Icons';
+import { AIAssistantIcon, CloseIcon, SettingsIcon, TrashIcon, EyeIcon } from './Icons';
 import { glance, ScreenGlance } from '../companion/screen';
 import './CompanionPanel.css';
 
@@ -69,6 +69,54 @@ export function focusLabel(focus: CompanionFocus) {
   }
   if (focus.kind === 'folder' && focus.folder) return { lead: 'Current folder', name: focus.folder.name };
   return { lead: 'On', name: focus.page || 'File Box' };
+}
+
+// ---------- Quick actions: only what makes sense for what is being looked at
+
+type QuickAction = { label: string; text: string; mode?: 'send' | 'prefill' };
+
+const isImage = (mime?: string) => Boolean(mime && mime.startsWith('image/'));
+const isDocument = (mime?: string) => Boolean(mime && (/^text\//.test(mime) || /pdf|word|document|sheet|excel|presentation|powerpoint|rtf|json|xml|csv|markdown|javascript|typescript|x-python|x-sh/.test(mime)));
+
+export function quickActionsFor(focus: CompanionFocus, problem?: string): QuickAction[] {
+  const help: QuickAction[] = problem ? [{ label: 'Help with this message', text: `I see this message: "${problem}". What does it mean and what should I do?` }] : [];
+  if (focus.kind === 'file' && focus.file) {
+    const { mimeType } = focus.file;
+    const changes: QuickAction[] = [
+      { label: 'Rename', text: 'Rename this to ', mode: 'prefill' },
+      { label: 'Move', text: 'Move this into ', mode: 'prefill' },
+    ];
+    if (isImage(mimeType)) {
+      return [{ label: 'Describe', text: 'Describe this picture' }, { label: 'Read text', text: 'What text is written in this picture?' }, ...changes, ...help];
+    }
+    if (isDocument(mimeType) || !mimeType) {
+      return [
+        { label: 'Summarize', text: 'Summarize this' },
+        { label: 'Explain', text: 'Explain this in simple words' },
+        { label: 'Key points', text: 'What are the key points of this file?' },
+        { label: 'Find dates', text: 'What dates does this file mention?' },
+        ...changes, ...help,
+      ];
+    }
+    return [{ label: 'What is this?', text: 'What is this file?' }, ...changes, ...help];
+  }
+  if (focus.kind === 'selection' && focus.selection) {
+    return [
+      { label: 'Move', text: 'Move these into ', mode: 'prefill' },
+      { label: 'Star', text: 'Star these' },
+      ...help,
+    ];
+  }
+  if (focus.kind === 'folder') {
+    return [
+      { label: "What's in here?", text: "What's in this folder?" },
+      { label: 'Organize', text: 'Organize my files' },
+      { label: 'Find duplicates', text: 'Find duplicate files' },
+      { label: 'New folder here', text: 'Create a folder here called ', mode: 'prefill' },
+      ...help,
+    ];
+  }
+  return help;
 }
 
 const CompanionSettings: React.FC<{ onDone: () => void }> = ({ onDone }) => {
@@ -202,9 +250,23 @@ const CompanionPanel: React.FC<CompanionPanelProps> = ({ currentView }) => {
   };
 
   const toggle = (next = !open) => {
+    // Closing from the panel on a phone also removes the Back step it added.
+    if (!next && pushedBack.current) { pushedBack.current = false; window.history.back(); }
     setOpen(next);
     if (next) { markSeen(); dismissNote(); setView('chat'); } else buttonRef.current?.focus();
   };
+
+  // Phones: the panel is a bottom sheet, and the phone's Back button closes it (as people expect).
+  const isPhone = () => window.matchMedia('(max-width: 600px)').matches;
+  const pushedBack = useRef(false);
+  useEffect(() => {
+    if (!open || onAiPage || !isPhone()) return undefined;
+    window.history.pushState({ ...(window.history.state || {}), fileboxCompanion: true }, '');
+    pushedBack.current = true;
+    const onBack = () => { pushedBack.current = false; setOpen(false); };
+    window.addEventListener('popstate', onBack);
+    return () => window.removeEventListener('popstate', onBack);
+  }, [open, onAiPage, setOpen]);
 
   // ⌘J / Ctrl+J opens and closes the companion anywhere; Escape closes it.
   useEffect(() => {
@@ -232,6 +294,8 @@ const CompanionPanel: React.FC<CompanionPanelProps> = ({ currentView }) => {
     return () => clearInterval(timer);
   }, [open, profile.screenAware]);
 
+  const actions = quickActionsFor(focus, profile.screenAware ? screen.problem : undefined);
+
   const toggleAware = () => {
     const screenAware = !profile.screenAware;
     setProfile({ ...profile, screenAware });
@@ -253,15 +317,18 @@ const CompanionPanel: React.FC<CompanionPanelProps> = ({ currentView }) => {
               <button className="companion-note-close" onClick={dismissNote} aria-label="Dismiss"><CloseIcon size={12} /></button>
             </div>
           )}
-          <button ref={buttonRef} className="companion-button" onClick={() => toggle(true)} aria-label={`Open ${name}${hasNews ? ' (has something for you)' : ''}. Shortcut: Command J`} title={`${name} (⌘J)`}>
-            <AIAssistantIcon size={22} />
+          <button ref={buttonRef} className="companion-button" onClick={() => toggle(true)} aria-label={`Ask File Box${hasNews ? ' (has something for you)' : ''}. Shortcut: Command J`} title="Ask File Box (⌘J)">
+            <AIAssistantIcon size={18} />
+            <span>Ask File Box</span>
             {hasNews && <span className="companion-dot" aria-hidden="true" />}
           </button>
         </div>
       )}
 
+      {open && <button className="companion-sheet-backdrop" aria-label="Close Ask File Box" onClick={() => toggle(false)} />}
       {open && (
-        <aside ref={panelRef} className="companion-panel" aria-label={name}>
+        <aside ref={panelRef} className="companion-panel" aria-label="Ask File Box">
+          <span className="companion-sheet-handle" aria-hidden="true" />
           <header className="companion-panel-header">
             <span className="companion-avatar" aria-hidden="true"><AIAssistantIcon size={16} /></span>
             <span className="companion-title">
@@ -277,18 +344,17 @@ const CompanionPanel: React.FC<CompanionPanelProps> = ({ currentView }) => {
                 aria-label={profile.screenAware ? `${name} can see your File Box screen. Turn off` : `${name} can't see your screen. Turn on`}
                 title={profile.screenAware ? 'Can see your File Box screen (click to turn off)' : 'Not looking at your screen (click to turn on)'}><EyeIcon size={16} /></button>
               <button onClick={() => setView(view === 'settings' ? 'chat' : 'settings')} aria-label={view === 'settings' ? 'Back to chat' : `${name} settings`} aria-pressed={view === 'settings'} title="Settings"><SettingsIcon size={16} /></button>
-              <button onClick={() => { toggle(false); navigate(pagePath('ai-assistant')); }} aria-label="Open the full File Box AI page" title="Open full page"><ArrowRightIcon size={16} /></button>
+              <button onClick={() => { toggle(false); navigate(pagePath('ai-assistant')); }} aria-label="Expand to the full File Box AI page" title="Expand to full page">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" /></svg>
+              </button>
               <button onClick={() => toggle(false)} aria-label={`Close ${name}`} title="Close (Esc)"><CloseIcon size={16} /></button>
             </span>
           </header>
-          {view === 'chat' && profile.screenAware && (
-            <div className="companion-seeing" aria-label="Help with what's on screen">
-              <span className="companion-seeing-actions">
-                <button onClick={() => ask('What am I looking at right now?')}>What am I looking at?</button>
-                {focus.file && <button onClick={() => ask('Summarize this')}>Summarize this file</button>}
-                {screen.problem && <button onClick={() => ask(`I see this message: "${screen.problem}". What does it mean and what should I do?`)}>Help with this message</button>}
-                <button onClick={() => ask('What was I just doing? Help me pick up from there.')}>What was I doing?</button>
-              </span>
+          {view === 'chat' && actions.length > 0 && (
+            <div className="companion-actions" role="toolbar" aria-label={`Quick actions for ${context.name}`}>
+              {actions.map(action => (
+                <button key={action.label} onClick={() => ask(action.text, undefined, action.mode)}>{action.label}</button>
+              ))}
             </div>
           )}
           <div className="companion-panel-body">

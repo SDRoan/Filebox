@@ -1,10 +1,10 @@
 /* File Box AI companion: corner button, side panel, check-in and settings */
 /* Above File Box's own windows (previews, dialogs), so the companion can be asked about them. */
 .companion-launcher { position: fixed; right: 24px; bottom: 24px; z-index: 10500; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
-.companion-button { position: relative; display: grid; place-items: center; width: 54px; height: 54px; padding: 0; border: 0; border-radius: 50%; background: var(--fb-g-3f6543, #3f6543); color: #fff; box-shadow: 0 10px 26px #1d281b40; cursor: pointer; transition: transform 140ms, box-shadow 140ms; }
+.companion-button { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 18px 0 15px; border: 0; border-radius: 999px; font: inherit; font-size: 14px; font-weight: 600; background: var(--fb-g-3f6543, #3f6543); color: #fff; box-shadow: 0 10px 26px #1d281b40; cursor: pointer; transition: transform 140ms, box-shadow 140ms; }
 .companion-button:hover { transform: translateY(-2px); box-shadow: 0 14px 30px #1d281b4d; }
 .companion-button:focus-visible { outline: 3px solid var(--fb-g-9bb68d, #9bb68d); outline-offset: 3px; }
-.companion-dot { position: absolute; top: 3px; right: 3px; width: 13px; height: 13px; border: 2px solid var(--fb-surface, #ffffff); border-radius: 50%; background: #e2683c; }
+.companion-dot { position: absolute; top: -2px; right: -2px; width: 13px; height: 13px; border: 2px solid var(--fb-surface, #ffffff); border-radius: 50%; background: #e2683c; }
 .companion-note { display: flex; align-items: flex-start; gap: 4px; max-width: 280px; padding: 4px; border: 1px solid var(--fb-g-dfe5d7, #dfe5d7); border-radius: calc(12px * var(--fb-radius-scale, 1)); background: var(--fb-surface, #ffffff); box-shadow: 0 10px 26px #2a3a2020; animation: companion-pop 200ms ease-out; }
 .companion-note-body { display: grid; gap: 2px; padding: 8px 6px 8px 10px; border: 0; background: none; text-align: left; font-size: 12px; line-height: 1.45; color: var(--fb-g-46553f, #46553f); cursor: pointer; }
 .companion-note-body strong { font-size: 12px; color: var(--fb-g-2c3829, #2c3829); }
@@ -25,7 +25,10 @@
 .companion-panel-body { flex: 1; min-height: 0; overflow-y: auto; }
 
 /* The File Box AI conversation, fitted to the panel */
-.filebox-ai.filebox-ai-panel { max-width: none; padding: 16px 16px 24px; }
+.filebox-ai.filebox-ai-panel { display: flex; flex-direction: column; min-height: 100%; max-width: none; padding: 16px 16px 0; }
+/* The message box stays at the bottom of the panel, within easy reach. */
+.filebox-ai-panel-composer { position: sticky; bottom: 0; z-index: 2; margin: auto -16px 0; padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); background: linear-gradient(transparent, var(--fb-page-bg, var(--fb-g-fdfdfb, #fdfdfb)) 14px); }
+.filebox-ai-panel-composer .filebox-ai-composer { margin: 0; box-shadow: 0 6px 20px #1d281b14; }
 .filebox-ai.filebox-ai-panel .filebox-ai-header { display: none; }
 .filebox-ai.filebox-ai-panel .filebox-ai-offline { flex-wrap: wrap; padding: 14px; }
 
@@ -75,9 +78,25 @@
 /* Screen awareness: what the companion is looking at, and quick help with it */
 .companion-eye { color: var(--fb-g-a3ab9c, #a3ab9c) !important; }
 .companion-eye.on { color: var(--fb-g-3f6543, #3f6543) !important; }
-.companion-seeing { display: grid; gap: 8px; flex: none; padding: 10px 16px 12px; border-bottom: 1px solid var(--fb-g-eff2ea, #eff2ea); background: var(--fb-g-f6f7f1, #f6f7f1); }
-.companion-seeing-label { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--fb-g-56644c, #56644c); }
-.companion-seeing-label strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fb-g-2f3c2b, #2f3c2b); }
-.companion-seeing-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.companion-seeing-actions button { padding: 5px 10px; border: 1px solid var(--fb-g-dfe5d7, #dfe5d7); border-radius: 999px; background: var(--fb-surface, #ffffff); color: var(--fb-g-3d4a37, #3d4a37); font-size: 12px; cursor: pointer; }
-.companion-seeing-actions button:hover { border-color: var(--fb-g-a7bc96, #a7bc96); }
+
+/* Quick actions for what is being looked at */
+.companion-actions { display: flex; flex-wrap: wrap; gap: 6px; flex: none; padding: 10px 16px 12px; border-bottom: 1px solid var(--fb-g-eff2ea, #eff2ea); }
+.companion-actions button { padding: 6px 12px; border: 1px solid var(--fb-g-dfe5d7, #dfe5d7); border-radius: calc(999px * var(--fb-radius-scale, 1)); background: var(--fb-surface, #ffffff); color: var(--fb-g-3d4a37, #3d4a37); font: inherit; font-size: 12px; cursor: pointer; }
+.companion-actions button:hover { border-color: var(--fb-g-a7bc96, #a7bc96); color: var(--fb-g-2c3829, #2c3829); }
+
+/* Phones: a bottom sheet over a dimmed page */
+.companion-sheet-backdrop, .companion-sheet-handle { display: none; }
+@media (max-width: 600px) {
+  .companion-launcher { right: 16px; bottom: calc(16px + env(safe-area-inset-bottom)); }
+  .companion-button { height: 48px; }
+  .companion-sheet-backdrop { display: block; position: fixed; inset: 0; z-index: 10499; border: 0; background: #1d281b59; animation: companion-fade 160ms ease-out; }
+  .companion-panel { top: auto; left: 0; right: 0; width: 100vw; height: 88dvh; border-left: 0; border-radius: calc(18px * var(--fb-radius-scale, 1)) calc(18px * var(--fb-radius-scale, 1)) 0 0; box-shadow: 0 -12px 40px #1d281b33; animation: companion-rise 200ms ease-out; overflow: hidden; }
+  .companion-sheet-handle { display: block; flex: none; width: 40px; height: 4px; margin: 8px auto 0; border-radius: 4px; background: var(--fb-g-c8d2bc, #c8d2bc); }
+  .companion-panel-header { height: 56px; }
+  .companion-panel-actions button { width: 44px; height: 44px; }
+  .companion-actions { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .companion-actions button { flex: none; min-height: 40px; padding: 8px 14px; font-size: 13px; }
+  .filebox-ai-panel .filebox-ai-composer textarea { font-size: 16px; }
+}
+@keyframes companion-rise { from { transform: translateY(40px); opacity: 0; } }
+@keyframes companion-fade { from { opacity: 0; } }

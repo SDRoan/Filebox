@@ -1184,10 +1184,10 @@ Be brief and direct.`,
    * running, simple rules stand in and the reply is marked offline. A choice from an earlier list carries
    * the original interpretation, so it is not re-read.
    */
-  async understand({ question, fileId, history, resolved }) {
+  async understand({ question, fileId, folderId, history, resolved }) {
     noteActivity();
     if (resolved.route) return resolved.route;
-    const focused = this.routeByFocus(question, { fileId, history });
+    const focused = this.routeByFocus(question, { fileId, folderId, history });
     if (focused) return focused;
     const hasSelectedFile = Boolean(fileId);
     const status = await this.getStatus();
@@ -1207,14 +1207,40 @@ Be brief and direct.`,
     return { ...intentRouter.routeIntent(question, { hasSelectedFile, fileNames }), mode: 'offline' };
   }
 
+  /** "What's in here?": the folder's subfolders and files, listed from the folder itself. */
+  async handleFolderContents(route, { userId, folderId }) {
+    const folder = await folderById(userId, folderId);
+    if (!folder) return this.reply(route, { answer: 'This folder is no longer available.' });
+    const [folders, files] = await Promise.all([
+      Folder.find({ parentFolder: folder._id, isTrashed: { $ne: true } }).select('name').sort({ name: 1 }).lean(),
+      File.find({ parentFolder: folder._id, isTrashed: { $ne: true } }).select('originalName mimeType size').sort({ originalName: 1 }).lean(),
+    ]);
+    if (!folders.length && !files.length) {
+      return this.reply(route, { answer: `"${folder.name}" is empty. Upload files into it, or ask me to move some here.` });
+    }
+    const count = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const parts = [folders.length && count(folders.length, 'folder'), files.length && count(files.length, 'file')].filter(Boolean).join(' and ');
+    const lines = [
+      ...folders.slice(0, 15).map(f => `• ${f.name} (folder)`),
+      ...files.slice(0, 25).map(f => `• ${f.originalName} (${formatBytes(f.size || 0)})`),
+    ];
+    const more = folders.length + files.length - lines.length;
+    return this.reply(route, {
+      answer: `"${folder.name}" has ${parts}:\n${lines.join('\n')}${more > 0 ? `\n…and ${more} more.` : ''}\n\nWant me to summarize one of them, or organize this folder?`,
+    });
+  }
+
   /**
    * Requests whose meaning is fixed by what the person is looking at, decided before the model so it
    * never drifts: "make it shorter" changes the last answer; "what date does it mention?" with a file
    * open is about that file (not a search across all files).
    */
-  routeByFocus(question, { fileId, history = [] }) {
+  routeByFocus(question, { fileId, folderId, history = [] }) {
     const q = question.trim();
     const base = { source: 'rule', confidence: 0.95, mode: 'ai', normalized: q };
+    if (folderId && !fileId && intentRouter.FOLDER_CONTENTS.test(q)) {
+      return { ...base, intent: 'folder_contents', rule: 'focus:folder-contents', target: '' };
+    }
     if (intentRouter.FOLLOW_UP_EDIT.test(q) && history.some(m => m.role === 'assistant')) {
       return { ...base, intent: 'chat', rule: 'focus:follow-up-edit', target: '' };
     }
@@ -1232,7 +1258,7 @@ Be brief and direct.`,
    * `resolved` carries choices the user made from an earlier list: { files: { "<name>": id }, folder: id }.
    */
   async chat({ userId, question, fileId, fileIds = [], folderId, history = [], context = '', resolved = {}, persona, onToken, onReset }) {
-    const route = await this.understand({ question, fileId, history, resolved });
+    const route = await this.understand({ question, fileId, folderId, history, resolved });
     const turn = { userId, question, fileId, fileIds, folderId, history, context, resolved, persona, onToken, onReset };
 
     switch (route.intent) {
@@ -1267,6 +1293,8 @@ Be brief and direct.`,
       case 'explain':
       case 'file_question':
         return this.handleFileRequest(route, turn);
+      case 'folder_contents':
+        return this.handleFolderContents(route, turn);
       case 'drive_question':
         return this.handleDriveQuestion(route, turn);
       default: {

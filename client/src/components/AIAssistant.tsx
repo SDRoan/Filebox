@@ -334,7 +334,10 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
   const { setAskHandler } = companion;
   useEffect(() => {
     if (variant !== 'panel') return undefined;
-    setAskHandler((text, fileId) => send(text, fileId));
+    setAskHandler((text, fileId, mode) => {
+      if (mode === 'prefill') { setInput(text); requestAnimationFrame(() => inputRef.current?.focus()); return; }
+      send(text, fileId);
+    });
     return () => setAskHandler(null);
   }, [variant, send, setAskHandler]);
 
@@ -494,6 +497,42 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
   const lastPanelId = [...messages].reverse().find(message => message.panel && livePanelIds.current.has(message.id))?.id;
   const modelMissing = Boolean(status?.reachable && !status?.assistantModelAvailable);
 
+  // The message box: at the top of the File Box AI page, at the bottom of the Ask File Box panel.
+  const composer = (
+    <form
+      className="filebox-ai-composer"
+      onSubmit={(event) => { event.preventDefault(); send(input, selectedFileId); }}
+    >
+      <textarea
+        ref={inputRef}
+        value={input}
+        rows={2}
+        placeholder={!ready ? 'AI is offline — you can still find files and duplicates' : variant === 'panel' ? 'Ask about this or tell File Box what to do…' : 'Find my resume, summarize a PDF, create a folder…'}
+        aria-label="Message File Box AI"
+        disabled={sending}
+        onChange={(event) => setInput(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            send(input, selectedFileId);
+          }
+        }}
+      />
+      <div className="filebox-ai-composer-bar">
+        {variant === 'page' && <label className="filebox-ai-file-picker">
+          <DocumentIcon size={14} />
+          <select value={selectedFileId} onChange={(event) => setSelectedFileId(event.target.value)} aria-label="File to ask about">
+            <option value="">No file selected</option>
+            {fileOptions.map(file => <option key={file._id} value={file._id}>{file.originalName}</option>)}
+          </select>
+        </label>}
+        <button type="submit" className="btn-primary" disabled={sending || !input.trim()}>
+          {sending ? 'Working…' : 'Send'} <ArrowRightIcon size={14} />
+        </button>
+      </div>
+    </form>
+  );
+
   return (
     <div className={`filebox-ai ${variant === 'panel' ? 'filebox-ai-panel' : ''}`}>
       <header className="filebox-ai-header">
@@ -530,38 +569,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
         </section>
       )}
 
-      <form
-        className="filebox-ai-composer"
-        onSubmit={(event) => { event.preventDefault(); send(input, selectedFileId); }}
-      >
-        <textarea
-          ref={inputRef}
-          value={input}
-          rows={2}
-          placeholder={ready ? 'Find my resume, summarize a PDF, create a folder…' : 'AI is offline — you can still find files and duplicates'}
-          aria-label="Message File Box AI"
-          disabled={sending}
-          onChange={(event) => setInput(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              send(input, selectedFileId);
-            }
-          }}
-        />
-        <div className="filebox-ai-composer-bar">
-          <label className="filebox-ai-file-picker">
-            <DocumentIcon size={14} />
-            <select value={selectedFileId} onChange={(event) => setSelectedFileId(event.target.value)} aria-label="File to ask about">
-              <option value="">No file selected</option>
-              {fileOptions.map(file => <option key={file._id} value={file._id}>{file.originalName}</option>)}
-            </select>
-          </label>
-          <button type="submit" className="btn-primary" disabled={sending || !input.trim()}>
-            {sending ? 'Working…' : 'Send'} <ArrowRightIcon size={14} />
-          </button>
-        </div>
-      </form>
+      {variant === 'page' && composer}
 
       {fileActions && fileActions.actions.length > 0 && (
         <div className="filebox-ai-suggestions" aria-label="Actions for the selected file">
@@ -727,6 +735,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
           <div ref={endRef} />
         </section>
       )}
+      {variant === 'panel' && <div className="filebox-ai-panel-composer">{composer}</div>}
     </div>
   );
 };

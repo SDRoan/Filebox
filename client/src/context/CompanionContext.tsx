@@ -25,6 +25,9 @@ export interface CompanionFocus {
   key: string;
 }
 
+export type AskMode = 'send' | 'prefill';
+type AskHandler = (text: string, fileId?: string, mode?: AskMode) => void;
+
 interface CompanionContextType {
   profile: CompanionProfile;
   name: string;
@@ -35,9 +38,10 @@ interface CompanionContextType {
   // A sentence about where the person is ("On My Files, inside the folder Taxes"), sent with questions.
   pageContext: string;
   setPageContext: (context: string) => void;
-  // Ask File Box AI something from outside the chat (the panel's "what am I looking at?" buttons).
-  ask: (text: string, fileId?: string) => void;
-  setAskHandler: (handler: ((text: string, fileId?: string) => void) | null) => void;
+  // Ask File Box AI something from outside the chat (the panel's quick actions). 'prefill' puts the
+  // words in the box for the person to finish ("Rename this to …") instead of sending them.
+  ask: (text: string, fileId?: string, mode?: AskMode) => void;
+  setAskHandler: (handler: AskHandler | null) => void;
   focus: CompanionFocus;
   // Reported by the screens themselves: the preview, the file browser and the page.
   showFile: (file: FocusFile) => void;
@@ -57,9 +61,9 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [profile, setProfile] = useState<CompanionProfile>(DEFAULT_PROFILE);
   const [open, setOpenState] = useState(() => { try { return sessionStorage.getItem(OPEN_KEY) === '1'; } catch { return false; } });
   const [pageContext, setPageContext] = useState('');
-  const askHandler = useRef<((text: string, fileId?: string) => void) | null>(null);
-  const setAskHandler = useCallback((handler: ((text: string, fileId?: string) => void) | null) => { askHandler.current = handler; }, []);
-  const ask = useCallback((text: string, fileId?: string) => askHandler.current?.(text, fileId), []);
+  const askHandler = useRef<AskHandler | null>(null);
+  const setAskHandler = useCallback((handler: AskHandler | null) => { askHandler.current = handler; }, []);
+  const ask = useCallback((text: string, fileId?: string, mode?: AskMode) => askHandler.current?.(text, fileId, mode), []);
 
   const [previewFile, setPreviewFile] = useState<FocusFile | null>(null);
   const [selection, setSelectionState] = useState<FocusItem[]>([]);

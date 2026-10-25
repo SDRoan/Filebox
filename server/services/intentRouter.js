@@ -32,6 +32,9 @@ const FOLLOW_UP_EDIT = /^(?:(?:can|could) you\s+|please\s+|now\s+|ok(?:ay)?,?\s+
 // A question about "it" / "this" (the file the person is looking at), not a search across files.
 const POINTS_AT_FOCUS = /\b(?:it|its|this|that|this (?:file|document|doc|pdf|picture|image|photo|one)|the (?:file|document|pdf|picture|image))\b/i;
 
+// "What's in here?" with a folder open: list it, straight from the folder.
+const FOLDER_CONTENTS = /^(?:what(?:'s| is) (?:in|inside) (?:here|this folder|this one|the folder)|what (?:do i have|have i got|files are|is) (?:in |inside )?(?:here|this folder)|show (?:me )?(?:what'?s|everything) (?:in )?(?:here|this folder)|list (?:what'?s in )?(?:here|this folder|the files here))\??$/i;
+
 // Phrases that point at the folder the person is in ("move it here", "in this folder").
 const HERE_REFERENCE = /^(?:here|in here|this folder|the current folder|current folder|this one|the folder i'?m in|where i am)$/i;
 
@@ -186,7 +189,7 @@ function routeIntent(question, options = {}) {
 
 module.exports = {
   INTENTS,
-  SELF_REFERENCE, SELECTION_REFERENCE, HERE_REFERENCE, FOLLOW_UP_EDIT, POINTS_AT_FOCUS, QUESTION_START, SEARCH_START,
+  SELF_REFERENCE, SELECTION_REFERENCE, HERE_REFERENCE, FOLLOW_UP_EDIT, FOLDER_CONTENTS, POINTS_AT_FOCUS, QUESTION_START, SEARCH_START,
   normalize,
   routeByRules,
   routeIntent,
