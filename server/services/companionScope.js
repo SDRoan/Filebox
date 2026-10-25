@@ -176,7 +176,7 @@ async function signalsFor(files) {
  * name, folder, type, category, dates, shared facts, text keywords and the meaning vectors File Box has
  * already stored. Only when the best matches are too close to call does the local model break the tie.
  */
-async function relatedFiles(userId, { file = null, folder = null }) {
+async function relatedFiles(userId, { file = null, folder = null }, { tieBreak = true } = {}) {
   const sourceFiles = file ? [file] : (await folderContents(folder)).files.slice(0, 30);
   if (!sourceFiles.length) return { related: [], basis: folder ? 'empty-folder' : 'none' };
   const excluded = new Set(sourceFiles.map(f => String(f._id)));
@@ -223,7 +223,7 @@ async function relatedFiles(userId, { file = null, folder = null }) {
   let tieBroken = false;
   // Too close to call (several candidates within a point of each other): let the local model judge them.
   const close = scored.slice(0, RELATED_LIMIT + 2);
-  if (close.length >= 3 && close[0].score - close[close.length - 1].score < 1) {
+  if (tieBreak && close.length >= 3 && close[0].score - close[close.length - 1].score < 1) {
     try {
       const health = await ollamaClient.health();
       if (health.reachable) {
@@ -240,4 +240,4 @@ async function relatedFiles(userId, { file = null, folder = null }) {
   return { related: top, basis: 'scored', tieBroken };
 }
 
-module.exports = { summarizeFiles, compareFiles, summarizeFolder, relatedFiles, folderContents, MAX_SUMMARY_FILES, COMPARE_RANGE };
+module.exports = { summarizeFiles, compareFiles, summarizeFolder, relatedFiles, folderContents, nameWords, MAX_SUMMARY_FILES, COMPARE_RANGE };

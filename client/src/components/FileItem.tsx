@@ -31,6 +31,9 @@ interface FileItemProps {
   isSelected?: boolean;
   selectionMode?: boolean;
   onSelect?: () => void;
+  // When set (a timestamp), open this file's preview once.
+  openPreview?: number;
+  onPreviewOpened?: () => void;
 }
 
 const FileItem: React.FC<FileItemProps> = ({
@@ -44,8 +47,17 @@ const FileItem: React.FC<FileItemProps> = ({
   isSelected = false,
   selectionMode = false,
   onSelect,
+  openPreview,
+  onPreviewOpened,
 }) => {
   const [showPreview, setShowPreview] = useState(false);
+  useEffect(() => {
+    if (!openPreview) return;
+    setShowPreview(true);
+    onPreviewOpened?.();
+    // Only when a new request arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openPreview]);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);

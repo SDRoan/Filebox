@@ -54,6 +54,7 @@ const Dashboard: React.FC = () => {
   const [relationshipsRefreshKey, setRelationshipsRefreshKey] = useState(0);
   const [newFolderRequest, setNewFolderRequest] = useState(0);
   const [pendingUploads, setPendingUploads] = useState<{ id: number; files: File[] } | null>(null);
+  const [openFileRequest, setOpenFileRequest] = useState<{ id: string; at: number } | null>(null);
 
   const currentFolderId = folderStack[folderStack.length - 1];
 
@@ -91,9 +92,11 @@ const Dashboard: React.FC = () => {
 
   // Other pages (Home, Recent, File Box AI) can open a folder in My Files via navigation state.
   useEffect(() => {
-    const state = location.state as { openFolderId?: string | null } | null;
+    const state = location.state as { openFolderId?: string | null; highlightFileId?: string } | null;
     if (currentView !== 'files' || !state || !('openFolderId' in state)) return;
     setFolderStack(state.openFolderId ? ['root', state.openFolderId] : ['root']);
+    // …and open one file in it ("Continue" in Ask File Box, a file found by File Box AI).
+    if (state.highlightFileId) setOpenFileRequest({ id: state.highlightFileId, at: Date.now() });
     navigate(location.pathname, { replace: true, state: null });
   }, [location.state, location.pathname, currentView, navigate]);
 
@@ -147,6 +150,8 @@ const Dashboard: React.FC = () => {
     pendingUploads,
     onPendingUploadsHandled: () => setPendingUploads(null),
     onNewFolderHandled: () => setNewFolderRequest(0),
+    openFileRequest,
+    onOpenFileHandled: () => setOpenFileRequest(null),
   };
 
   return (

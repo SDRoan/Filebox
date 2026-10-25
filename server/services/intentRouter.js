@@ -23,6 +23,7 @@ const INTENTS = [
   'folder_contents', // "what's in here?"
   'folder_summary', // summarize the folder they are in (its direct contents)
   'related_files', // files related to the open file or the current folder
+  'folder_changes', // "what changed in this folder?" (from recent activity)
 ];
 
 // Phrases that only point at "the file I'm looking at" rather than naming one.
@@ -51,6 +52,12 @@ const RELATED = /\b(?:related|similar|connected|matching) (?:files?|documents?|d
 
 // Reading the text in a picture ("read the text", "what does this picture say?").
 const READ_TEXT = /\b(?:read|extract|copy|transcribe|ocr|get)\b.{0,20}\btext\b|\bwhat (?:text|words?)\b.{0,30}\b(?:in|on)\b|\bwhat does (?:it|this|the (?:picture|image|photo|screenshot)|this (?:picture|image|photo|screenshot)) say\b|\btext (?:is )?(?:written )?(?:in|on) (?:it|this|the)\b/i;
+
+// Name ideas for the open file ("suggest a better name"): ideas only, never a rename.
+const SUGGEST_NAME = /\b(?:suggest|recommend|think of|come up with|give me|what(?:'s| is| would be)) (?:a |some |an? )?(?:better|new|clearer|good|descriptive|nicer|proper)? ?(?:file ?)?names?\b.*\b(?:this|it|the file)\b|\bbetter (?:file ?)?name for (?:this|it|the file)\b|^suggest a better name\b/i;
+
+// What changed recently in the folder the person is in.
+const FOLDER_CHANGES = /\bwhat(?:'s| has| have)? (?:changed|been changed)\b|\brecent (?:changes|activity)\b|\bwhat'?s new (?:in )?(?:here|this folder)\b|\bsee what changed\b|\bwhat happened (?:in|to) (?:here|this folder)\b/i;
 
 // Phrases that point at the folder the person is in ("move it here", "in this folder").
 const HERE_REFERENCE = /^(?:here|in here|this folder|the current folder|current folder|this one|the folder i'?m in|where i am)$/i;
@@ -206,7 +213,7 @@ function routeIntent(question, options = {}) {
 
 module.exports = {
   INTENTS,
-  SELF_REFERENCE, SELECTION_REFERENCE, HERE_REFERENCE, FOLLOW_UP_EDIT, FOLDER_CONTENTS, COMPARE, FOLDER_SUMMARY, RELATED, READ_TEXT, POINTS_AT_FOCUS, QUESTION_START, SEARCH_START,
+  SELF_REFERENCE, SELECTION_REFERENCE, HERE_REFERENCE, FOLLOW_UP_EDIT, FOLDER_CONTENTS, COMPARE, FOLDER_SUMMARY, RELATED, READ_TEXT, SUGGEST_NAME, FOLDER_CHANGES, POINTS_AT_FOCUS, QUESTION_START, SEARCH_START,
   normalize,
   routeByRules,
   routeIntent,

@@ -67,6 +67,10 @@ const sanitizeRoute = (route) => {
 
 const assistantErrorBody = (error) => {
   const message = error.message || 'The AI assistant could not complete this request.';
+  // A model that took too long is not "offline"; say so plainly instead of showing the raw error.
+  if (/timeout|timed out/i.test(message)) {
+    return { status: 504, body: { code: 'AI_SLOW', message, answer: 'File Box AI took too long to answer (your computer may be busy). Please try again in a moment.', provider: 'ollama', model: config.ollama.assistantModel, timestamp: new Date() } };
+  }
   const offline = /ollama|connect|unavailable|ECONNREFUSED|model/i.test(message);
   return { status: offline ? 503 : 500, body: {
     code: offline ? 'AI_OFFLINE' : 'AI_ERROR',

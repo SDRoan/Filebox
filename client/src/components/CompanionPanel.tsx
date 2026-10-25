@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AIAssistant, { AssistantSuggestion } from './AIAssistant';
+import CompanionSuggestions from './CompanionSuggestions';
 import { CompanionFocus, useCompanion } from '../context/CompanionContext';
 import { companionAPI, homeAPI, CompanionProactivity, CompanionTone } from '../services/api';
 import { pagePath } from '../config/workspaceNavigation';
@@ -221,6 +222,11 @@ const CompanionPanel: React.FC<CompanionPanelProps> = ({ currentView }) => {
   const [noteShown, setNoteShown] = useState(false);
   const panelRef = useRef<HTMLElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  // After closing, focus goes back to the Ask File Box button (it only exists again once closed).
+  const returnFocus = useRef(false);
+  useEffect(() => {
+    if (!open && returnFocus.current) { returnFocus.current = false; buttonRef.current?.focus(); }
+  });
   const onAiPage = currentView === 'ai-assistant';
 
   // What the companion noticed (the same suggestions as Home), checked now and then.
@@ -256,7 +262,7 @@ const CompanionPanel: React.FC<CompanionPanelProps> = ({ currentView }) => {
     // Closing from the panel on a phone also removes the Back step it added.
     if (!next && pushedBack.current) { pushedBack.current = false; window.history.back(); }
     setOpen(next);
-    if (next) { markSeen(); dismissNote(); setView('chat'); } else buttonRef.current?.focus();
+    if (next) { markSeen(); dismissNote(); setView('chat'); } else returnFocus.current = true;
   };
 
   // Phones: the panel is a bottom sheet, and the phone's Back button closes it (as people expect).
@@ -360,6 +366,7 @@ const CompanionPanel: React.FC<CompanionPanelProps> = ({ currentView }) => {
               ))}
             </div>
           )}
+          {view === 'chat' && <CompanionSuggestions />}
           <div className="companion-panel-body">
             {view === 'settings'
               ? <CompanionSettings onDone={() => setView('chat')} />

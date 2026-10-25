@@ -602,6 +602,7 @@ Behave like ChatGPT for this product:
 - if the UI context says where the person is (a page or folder), use it to understand "this" and "here"
 - the UI context may describe what is on their File Box screen right now and what they just did; use it to answer "what am I looking at", "what is this", or "what was I doing", and describe it in your own words instead of repeating it
 - use what they asked you to remember when it helps, and never invent memories
+- if they ask for a better name for a file, suggest 3 short, descriptive file names, each written in full with the same extension as the file (for example quarterly-review-room-4b.png), and say they can reply "Rename this to …" to use one; never say it was renamed
 
 Keep answers concise but useful. Prefer short paragraphs. Use bullets only when they help.`,
       content: `Request type: ${route.intent === 'help' ? 'how File Box works' : route.intent === 'file_question' || route.intent === 'explain' ? 'a question about the selected file' : 'general'}
@@ -948,6 +949,16 @@ Respond to the latest user request now.`,
         fileId: file._id,
       });
     }
+    // Name ideas for a picture come from what File Box already read in it (OCR text, caption) when it can;
+    // the vision model is only used when there is nothing stored to go on.
+    if (isPicture(file) && intentRouter.SUGGEST_NAME.test(question)) {
+      const stored = await FileContent.findOne({ file: file._id }).select('extractedText').lean();
+      const seen = [file.aiCaption?.text && `Caption: ${file.aiCaption.text}`, stored?.extractedText?.trim() && `Text in the picture: ${stored.extractedText.trim().slice(0, 1500)}`].filter(Boolean).join('\n');
+      if (seen) {
+        const answer = await this.composeAnswer({ question, history, workspaceSnapshot: await this.buildWorkspaceSnapshot(userId), selectedFile: file, fileContext: seen, route, context, persona, onToken });
+        return this.reply(route, { answer, provider: 'ollama', model: config.ollama.assistantModel, fileId: file._id });
+      }
+    }
     if (isPicture(file)) {
       try {
         const answer = await lookAtPicture(file, question, persona);
@@ -1283,6 +1294,27 @@ Be brief and direct.`,
     });
   }
 
+  /** "See what changed": recent activity on files directly inside the folder they are in. */
+  async handleFolderChanges(route, { userId, folderId }) {
+    const folder = folderId ? await folderById(userId, folderId) : null;
+    if (!folder) return this.reply(route, { answer: 'This folder is no longer available.' });
+    const { folderContents } = require('./companionScope');
+    const { recentChanges } = require('./companionSuggestions');
+    const { files } = await folderContents(folder);
+    const changes = await recentChanges(folder, files, { since: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000), limit: 15 });
+    if (!changes.length) return this.reply(route, { answer: `Nothing in "${folder.name}" has changed in the last 7 days.` });
+    const names = new Map(files.map(f => [String(f._id), f.originalName]));
+    const verbs = { uploaded: 'added', created: 'created', edited: 'edited', renamed: 'renamed', moved: 'moved here', copied: 'copied here', restored: 'restored', version_created: 'new version saved', version_restored: 'older version restored' };
+    const when = (date) => {
+      const minutes = Math.round((Date.now() - new Date(date).getTime()) / 60000);
+      if (minutes < 60) return minutes <= 1 ? 'just now' : `${minutes} min ago`;
+      const hours = Math.round(minutes / 60);
+      return hours < 24 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
+    };
+    const lines = changes.map(c => `• ${names.get(String(c.file)) || 'A file'}: ${verbs[c.action] || c.action} · ${when(c.createdAt)}`);
+    return this.reply(route, { answer: `Recent changes in "${folder.name}" (last 7 days):\n${lines.join('\n')}` });
+  }
+
   /** "What's in here?": the folder's subfolders and files, listed from the folder itself. */
   async handleFolderContents(route, { userId, folderId }) {
     const folder = await folderById(userId, folderId);
@@ -1316,6 +1348,16 @@ Be brief and direct.`,
     const base = { source: 'rule', confidence: 0.95, mode: 'ai', normalized: q };
     if (folderId && !fileId && intentRouter.FOLDER_CONTENTS.test(q)) {
       return { ...base, intent: 'folder_contents', rule: 'focus:folder-contents', target: '' };
+    }
+    // What Ask File Box's own suggestion buttons send, routed by rule so they never wait on the model.
+    if (/^find duplicate files$/i.test(q)) return { ...base, intent: 'duplicates', rule: 'focus:duplicates', target: '' };
+    if (/^organi[sz]e (?:this folder|my files)$/i.test(q)) return { ...base, intent: 'organize', rule: 'focus:organize', target: '' };
+    // "Suggest a better name": answered from the file (name ideas only; renaming stays a separate step).
+    if (fileId && intentRouter.SUGGEST_NAME.test(q)) {
+      return { ...base, intent: 'file_question', rule: 'focus:suggest-name', target: 'this' };
+    }
+    if (folderId && !fileId && !fileIds.length && intentRouter.FOLDER_CHANGES.test(q)) {
+      return { ...base, intent: 'folder_changes', rule: 'focus:folder-changes', target: '' };
     }
     if (folderId && !fileId && !fileIds.length && intentRouter.FOLDER_SUMMARY.test(q)) {
       return { ...base, intent: 'folder_summary', rule: 'focus:folder-summary', target: '' };
@@ -1393,6 +1435,8 @@ Be brief and direct.`,
         return this.handleFolderContents(route, turn);
       case 'folder_summary':
         return this.handleFolderSummary(route, turn);
+      case 'folder_changes':
+        return this.handleFolderChanges(route, turn);
       case 'compare':
         return this.handleCompare(route, turn);
       case 'related_files':

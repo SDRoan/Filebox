@@ -33,6 +33,9 @@ interface FileBrowserProps {
   pendingUploads?: { id: number; files: File[] } | null;
   onPendingUploadsHandled?: () => void;
   onNewFolderHandled?: () => void;
+  // Open this file's preview once it is in the list (from "Continue" or a File Box AI answer).
+  openFileRequest?: { id: string; at: number } | null;
+  onOpenFileHandled?: () => void;
 }
 
 const EMPTY_FOLDER_STACK: string[] = [];
@@ -52,6 +55,8 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
   pendingUploads = null,
   onPendingUploadsHandled,
   onNewFolderHandled,
+  openFileRequest,
+  onOpenFileHandled,
 }) => {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -521,6 +526,8 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
     <FileItemComponent
       key={file._id}
       file={file}
+      openPreview={openFileRequest?.id === file._id ? openFileRequest.at : undefined}
+      onPreviewOpened={onOpenFileHandled}
       onDelete={() => handleDelete(file._id, 'file')}
       onRestore={() => handleRestore(file._id, 'file')}
       onPermanentDelete={() => handlePermanentDelete(file._id, 'file')}

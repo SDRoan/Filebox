@@ -1288,12 +1288,23 @@ export type CompanionProactivity = 'quiet' | 'balanced' | 'chatty';
 export interface CompanionMemory { id: string; text: string; createdAt: string }
 export interface CompanionProfile { name: string; tone: CompanionTone; proactivity: CompanionProactivity; memoryOn: boolean; screenAware: boolean; memories: CompanionMemory[] }
 
+// Something Ask File Box noticed about the current file, folder or selection (rules and stored data only).
+export interface CompanionSuggestion {
+  key: string;
+  type: string;
+  kind: 'problem' | 'insight' | 'organize' | 'continue';
+  text: string;
+  action: { label: string; text?: string; mode?: 'send' | 'prefill'; open?: { fileId: string; name: string; parentFolder: string | null } };
+}
+
 export const companionAPI = {
   get: async (): Promise<CompanionProfile> => (await api.get('/companion')).data,
   update: async (settings: Partial<Omit<CompanionProfile, 'memories'>>): Promise<CompanionProfile> => (await api.put('/companion', settings)).data,
   remember: async (text: string): Promise<CompanionProfile> => (await api.post('/companion/memories', { text })).data,
   forget: async (id: string): Promise<CompanionProfile> => (await api.delete(`/companion/memories/${id}`)).data,
   forgetAll: async (): Promise<CompanionProfile> => (await api.delete('/companion/memories')).data,
+  suggestions: async (focus: { fileId?: string; fileIds?: string[]; folderId?: string }): Promise<{ subject: string; suggestions: CompanionSuggestion[] }> =>
+    (await api.get('/companion/suggestions', { params: { fileId: focus.fileId, folderId: focus.folderId, fileIds: focus.fileIds?.length ? focus.fileIds.join(',') : undefined } })).data,
 };
 
 // What Ask File Box is looking at, sent with each question (ids are re-checked on the server).
