@@ -4,7 +4,8 @@ import AIAssistant, { AssistantSuggestion } from './AIAssistant';
 import { useCompanion } from '../context/CompanionContext';
 import { companionAPI, homeAPI, CompanionProactivity, CompanionTone } from '../services/api';
 import { pagePath } from '../config/workspaceNavigation';
-import { AIAssistantIcon, CloseIcon, SettingsIcon, TrashIcon, ArrowRightIcon } from './Icons';
+import { AIAssistantIcon, CloseIcon, SettingsIcon, TrashIcon, ArrowRightIcon, EyeIcon } from './Icons';
+import { glance, ScreenGlance } from '../companion/screen';
 import './CompanionPanel.css';
 
 /**
@@ -104,6 +105,13 @@ const CompanionSettings: React.FC<{ onDone: () => void }> = ({ onDone }) => {
 
       <div className="companion-field">
         <label className="companion-switch">
+          <input type="checkbox" checked={profile.screenAware} onChange={(event) => save({ screenAware: event.target.checked })} />
+          <span><strong>Screen awareness</strong><small>When you ask me something, I read what’s on your File Box screen (the page, the files in view, an open preview or window, messages shown) and what you just did here, so I understand “this”. Only File Box is read, never other tabs or apps, and never passwords or what you type.</small></span>
+        </label>
+      </div>
+
+      <div className="companion-field">
+        <label className="companion-switch">
           <input type="checkbox" checked={profile.memoryOn} onChange={(event) => save({ memoryOn: event.target.checked })} />
           <span><strong>Memory</strong><small>Keep things you tell me (“remember that…”) and use them in answers. Stored with your account only.</small></span>
         </label>
@@ -140,7 +148,8 @@ interface CompanionPanelProps {
 
 const CompanionPanel: React.FC<CompanionPanelProps> = ({ currentView }) => {
   const navigate = useNavigate();
-  const { open, setOpen, name, profile } = useCompanion();
+  const { open, setOpen, name, profile, setProfile, ask } = useCompanion();
+  const [screen, setScreen] = useState<ScreenGlance>({});
   const [view, setView] = useState<'chat' | 'settings'>('chat');
   const [news, setNews] = useState<{ key: string; text: string } | null>(null);
   const [seen, setSeen] = useState(() => { try { return localStorage.getItem(SEEN_KEY) || ''; } catch { return ''; } });
@@ -197,6 +206,24 @@ const CompanionPanel: React.FC<CompanionPanelProps> = ({ currentView }) => {
     if (open && !onAiPage) panelRef.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
   }, [open, onAiPage, view]);
 
+  // While open (and allowed), keep an eye on what is showing, to offer help with it.
+  useEffect(() => {
+    if (!open || !profile.screenAware) { setScreen({}); return undefined; }
+    const look = () => setScreen(current => {
+      const next = glance();
+      return JSON.stringify(next) === JSON.stringify(current) ? current : next;
+    });
+    look();
+    const timer = setInterval(look, 1500);
+    return () => clearInterval(timer);
+  }, [open, profile.screenAware]);
+
+  const toggleAware = () => {
+    const screenAware = !profile.screenAware;
+    setProfile({ ...profile, screenAware });
+    companionAPI.update({ screenAware }).then(setProfile).catch(() => setProfile({ ...profile }));
+  };
+
   if (onAiPage) return null;
 
   return (
@@ -225,11 +252,27 @@ const CompanionPanel: React.FC<CompanionPanelProps> = ({ currentView }) => {
             <span className="companion-avatar" aria-hidden="true"><AIAssistantIcon size={16} /></span>
             <strong>{view === 'settings' ? `${name} settings` : name}</strong>
             <span className="companion-panel-actions">
+              <button className={`companion-eye ${profile.screenAware ? 'on' : ''}`} onClick={toggleAware} aria-pressed={profile.screenAware}
+                aria-label={profile.screenAware ? `${name} can see your File Box screen. Turn off` : `${name} can't see your screen. Turn on`}
+                title={profile.screenAware ? 'Can see your File Box screen (click to turn off)' : 'Not looking at your screen (click to turn on)'}><EyeIcon size={16} /></button>
               <button onClick={() => setView(view === 'settings' ? 'chat' : 'settings')} aria-label={view === 'settings' ? 'Back to chat' : `${name} settings`} aria-pressed={view === 'settings'} title="Settings"><SettingsIcon size={16} /></button>
               <button onClick={() => { toggle(false); navigate(pagePath('ai-assistant')); }} aria-label="Open the full File Box AI page" title="Open full page"><ArrowRightIcon size={16} /></button>
               <button onClick={() => toggle(false)} aria-label={`Close ${name}`} title="Close (Esc)"><CloseIcon size={16} /></button>
             </span>
           </header>
+          {view === 'chat' && profile.screenAware && (
+            <div className="companion-seeing" aria-label="Help with what's on screen">
+              <span className="companion-seeing-label"><EyeIcon size={13} />
+                {screen.viewingFile ? <>Looking at <strong>{screen.viewingFile.name}</strong></> : screen.dialog ? <>Looking at <strong>{screen.dialog}</strong></> : <>Looking at your screen</>}
+              </span>
+              <span className="companion-seeing-actions">
+                <button onClick={() => ask('What am I looking at right now?')}>What am I looking at?</button>
+                {screen.viewingFile && <button onClick={() => ask(`Summarize ${screen.viewingFile!.name}`, screen.viewingFile!.id)}>Summarize this file</button>}
+                {screen.problem && <button onClick={() => ask(`I see this message: "${screen.problem}". What does it mean and what should I do?`)}>Help with this message</button>}
+                <button onClick={() => ask('What was I just doing? Help me pick up from there.')}>What was I doing?</button>
+              </span>
+            </div>
+          )}
           <div className="companion-panel-body">
             {view === 'settings'
               ? <CompanionSettings onDone={() => setView('chat')} />

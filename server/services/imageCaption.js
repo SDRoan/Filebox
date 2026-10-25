@@ -110,4 +110,4 @@ function captionInBackground(file, options = {}) {
   return true;
 }
 
-module.exports = { canCaption, writeCaption, captionInBackground, parseCaption };
+module.exports = { canCaption, writeCaption, captionInBackground, parseCaption, shrink };

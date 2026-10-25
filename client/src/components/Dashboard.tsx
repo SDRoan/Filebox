@@ -9,6 +9,7 @@ import SettingsView from './SettingsView';
 import CustomizeView from './CustomizeView';
 import TopBarColor from './TopBarColor';
 import CompanionPanel from './CompanionPanel';
+import { noteActivity, startWatching } from '../companion/screen';
 import StorageView from './StorageView';
 import TeamFolders from './TeamFolders';
 import FileRequests from './FileRequests';
@@ -58,6 +59,8 @@ const Dashboard: React.FC = () => {
 
   // Tell File Box AI where the person is, so "this folder" or "here" mean something to it.
   const { setPageContext } = useCompanion();
+  useEffect(() => { startWatching(); }, []);
+  useEffect(() => { noteActivity(`Went to ${page.label}`); }, [page.label]);
   useEffect(() => {
     let cancelled = false;
     const base = `The person is on the "${page.label}" page of File Box.`;

@@ -133,7 +133,8 @@ router.post('/chat', auth, async (req, res) => {
       fileId,
       history,
       // Where the person is in File Box (sent by the page), and their saved notes.
-      context: [context.slice(0, 1500), companion.memoryNote(profile)].filter(Boolean).join('\n\n'),
+      // With screen awareness off, only the page name is used (the page sends nothing more either).
+      context: [(profile.screenAware === false ? context.split('\n\n')[0] : context).slice(0, 5000), companion.memoryNote(profile)].filter(Boolean).join('\n\n'),
       resolved: sanitizeResolved(req.body?.resolved),
       persona,
     };

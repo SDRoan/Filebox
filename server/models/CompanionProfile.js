@@ -9,6 +9,8 @@ const companionProfileSchema = new mongoose.Schema({
   // quiet: only answers; balanced: a dot when it has something; chatty: also a short note once a day.
   proactivity: { type: String, enum: ['quiet', 'balanced', 'chatty'], default: 'balanced' },
   memoryOn: { type: Boolean, default: true },
+  // Screen awareness: the page sends what is on the person's File Box screen and what they did recently.
+  screenAware: { type: Boolean, default: true },
   memories: [{
     text: { type: String, required: true, maxlength: 300 },
     createdAt: { type: Date, default: Date.now },

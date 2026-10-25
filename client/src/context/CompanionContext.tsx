@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { companionAPI, CompanionProfile } from '../services/api';
 import { useAuth } from './AuthContext';
 
@@ -17,9 +17,12 @@ interface CompanionContextType {
   // A sentence about where the person is ("On My Files, inside the folder Taxes"), sent with questions.
   pageContext: string;
   setPageContext: (context: string) => void;
+  // Ask File Box AI something from outside the chat (the panel's "what am I looking at?" buttons).
+  ask: (text: string, fileId?: string) => void;
+  setAskHandler: (handler: ((text: string, fileId?: string) => void) | null) => void;
 }
 
-const DEFAULT_PROFILE: CompanionProfile = { name: '', tone: 'friendly', proactivity: 'balanced', memoryOn: true, memories: [] };
+const DEFAULT_PROFILE: CompanionProfile = { name: '', tone: 'friendly', proactivity: 'balanced', memoryOn: true, screenAware: true, memories: [] };
 const OPEN_KEY = 'filebox-companion-open';
 
 const CompanionContext = createContext<CompanionContextType | undefined>(undefined);
@@ -29,6 +32,9 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [profile, setProfile] = useState<CompanionProfile>(DEFAULT_PROFILE);
   const [open, setOpenState] = useState(() => { try { return sessionStorage.getItem(OPEN_KEY) === '1'; } catch { return false; } });
   const [pageContext, setPageContext] = useState('');
+  const askHandler = useRef<((text: string, fileId?: string) => void) | null>(null);
+  const setAskHandler = useCallback((handler: ((text: string, fileId?: string) => void) | null) => { askHandler.current = handler; }, []);
+  const ask = useCallback((text: string, fileId?: string) => askHandler.current?.(text, fileId), []);
 
   const refresh = useCallback(() => {
     companionAPI.get().then(setProfile).catch(() => { /* keep the defaults */ });
@@ -41,7 +47,7 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   return (
-    <CompanionContext.Provider value={{ profile, name: profile.name.trim() || 'File Box AI', refresh, setProfile, open, setOpen, pageContext, setPageContext }}>
+    <CompanionContext.Provider value={{ profile, name: profile.name.trim() || 'File Box AI', refresh, setProfile, open, setOpen, pageContext, setPageContext, ask, setAskHandler }}>
       {children}
     </CompanionContext.Provider>
   );

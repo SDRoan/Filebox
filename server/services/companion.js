@@ -6,7 +6,7 @@ const CompanionProfile = require('../models/CompanionProfile');
 const MAX_MEMORIES = 100;
 // Words that don't say which note is meant ("forget the tax thing").
 const FILLER = new Set(['the', 'that', 'this', 'thing', 'things', 'stuff', 'about', 'what', 'said', 'told', 'you', 'your', 'my', 'mine', 'and', 'one', 'bit', 'part', 'please', 'remember', 'where']);
-const DEFAULTS = { name: '', tone: 'friendly', proactivity: 'balanced', memoryOn: true, memories: [] };
+const DEFAULTS = { name: '', tone: 'friendly', proactivity: 'balanced', memoryOn: true, screenAware: true, memories: [] };
 
 const TONES = {
   friendly: 'Warm and encouraging, like a helpful friend who knows their files well. Use their first name now and then, never in every reply.',
@@ -25,6 +25,7 @@ const publicProfile = (profile) => ({
   tone: profile.tone,
   proactivity: profile.proactivity,
   memoryOn: profile.memoryOn,
+  screenAware: profile.screenAware !== false,
   memories: (profile.memories || []).map(m => ({ id: String(m._id), text: m.text, createdAt: m.createdAt })),
 });
 
@@ -34,6 +35,7 @@ async function updateSettings(userId, body = {}) {
   if (Object.keys(TONES).includes(body.tone)) set.tone = body.tone;
   if (['quiet', 'balanced', 'chatty'].includes(body.proactivity)) set.proactivity = body.proactivity;
   if (typeof body.memoryOn === 'boolean') set.memoryOn = body.memoryOn;
+  if (typeof body.screenAware === 'boolean') set.screenAware = body.screenAware;
   const profile = await CompanionProfile.findOneAndUpdate({ user: userId }, { $set: set }, { upsert: true, new: true, setDefaultsOnInsert: true }).lean();
   return publicProfile(profile);
 }

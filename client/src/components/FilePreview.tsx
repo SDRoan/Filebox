@@ -290,7 +290,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
 
   return (
     <div className="file-preview-overlay" onClick={onClose}>
-      <div className="file-preview-container" onClick={(e) => e.stopPropagation()}>
+      <div className="file-preview-container" data-file-id={file._id} onClick={(e) => e.stopPropagation()}>
         <div className="file-preview-header">
           <div className="file-preview-title">
             <h3>{file.originalName}</h3>

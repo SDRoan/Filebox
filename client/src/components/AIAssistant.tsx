@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useCompanion } from '../context/CompanionContext';
 import CompanionGreeting from './CompanionGreeting';
+import { glance, recentActivity, screenContext } from '../companion/screen';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { aiAssistantAPI, filesAPI, AssistantHistoryMessage, AssistantChoice, AssistantResolved, FileAIActionsInfo } from '../services/api';
 import DuplicateReview from './DuplicateReview';
@@ -227,6 +228,16 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
         return { role: message.role, content: shown.length ? `${message.content}\n[Files shown: ${shown.join(', ')}]` : message.content };
       });
 
+    // Screen awareness: what is on their File Box screen and what they just did, read when they ask.
+    const aware = companion.profile.screenAware;
+    const where = variant === 'panel' ? companion.pageContext : 'The person is on the File Box AI page.';
+    const seen = aware ? (variant === 'panel' ? screenContext() : (recentActivity() && `What they did recently in File Box (oldest first):\n${recentActivity()}`)) : '';
+    const context = [where, seen].filter(Boolean).join('\n\n');
+    // "Summarize this" while a file is open in the preview means that file.
+    const viewing = aware && variant === 'panel' && !fileId ? glance().viewingFile : undefined;
+    const refersToIt = /\b(this|that|it|here|the file|the picture|what i'?m (looking at|viewing|seeing|reading)|what am i (looking at|viewing|seeing|reading))\b/i.test(question);
+    const effectiveFileId = fileId || (viewing?.id && refersToIt ? viewing.id : undefined);
+
     appendMessage({ role: 'user', content: shownAs || question });
     if (!resolved) setInput('');
     setSending(true);
@@ -235,7 +246,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
     let streamed = '';
     try {
       const response = await aiAssistantAPI.chatStream(
-        { question, fileId: fileId || undefined, history, resolved, context: variant === 'panel' ? companion.pageContext : 'The person is on the File Box AI page.' },
+        { question, fileId: effectiveFileId || undefined, history, resolved, context },
         (piece) => {
           if (!streamed) appendMessage({ role: 'assistant', content: piece }, streamId);
           streamed += piece;
@@ -288,6 +299,14 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
     // `messages` is read for history only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sending, messages]);
+
+  // The companion panel's buttons ("What am I looking at?") ask through this chat.
+  const { setAskHandler } = companion;
+  useEffect(() => {
+    if (variant !== 'panel') return undefined;
+    setAskHandler((text, fileId) => send(text, fileId));
+    return () => setAskHandler(null);
+  }, [variant, send, setAskHandler]);
 
   // Home's "Summarize documents" chip: /ai?prefill=<text> fills the box without sending.
   useEffect(() => {

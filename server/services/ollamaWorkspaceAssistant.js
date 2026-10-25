@@ -599,6 +599,7 @@ Behave like ChatGPT for this product:
 - never tell the user how to click around the UI for an action the website assistant can perform
 - when summarizing a file, explain what it is about and the main points in plain English
 - if the UI context says where the person is (a page or folder), use it to understand "this" and "here"
+- the UI context may describe what is on their File Box screen right now and what they just did; use it to answer "what am I looking at", "what is this", or "what was I doing", and describe it in your own words instead of repeating it
 - use what they asked you to remember when it helps, and never invent memories
 
 Keep answers concise but useful. Prefer short paragraphs. Use bullets only when they help.`,
@@ -895,6 +896,18 @@ Respond to the latest user request now.`,
     }
     const [file] = targets.files;
     await this.requireModel();
+
+    // A picture is looked at with the vision model (it has no text to summarize).
+    const { isPicture, lookAtPicture } = require('./companionVision');
+    if (isPicture(file)) {
+      try {
+        const answer = await lookAtPicture(file, question, persona);
+        if (answer) return this.reply(route, { answer, provider: 'ollama', model: config.ollama.visionModel, fileId: file._id });
+      } catch (error) {
+        if (!/not found|pull/i.test(error.message || '')) throw error;
+        return this.reply(route, { answer: `To look at pictures I need the local model ${config.ollama.visionModel}. Run \`ollama pull ${config.ollama.visionModel}\`, then ask again.`, fileId: file._id });
+      }
+    }
 
     // Summaries and explanations use the same fixed prompts as the file menu.
     const fileAIActions = require('./fileAIActions');

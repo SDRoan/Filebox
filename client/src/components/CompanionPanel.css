@@ -1,5 +1,6 @@
 /* File Box AI companion: corner button, side panel, check-in and settings */
-.companion-launcher { position: fixed; right: 24px; bottom: 24px; z-index: 130; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+/* Above File Box's own windows (previews, dialogs), so the companion can be asked about them. */
+.companion-launcher { position: fixed; right: 24px; bottom: 24px; z-index: 10500; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
 .companion-button { position: relative; display: grid; place-items: center; width: 54px; height: 54px; padding: 0; border: 0; border-radius: 50%; background: var(--fb-g-3f6543, #3f6543); color: #fff; box-shadow: 0 10px 26px #1d281b40; cursor: pointer; transition: transform 140ms, box-shadow 140ms; }
 .companion-button:hover { transform: translateY(-2px); box-shadow: 0 14px 30px #1d281b4d; }
 .companion-button:focus-visible { outline: 3px solid var(--fb-g-9bb68d, #9bb68d); outline-offset: 3px; }
@@ -10,7 +11,7 @@
 .companion-note-close { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--fb-g-87937b, #87937b); cursor: pointer; }
 @keyframes companion-pop { from { opacity: 0; transform: translateY(6px); } }
 
-.companion-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 140; display: flex; flex-direction: column; width: min(440px, 100vw); border-left: 1px solid var(--fb-g-e2e7db, #e2e7db); background: var(--fb-page-bg, var(--fb-g-fdfdfb, #fdfdfb)); box-shadow: -18px 0 40px #1d281b1f; animation: companion-slide 180ms ease-out; }
+.companion-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 10500; display: flex; flex-direction: column; width: min(440px, 100vw); border-left: 1px solid var(--fb-g-e2e7db, #e2e7db); background: var(--fb-page-bg, var(--fb-g-fdfdfb, #fdfdfb)); box-shadow: -18px 0 40px #1d281b1f; animation: companion-slide 180ms ease-out; }
 @keyframes companion-slide { from { transform: translateX(24px); opacity: 0; } }
 .companion-panel-header { display: flex; align-items: center; gap: 10px; height: 60px; flex: none; padding: 0 12px 0 16px; border-bottom: 1px solid var(--fb-g-e8e9e2, #e8e9e2); background: var(--fb-header-bg, var(--fb-surface, #ffffff)); }
 .companion-panel-header > strong { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; color: var(--fb-g-2c3829, #2c3829); }
@@ -67,3 +68,13 @@
   .companion-launcher { right: 16px; bottom: 16px; }
   .companion-panel { width: 100vw; }
 }
+
+/* Screen awareness: what the companion is looking at, and quick help with it */
+.companion-eye { color: var(--fb-g-a3ab9c, #a3ab9c) !important; }
+.companion-eye.on { color: var(--fb-g-3f6543, #3f6543) !important; }
+.companion-seeing { display: grid; gap: 8px; flex: none; padding: 10px 16px 12px; border-bottom: 1px solid var(--fb-g-eff2ea, #eff2ea); background: var(--fb-g-f6f7f1, #f6f7f1); }
+.companion-seeing-label { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; color: var(--fb-g-56644c, #56644c); }
+.companion-seeing-label strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fb-g-2f3c2b, #2f3c2b); }
+.companion-seeing-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.companion-seeing-actions button { padding: 5px 10px; border: 1px solid var(--fb-g-dfe5d7, #dfe5d7); border-radius: 999px; background: var(--fb-surface, #ffffff); color: var(--fb-g-3d4a37, #3d4a37); font-size: 12px; cursor: pointer; }
+.companion-seeing-actions button:hover { border-color: var(--fb-g-a7bc96, #a7bc96); }

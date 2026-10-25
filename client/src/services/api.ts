@@ -1286,7 +1286,7 @@ export interface AssistantChoice {
 export type CompanionTone = 'friendly' | 'concise' | 'professional' | 'playful';
 export type CompanionProactivity = 'quiet' | 'balanced' | 'chatty';
 export interface CompanionMemory { id: string; text: string; createdAt: string }
-export interface CompanionProfile { name: string; tone: CompanionTone; proactivity: CompanionProactivity; memoryOn: boolean; memories: CompanionMemory[] }
+export interface CompanionProfile { name: string; tone: CompanionTone; proactivity: CompanionProactivity; memoryOn: boolean; screenAware: boolean; memories: CompanionMemory[] }
 
 export const companionAPI = {
   get: async (): Promise<CompanionProfile> => (await api.get('/companion')).data,
