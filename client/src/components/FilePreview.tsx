@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useFileFocus } from '../hooks/useFileFocus';
 import { FileItemType } from '../types';
 import { filesAPI } from '../services/api';
@@ -10,6 +10,7 @@ import { MemoryIcon, DownloadIcon, CloseIcon, EditIcon, SignatureIcon } from './
 import SignPdfDialog from './SignPdfDialog';
 import { capabilitiesFor, AccessRole } from '../utils/permissions';
 import { useCompanion } from '../context/CompanionContext';
+import PdfPageViewer from './PdfPageViewer';
 import './FilePreview.css';
 
 interface FilePreviewProps {
@@ -19,7 +20,10 @@ interface FilePreviewProps {
 
 const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
   // Ask File Box knows which file is open while the preview shows.
-  const { showFile, hideFile } = useCompanion();
+  const { showFile, hideFile, setFilePage } = useCompanion();
+  // PDFs show in File Box's own viewer (page-aware); the browser's viewer is one click away.
+  const [browserPdfViewer, setBrowserPdfViewer] = useState(false);
+  const reportPage = useCallback((page: number, total: number) => setFilePage(file._id, page, total), [file._id, setFilePage]);
   useEffect(() => {
     showFile({ id: file._id, name: file.originalName, mimeType: file.mimeType });
     return () => hideFile(file._id);
@@ -376,7 +380,11 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
             </video>
           )}
 
-          {!loading && !error && fileType === 'pdf' && previewUrl && (
+          {!loading && !error && fileType === 'pdf' && previewUrl && !browserPdfViewer && (
+            <PdfPageViewer url={previewUrl} name={file.originalName} onPageChange={reportPage} onOpenBrowserViewer={() => setBrowserPdfViewer(true)} />
+          )}
+
+          {!loading && !error && fileType === 'pdf' && previewUrl && browserPdfViewer && (
             <iframe
               src={previewUrl}
               className="preview-pdf"

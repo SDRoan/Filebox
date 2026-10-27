@@ -1310,6 +1310,10 @@ export const companionAPI = {
 // What Ask File Box is looking at, sent with each question (ids are re-checked on the server).
 export interface AssistantFocus { fileId?: string; fileIds?: string[]; folderId?: string; page?: string }
 
+// Screen awareness for one question: which kind of view it is about, the PDF page, and (only when the
+// question needs to see the interface) a screenshot of the visible File Box app, sent once and not kept.
+export interface AssistantScreen { fingerprint: string; kind: 'pdf' | 'image' | 'ui'; pdfPage?: number; image?: string; explicit?: boolean; captureFailed?: boolean }
+
 export const aiAssistantAPI = {
   chat: async (question: string, fileId?: string, context?: string, history?: AssistantHistoryMessage[], resolved?: AssistantResolved) => {
     const response = await api.post('/ai-assistant/chat', { question, fileId, context, history, resolved });
@@ -1320,7 +1324,7 @@ export const aiAssistantAPI = {
    * Resolves with the full reply; errors carry `response.data` like axios errors.
    */
   chatStream: async (
-    body: { question: string; fileId?: string; history?: AssistantHistoryMessage[]; resolved?: AssistantResolved; context?: string; focus?: AssistantFocus },
+    body: { question: string; fileId?: string; history?: AssistantHistoryMessage[]; resolved?: AssistantResolved; context?: string; focus?: AssistantFocus; screen?: AssistantScreen },
     onToken: (text: string) => void,
     onReset?: () => void,
   ) => {

@@ -10,7 +10,7 @@ const isPicture = (file) => canCaption(file);
 async function lookAtPicture(file, question, persona) {
   const image = (await shrink(file.path)).toString('base64');
   const { text } = await ollamaClient.generate({
-    task: 'answer',
+    task: 'look',
     model: config.ollama.visionModel,
     keepAlive: '2m',
     system: `${persona?.intro || 'You are File Box AI, a companion inside File Box, a file storage app.'}

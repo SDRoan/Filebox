@@ -181,3 +181,41 @@ export function screenContext(): string {
     recent && `What they did recently in File Box (oldest first):\n${recent}`,
   ].filter(Boolean).join('\n\n');
 }
+
+// ---------- When a question is about what is on the screen (Ask File Box screen awareness)
+
+// "What is this?", "explain this part", "what should I do here?", "can you see this?", "look at this"…
+const SCREEN_QUESTION = /\b(?:what(?:'s| is| are) (?:this|that|these|those|here|on (?:the |my )?screen|happening(?: here)?|visible(?: here)?|going on)|what am i (?:looking at|seeing|viewing)|what (?:does|do) (?:this|that|it|these) (?:say|mean|show|do)|what should i do(?: here)?|explain (?:this|that|it|the screen|this screen|this (?:part|page|section|chart|graph|diagram|table|image|picture|option|dialog|window|number)|what i'?m (?:looking at|seeing))|(?:can|do) you see (?:this|that|it|my screen)|look at (?:this|that|my screen|the screen)|what (?:is|are) the (?:important|main|key) (?:part|thing|point)s? here|why is (?:this|that) (?:number )?(?:so )?(?:high|low|big|large|small|red|empty)|which of these|this (?:part|section|chart|graph|diagram|figure|table|option|button|number|page)|what do you see|\w+ (?:do|can) you see|(?:on|of|in) (?:this|the|my) screen|this screen|what (?:text|words?) (?:is|are) (?:visible|shown|here|on (?:it|this|the screen))|why does (?:it|file box) (?:want|suggest|say)|what is (?:file box )?suggesting|what does (?:it|file box) (?:suggest|want))\b/i;
+
+// Questions that need to see how something looks, not only read its words.
+const VISUAL_QUESTION = /\b(?:chart|graph|diagram|figure|plot|table|picture|image|photo|drawing|illustration|logo|icon|color|colou?r|blue|red|green|yellow|orange|purple|black|white|grey|gray|left|right|top|bottom|corner|layout|looks?|see|visible|scan(?:ned)?|handwrit\w*)\b/i;
+
+// A short follow-up about the same view ("what about the blue part?", "and the second one?").
+const SCREEN_FOLLOW_UP = /^(?:and |so |ok(?:ay)?,? )?(?:what about|how about|and|what is|what's|why|where|which|explain) (?:the |that |this )?(?:\w+ ){0,3}(?:part|one|bar|line|box|section|bit|side|number|thing|area|row|column)s?\b|^(?:what about|and) (?:the |that )/i;
+
+export const isScreenQuestion = (question: string) => SCREEN_QUESTION.test(question.trim());
+export const isVisualQuestion = (question: string) => VISUAL_QUESTION.test(question);
+export const isScreenFollowUp = (question: string) => SCREEN_FOLLOW_UP.test(question.trim());
+
+/** The open dialog's title (for the screen fingerprint and the indicator). */
+export function openDialogTitle(): string {
+  const dialog = openDialog();
+  if (!dialog || dialog.matches('.file-preview-overlay')) return '';
+  return clean(dialog.querySelector('h1, h2, h3')?.textContent).slice(0, 80);
+}
+
+const hash = (text: string) => {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return (h >>> 0).toString(36);
+};
+
+/**
+ * Changes whenever what is on the screen changes in a way that matters: the file, folder or selection
+ * (focusKey), the PDF page, the open dialog, the page itself, or what is written on it. An image or
+ * answer about the screen is only reused while this stays the same.
+ */
+export function screenFingerprint(focusKey: string, pdfPage?: number): string {
+  const visible = readScreen();
+  return [window.location.pathname, focusKey, pdfPage || '', openDialogTitle(), hash(visible)].join('|');
+}

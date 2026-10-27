@@ -57,6 +57,8 @@ app.use(cors({
 }));
 // Settings > Customize > Background: an uploaded picture is larger than other requests.
 app.use('/api/users/preferences/background', express.json({ limit: '4mb' }));
+// Ask File Box screen awareness: a question may carry one screenshot of the visible File Box screen.
+app.use('/api/ai-assistant/chat', express.json({ limit: '6mb' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

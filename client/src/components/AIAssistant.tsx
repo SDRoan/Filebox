@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useCompanion } from '../context/CompanionContext';
 import CompanionGreeting from './CompanionGreeting';
-import { recentActivity, screenContext } from '../companion/screen';
+import { isScreenFollowUp, isScreenQuestion, isVisualQuestion, readScreen, recentActivity, screenContext, screenFingerprint } from '../companion/screen';
+import { captureFileBox } from '../companion/capture';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { aiAssistantAPI, filesAPI, AssistantHistoryMessage, AssistantChoice, AssistantResolved, FileAIActionsInfo } from '../services/api';
+import { AssistantScreen, aiAssistantAPI, filesAPI, AssistantHistoryMessage, AssistantChoice, AssistantResolved, FileAIActionsInfo } from '../services/api';
 import DuplicateReview from './DuplicateReview';
 import OrganizeReview from './OrganizeReview';
 import './AIPanels.css';
@@ -76,6 +77,10 @@ interface Message {
   notice?: boolean;
   // The folder an Organize review covers (asked about from inside that folder).
   panelFolderId?: string;
+  // Shown under a question that used the screen ("Using current screen", "Using page 4 of 12").
+  screenLabel?: string;
+  // Where a screen answer came from (DOM text, PDF page text, a page render, the picture itself, OCR or a screenshot).
+  screenSource?: string;
 }
 
 interface AssistantStatus {
@@ -125,6 +130,9 @@ const readHistory = (key: string): Message[] => {
   }
 };
 
+// A screenshot or page reading is reused for follow-ups only this long, and only on an unchanged screen.
+const SCREEN_REUSE_MS = 5 * 60 * 1000;
+
 // A new visit: nothing said for this long (or never), so the companion checks in again.
 const NEW_VISIT_MS = 3 * 60 * 60 * 1000;
 
@@ -140,6 +148,12 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
   // The latest focus and settings, read when a question is sent (send() itself is kept between renders).
   const companionNow = useRef(companion);
   companionNow.current = companion;
+  // "Ask about screen": the next question uses the screen even if it doesn't say "this".
+  const [screenArmed, setScreenArmed] = useState(false);
+  const screenArmedRef = useRef(false);
+  screenArmedRef.current = screenArmed;
+  // The last screen used, kept in memory only (never stored) and only while its fingerprint holds.
+  const lastScreen = useRef<{ fingerprint: string; at: number; image?: string } | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const historyKey = `filebox-ai-history-${user?.id || 'local'}`;
@@ -252,7 +266,37 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
       page: focus.page,
     } : undefined;
 
-    appendMessage({ role: 'user', content: shownAs || question });
+    // Screen awareness for this question: only when it is about what is on screen (or "Ask about screen"
+    // was pressed), and never when screen awareness is off. Structured focus still decides every file.
+    let screen: AssistantScreen | undefined;
+    let screenLabel: string | undefined;
+    if (variant === 'panel' && aware && !resolved) {
+      const armed = screenArmedRef.current;
+      const pdfPage = focus.kind === 'file' && /pdf/i.test(focus.file?.mimeType || '') ? focus.file?.page : undefined;
+      const fingerprint = screenFingerprint(focus.key, pdfPage);
+      const last = lastScreen.current;
+      const fresh = Boolean(last && last.fingerprint === fingerprint && Date.now() - last.at < SCREEN_REUSE_MS);
+      // A follow-up about "the blue part" after the screen changed is answered from the screen as it is now.
+      if (armed || isScreenQuestion(question) || (last && isScreenFollowUp(question))) {
+        const aboutInterface = /\b(?:button|menu|option|toolbar|beside|next to|panel|dialog|window|screen|icon|link|tab|setting)s?\b/i.test(question);
+        const isPicture = focus.kind === 'file' && /^image\//.test(focus.file?.mimeType || '');
+        const kind: AssistantScreen['kind'] = pdfPage && !aboutInterface ? 'pdf' : isPicture && !aboutInterface ? 'image' : 'ui';
+        screen = { fingerprint, kind, pdfPage, explicit: armed || undefined };
+        // A screenshot only for the interface, and only when its words are not enough to go on.
+        if (kind === 'ui' && (armed || isVisualQuestion(question) || readScreen().length < 200)) {
+          if (fresh && last?.image) screen.image = last.image;
+          else {
+            try { screen.image = (await captureFileBox()).image; } catch { screen.captureFailed = true; }
+          }
+        }
+        // A different screen than last time: the old image is dropped, never reused.
+        lastScreen.current = { fingerprint, at: Date.now(), image: screen.image || (fresh ? last?.image : undefined) };
+        screenLabel = kind === 'pdf' ? `Using page ${pdfPage}${focus.file?.totalPages ? ` of ${focus.file.totalPages}` : ''}` : kind === 'image' ? 'Using this picture' : 'Using current screen';
+        setScreenArmed(false);
+      }
+    }
+
+    appendMessage({ role: 'user', content: shownAs || question, screenLabel });
     if (!resolved) setInput('');
     setSending(true);
     // The answer shows up word by word while File Box AI writes it.
@@ -260,7 +304,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
     let streamed = '';
     try {
       const response = await aiAssistantAPI.chatStream(
-        { question, fileId: fileId || undefined, history, resolved, context, focus: sentFocus },
+        { question, fileId: fileId || undefined, history, resolved, context, focus: sentFocus, screen },
         (piece) => {
           if (!streamed) appendMessage({ role: 'assistant', content: piece }, streamId);
           streamed += piece;
@@ -281,6 +325,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
         files: response.files?.length ? response.files : undefined,
         pendingAction: response.pendingAction,
         panel: response.panel,
+        screenSource: response.screen?.source,
         panelFolderId: response.panel === 'organize' && sentFocus?.folderId && !sentFocus.fileId ? sentFocus.folderId : undefined,
         choices: response.choices?.options?.length ? response.choices : undefined,
         resume: response.resume,
@@ -529,6 +574,14 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
             {fileOptions.map(file => <option key={file._id} value={file._id}>{file.originalName}</option>)}
           </select>
         </label>}
+        {variant === 'panel' && (
+          <button type="button" className={`filebox-ai-screen-toggle ${screenArmed ? 'on' : ''}`} aria-pressed={screenArmed}
+            disabled={!companion.profile.screenAware || sending}
+            title={companion.profile.screenAware ? 'Ask about what is on the screen' : 'Screen awareness is off (eye button above)'}
+            onClick={() => { setScreenArmed(!screenArmed); inputRef.current?.focus(); }}>
+            {screenArmed ? 'Screen: on for next question' : 'Ask about screen'}
+          </button>
+        )}
         <button type="submit" className="btn-primary" disabled={sending || !input.trim()}>
           {sending ? 'Working…' : 'Send'} <ArrowRightIcon size={14} />
         </button>
@@ -618,8 +671,9 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
           {messages.map(message => message.notice ? (
             <p key={message.id} className="filebox-ai-notice" role="status"><span>{message.content}</span></p>
           ) : (
-            <article key={message.id} className={`filebox-ai-message ${message.role} ${message.error ? 'error' : ''}`}>
+            <article key={message.id} className={`filebox-ai-message ${message.role} ${message.error ? 'error' : ''}`} data-screen-source={message.screenSource}>
               <div className="filebox-ai-message-body">{message.content}</div>
+              {message.screenLabel && <p className="filebox-ai-screen-used">{message.screenLabel}</p>}
               {message.offline && <p className="filebox-ai-mode">Offline mode: basic matching until File Box AI is running.</p>}
               {message.sources && (
                 <ul className="filebox-ai-sources" aria-label="Where this answer came from">

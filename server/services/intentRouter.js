@@ -24,6 +24,7 @@ const INTENTS = [
   'folder_summary', // summarize the folder they are in (its direct contents)
   'related_files', // files related to the open file or the current folder
   'folder_changes', // "what changed in this folder?" (from recent activity)
+  'screen_question', // about what is visible on the File Box screen (Ask File Box screen awareness)
 ];
 
 // Phrases that only point at "the file I'm looking at" rather than naming one.

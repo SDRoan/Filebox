@@ -29,6 +29,10 @@ const TASK_PROFILES = {
   // Fun photo captions are the one place variety is wanted; "another caption" changes the seed.
   // The vision model may need a minute to load before it starts.
   caption: { temperature: 0.8, maxOutput: 200, timeoutMs: 240000 },
+  // Ask File Box looking at the screen, a PDF page or a picture with the vision model: reading an image
+  // takes a couple of minutes on a laptop, so this waits longer than a text answer.
+  // The vision model can loop on lists it reads from a screen ("My Files, My Files, …"); a repeat penalty stops that.
+  look: { temperature: 0, maxOutput: 450, timeoutMs: 300000, repeatPenalty: 1.18 },
 };
 
 // Conservative estimate (English averages ~4 characters per token for Llama 3).
@@ -254,6 +258,7 @@ class OllamaClient {
         seed: seed ?? config.ollama.seed,
         num_ctx: contextWindow,
         num_predict: profile.maxOutput,
+        ...(profile.repeatPenalty ? { repeat_penalty: profile.repeatPenalty } : {}),
       },
     };
 

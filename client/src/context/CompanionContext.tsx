@@ -7,7 +7,8 @@ import { useAuth } from './AuthContext';
  * tone, proactivity, memories), whether the panel is open, and where the person is in File Box.
  */
 
-export interface FocusFile { id: string; name: string; mimeType?: string }
+// page/totalPages: the PDF page most in view in File Box's PDF viewer.
+export interface FocusFile { id: string; name: string; mimeType?: string; page?: number; totalPages?: number }
 export interface FocusItem { id: string; name: string; type: 'file' | 'folder'; mimeType?: string }
 export interface FocusFolder { id: string; name: string }
 
@@ -46,6 +47,7 @@ interface CompanionContextType {
   // Reported by the screens themselves: the preview, the file browser and the page.
   showFile: (file: FocusFile) => void;
   hideFile: (id: string) => void;
+  setFilePage: (id: string, page: number, total: number) => void;
   setSelection: (items: FocusItem[]) => void;
   setFolder: (folder: FocusFolder | null) => void;
   setPage: (page: string) => void;
@@ -72,6 +74,10 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const showFile = useCallback((file: FocusFile) => setPreviewFile(file), []);
   // Only clears if that file is still the one shown (another preview may have opened since).
   const hideFile = useCallback((id: string) => setPreviewFile(current => (current?.id === id ? null : current)), []);
+  // The visible PDF page is not part of the focus key (scrolling pages is not a new context in the chat);
+  // it is part of the screen fingerprint instead (companion/screen.ts).
+  const setFilePage = useCallback((id: string, page: number, total: number) => setPreviewFile(current =>
+    (current?.id === id && (current.page !== page || current.totalPages !== total) ? { ...current, page, totalPages: total } : current)), []);
   const setSelection = useCallback((items: FocusItem[]) => setSelectionState(current =>
     (current.map(i => i.id).join() === items.map(i => i.id).join() ? current : items)), []);
   const setFolder = useCallback((next: FocusFolder | null) => setFolderState(current =>
@@ -97,7 +103,7 @@ export const CompanionProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, []);
 
   return (
-    <CompanionContext.Provider value={{ profile, name: profile.name.trim() || 'File Box AI', refresh, setProfile, open, setOpen, pageContext, setPageContext, ask, setAskHandler, focus, showFile, hideFile, setSelection, setFolder, setPage }}>
+    <CompanionContext.Provider value={{ profile, name: profile.name.trim() || 'File Box AI', refresh, setProfile, open, setOpen, pageContext, setPageContext, ask, setAskHandler, focus, showFile, hideFile, setFilePage, setSelection, setFolder, setPage }}>
       {children}
     </CompanionContext.Provider>
   );

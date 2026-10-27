@@ -34,6 +34,22 @@ const sanitizeHistory = (history = []) =>
 
 const isId = (value) => typeof value === 'string' && /^[a-f0-9]{24}$/i.test(value);
 
+// Ask File Box screen awareness for one question (see services/companionScreen.js). The screenshot, if
+// any, is a JPEG of the visible File Box app; it is used for this answer only and never stored or logged.
+const MAX_SCREENSHOT_CHARS = 5.5 * 1024 * 1024;
+const sanitizeScreen = (screen) => {
+  if (!screen || typeof screen !== 'object' || !['pdf', 'image', 'ui'].includes(screen.kind)) return undefined;
+  const image = typeof screen.image === 'string' && screen.image.length <= MAX_SCREENSHOT_CHARS && /^\/9j\/[A-Za-z0-9+/]+=*$/.test(screen.image) ? screen.image : undefined;
+  return {
+    kind: screen.kind,
+    fingerprint: typeof screen.fingerprint === 'string' ? screen.fingerprint.slice(0, 300) : '',
+    pdfPage: Number.isInteger(screen.pdfPage) && screen.pdfPage > 0 && screen.pdfPage < 100000 ? screen.pdfPage : undefined,
+    image,
+    explicit: screen.explicit === true,
+    captureFailed: screen.captureFailed === true,
+  };
+};
+
 // Choices the user made from an earlier list. Only ids; the assistant re-checks access to each one.
 const sanitizeResolved = (resolved) => {
   const files = {};
@@ -143,11 +159,17 @@ router.post('/chat', auth, async (req, res) => {
       history,
       // Where the person is in File Box (sent by the page), and their saved notes.
       // With screen awareness off, only the page name is used (the page sends nothing more either).
-      context: [(profile.screenAware === false ? context.split('\n\n')[0] : context).slice(0, 5000), companion.memoryNote(profile)].filter(Boolean).join('\n\n'),
+      context: [
+        (profile.screenAware === false ? context.split('\n\n')[0] : context).slice(0, 5000),
+        // With screen awareness off it cannot see the screen, and should say so rather than guess.
+        profile.screenAware === false && 'Screen awareness is turned off, so you cannot see their screen. If they ask about what is on it, say you cannot see the screen while screen awareness is off (the eye button in Ask File Box turns it on), and do not describe colors, layout or anything visual.',
+        companion.memoryNote(profile),
+      ].filter(Boolean).join('\n\n'),
       resolved: sanitizeResolved(req.body?.resolved),
       persona,
       fileIds: focusFileIds,
       folderId: isId(focus.folderId) ? focus.folderId : undefined,
+      screen: sanitizeScreen(req.body?.screen),
     };
 
     if (memoryReply) {

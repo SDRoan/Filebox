@@ -1219,10 +1219,10 @@ Be brief and direct.`,
    * running, simple rules stand in and the reply is marked offline. A choice from an earlier list carries
    * the original interpretation, so it is not re-read.
    */
-  async understand({ question, fileId, fileIds = [], folderId, history, resolved }) {
+  async understand({ question, fileId, fileIds = [], folderId, screen, history, resolved }) {
     noteActivity();
     if (resolved.route) return resolved.route;
-    const focused = this.routeByFocus(question, { fileId, fileIds, folderId, history });
+    const focused = this.routeByFocus(question, { fileId, fileIds, folderId, screen, history });
     if (focused) return focused;
     const hasSelectedFile = Boolean(fileId);
     const status = await this.getStatus();
@@ -1294,6 +1294,18 @@ Be brief and direct.`,
     });
   }
 
+  /** A question about what is on the File Box screen (services/companionScreen.js picks the source). */
+  async handleScreenQuestion(route, { userId, question, fileId, screen, context, persona, onToken }) {
+    const { answerScreenQuestion } = require('./companionScreen');
+    const result = await answerScreenQuestion({ userId, question, fileId, screen, context, persona, onToken, assistant: this });
+    return this.reply(route, {
+      answer: result.answer,
+      provider: ['offline', 'none'].includes(result.source) ? 'local-rules' : 'ollama',
+      fileId: result.fileId || null,
+      screen: { source: result.source, page: result.page, totalPages: result.totalPages },
+    });
+  }
+
   /** "See what changed": recent activity on files directly inside the folder they are in. */
   async handleFolderChanges(route, { userId, folderId }) {
     const folder = folderId ? await folderById(userId, folderId) : null;
@@ -1343,9 +1355,13 @@ Be brief and direct.`,
    * never drifts: "make it shorter" changes the last answer; "what date does it mention?" with a file
    * open is about that file (not a search across all files).
    */
-  routeByFocus(question, { fileId, fileIds = [], folderId, history = [] }) {
+  routeByFocus(question, { fileId, fileIds = [], folderId, screen, history = [] }) {
     const q = question.trim();
     const base = { source: 'rule', confidence: 0.95, mode: 'ai', normalized: q };
+    // About what is on the screen: answered from the screen (never an action, whatever is visible).
+    // Requests to change something keep their normal route and use real ids, even with a screenshot attached.
+    const wantsChange = /^(?:please |can you |could you )?(?:rename|move|delete|trash|remove|share|star|unstar|create|make|copy|restore|upload|download|organi[sz]e|find|search|summari[sz]e)\b/i.test(q);
+    if (screen && !wantsChange) return { ...base, intent: 'screen_question', rule: `screen:${screen.kind}`, target: '' };
     if (folderId && !fileId && intentRouter.FOLDER_CONTENTS.test(q)) {
       return { ...base, intent: 'folder_contents', rule: 'focus:folder-contents', target: '' };
     }
@@ -1392,9 +1408,9 @@ Be brief and direct.`,
    *
    * `resolved` carries choices the user made from an earlier list: { files: { "<name>": id }, folder: id }.
    */
-  async chat({ userId, question, fileId, fileIds = [], folderId, history = [], context = '', resolved = {}, persona, onToken, onReset }) {
-    const route = await this.understand({ question, fileId, fileIds, folderId, history, resolved });
-    const turn = { userId, question, fileId, fileIds, folderId, history, context, resolved, persona, onToken, onReset };
+  async chat({ userId, question, fileId, fileIds = [], folderId, screen, history = [], context = '', resolved = {}, persona, onToken, onReset }) {
+    const route = await this.understand({ question, fileId, fileIds, folderId, screen, history, resolved });
+    const turn = { userId, question, fileId, fileIds, folderId, screen, history, context, resolved, persona, onToken, onReset };
 
     switch (route.intent) {
       case 'busy':
@@ -1437,6 +1453,8 @@ Be brief and direct.`,
         return this.handleFolderSummary(route, turn);
       case 'folder_changes':
         return this.handleFolderChanges(route, turn);
+      case 'screen_question':
+        return this.handleScreenQuestion(route, turn);
       case 'compare':
         return this.handleCompare(route, turn);
       case 'related_files':
