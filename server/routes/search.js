@@ -4,6 +4,7 @@ const File = require('../models/File');
 const FileContent = require('../models/FileContent');
 const aiSearch = require('../services/aiSearch');
 const { searchWorkspace } = require('../services/workspaceSearch');
+const { advancedSearch, SearchInputError } = require('../services/advancedSearch');
 const router = express.Router();
 
 /**
@@ -31,6 +32,26 @@ router.get('/ai', auth, async (req, res) => {
   } catch (error) {
     console.error('AI search error:', error);
     res.status(500).json({ message: 'Search failed', error: error.message });
+  }
+});
+
+/**
+ * Advanced Search: words inside files, with format, date and location filters and sorting.
+ * Only stored text is searched (no file reads, OCR or AI), and only files the user can read are returned.
+ */
+router.get('/advanced', auth, async (req, res) => {
+  try {
+    const { q, format, date, dateField, from, to, tz, location, folderId, teamId, currentFolderId, sort, limit, offset } = req.query;
+    const result = await advancedSearch(req.user._id, {
+      text: q, format, date, dateField, from, to, tz, location, folderId, teamId, currentFolderId, sort, limit, offset,
+    });
+    // Same answer for a folder that does not exist and one the user cannot open.
+    if (result.folderNotFound) return res.status(404).json({ message: 'Folder not found' });
+    res.json(result);
+  } catch (error) {
+    if (error instanceof SearchInputError) return res.status(400).json({ message: error.message });
+    console.error('Advanced search error:', error);
+    res.status(500).json({ message: 'Search failed' });
   }
 });
 
