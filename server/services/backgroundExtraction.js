@@ -1,6 +1,7 @@
 const FileContent = require('../models/FileContent');
 const textExtractor = require('./textExtractor');
 const aiSearch = require('./aiSearch');
+const { classifyAndSave } = require('./fileClassifier');
 
 /**
  * Read a newly uploaded file's text after the upload has been answered, so File Box AI can search it,
@@ -29,6 +30,8 @@ async function extractNow(file) {
       { upsert: true }
     );
     console.log(`[Extraction] ${text ? `Read ${text.length} characters from` : 'No text found in'} ${file.originalName}`);
+    // Rules only (no AI); the background profile may refine it later. A person's correction is kept.
+    await classifyAndSave(file._id);
   } catch (error) {
     console.error(`[Extraction] Could not read ${file.originalName}:`, error.message);
   }

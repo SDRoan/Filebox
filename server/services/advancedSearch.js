@@ -5,15 +5,18 @@ const Folder = require('../models/Folder');
 const TeamFolder = require('../models/TeamFolder');
 const FileContent = require('../models/FileContent');
 const { readableFileFilter, filterReadable, getFolderRole, getTeamRole } = require('./permissions');
+const { TAXONOMY, CATEGORIES, TYPE_WORDS, CATEGORY_WORDS, effectiveClassification } = require('./fileClassifier');
 
 /**
- * Advanced Search: find files by the words inside them, narrowed by format, date and location.
+ * Advanced Search: find files by the words inside them and by what kind of document they are
+ * (category, document type, topics from fileClassifier), narrowed by format, date and location.
  * Works only from what File Box already stores (the text read at upload, including OCR of scans and
  * pictures), so a search never opens a file on disk, never runs OCR and never calls the AI model.
  * The whole text of every file is searched, so words near the end of a long file are found too.
  *
  * Every match is rechecked with the same role check the file routes use before anything about it
- * (name, snippet, total) is counted or returned; files the person cannot read never leave this module.
+ * (name, snippet, category, total, group counts) is counted or returned; files the person cannot read
+ * never leave this module.
  */
 
 const FORMATS = ['all', 'pdf', 'image', 'document', 'text', 'code', 'other'];
@@ -27,7 +30,7 @@ const MAX_FOLDER_DEPTH = 32;
 
 // How much each kind of evidence counts. An exact phrase or strong wording in the text always beats
 // a name that only shares a word, and recency only separates otherwise similar matches.
-const WEIGHTS = { nameExact: 3, namePartial: 1.5, phrase: 3, keyword: 2.5, frequency: 0.2, folder: 0.3, recency: 0.3 };
+const WEIGHTS = { nameExact: 3, namePartial: 1.5, phrase: 3, keyword: 2.5, frequency: 0.2, type: 1.5, category: 1, topic: 1, folder: 0.3, recency: 0.3 };
 
 const CODE_EXTENSIONS = new Set(('js jsx ts tsx mjs cjs py java c h cc cpp hpp cs go rb php rs swift kt kts scala sql sh bash zsh '
   + 'ps1 html htm css scss sass less vue svelte json yaml yml xml toml ini r m lua pl dart').split(' '));
@@ -83,6 +86,23 @@ const wholeWord = (pattern) => `(?<![a-z0-9])${pattern}(?![a-z0-9])`;
 const termRegex = (term, flags = 'gi') => new RegExp(wholeWord(termPattern(term)), flags);
 // The words in order, with any spacing or punctuation between them: "amount due" finds "Amount  due:".
 const phraseRegex = (terms) => new RegExp(wholeWord(terms.map(termPattern).join('[^a-z0-9]+')), 'i');
+
+/**
+ * The words that describe what a file is: its document type and the usual words for it ("homework" for
+ * Assignment), the profile's own type ("electricity bill", unless a person corrected it), its category
+ * and its topics. Kept as word stems so "invoices" matches Invoice.
+ */
+function kindStems(cls, aiType) {
+  // Words too general to say what a file is ("Work Document", "ID / Personal Document").
+  const GENERIC = /^(?:unknown|other|document|documents|personal|work|file|files|data|material|my)$/;
+  const stems = (words, { generic = false } = {}) => new Set(words.flatMap(w => (w.toLowerCase().match(/[a-z0-9]+/g) || []))
+    .filter(w => w.length >= 2 && (generic || !GENERIC.test(w)) && !STOP_WORDS.has(w)).map(stemOf));
+  return {
+    type: stems([cls.documentType, ...(TYPE_WORDS[cls.documentType] || []), ...(cls.source === 'user' ? [] : [aiType || ''])]),
+    category: stems(cls.primaryCategory === 'Other' ? [] : [cls.primaryCategory, ...(CATEGORY_WORDS[cls.primaryCategory] || [])], { generic: true }),
+    topic: stems(cls.topics || []),
+  };
+}
 
 const normalizeName = (name = '') => name.toLowerCase().replace(/\.[a-z0-9]{1,10}$/i, '').replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim();
 
@@ -232,11 +252,16 @@ function buildSnippet(fullText, terms, phrase) {
  * Score one file against the search words. Weighted by how rare each word is among the candidates
  * (a course code or flight number counts more than "notes"). Returns null when the file does not match.
  */
-function scoreFile(file, text, terms, weights, query) {
+function scoreFile(file, text, terms, weights, query, kind) {
   const name = normalizeName(file.originalName);
   const nameTerms = terms.filter(term => termRegex(term, 'i').test(name));
   const textCounts = terms.map(term => (text ? (text.match(termRegex(term)) || []).length : 0));
-  const matched = terms.filter((term, i) => textCounts[i] > 0 || nameTerms.includes(term));
+  const kindHit = (set) => terms.filter(term => set.has(stemOf(term)));
+  const typeTerms = kindHit(kind.type);
+  const categoryTerms = kindHit(kind.category);
+  const topicTerms = kindHit(kind.topic);
+  const kindTerms = new Set([...typeTerms, ...categoryTerms, ...topicTerms]);
+  const matched = terms.filter((term, i) => textCounts[i] > 0 || nameTerms.includes(term) || kindTerms.has(term));
   const phrase = terms.length > 1 ? phraseRegex(terms) : null;
   const phraseInText = Boolean(phrase && text && phrase.test(text));
   // Enough of the words must be there: one of one or two, two of three, and so on.
@@ -250,11 +275,17 @@ function scoreFile(file, text, terms, weights, query) {
   const content = (phraseInText ? WEIGHTS.phrase : 0) + WEIGHTS.keyword * keyword + WEIGHTS.frequency * Math.min(1, Math.log1p(hits) / Math.log(20));
   const nameExact = name === query.toLowerCase().replace(/\.[a-z0-9]{1,10}$/i, '').replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim();
   const nameScore = nameExact ? WEIGHTS.nameExact : WEIGHTS.namePartial * nameShare;
+  // What the file is counts, but less than the words actually being in it.
+  const kindScore = (typeTerms.length ? WEIGHTS.type : 0) + (categoryTerms.length ? WEIGHTS.category : 0) + (topicTerms.length ? WEIGHTS.topic : 0);
   return {
     content,
     name: nameScore,
+    kind: kindScore,
     matchedTerms: matched,
-    matchedIn: [...(nameTerms.length ? ['name'] : []), ...(hits ? ['content'] : [])],
+    matchedIn: [
+      ...(nameTerms.length ? ['name'] : []), ...(hits ? ['content'] : []),
+      ...(typeTerms.length ? ['type'] : []), ...(categoryTerms.length ? ['category'] : []), ...(topicTerms.length ? ['topic'] : []),
+    ],
     phrase: phraseInText ? phrase : null,
   };
 }
@@ -281,8 +312,16 @@ function readOptions(options = {}) {
     return value;
   };
   const text = String(options.text || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  const category = pick(options.category, ['all', ...CATEGORIES], 'all');
+  const documentType = pick(options.documentType, ['all', ...new Set(Object.values(TAXONOMY).flat())], 'all');
+  if (category !== 'all' && documentType !== 'all' && !TAXONOMY[category].includes(documentType)) {
+    throw new SearchInputError(`"${documentType}" is not a ${category} document type`);
+  }
   return {
     text,
+    category,
+    documentType,
+    topic: String(options.topic || '').replace(/\s+/g, ' ').trim().slice(0, 60),
     format: pick(options.format, FORMATS, 'all'),
     date: pick(options.date, DATES, 'any'),
     dateField: pick(options.dateField, Object.keys(DATE_FIELDS), 'modified'),
@@ -299,11 +338,13 @@ function readOptions(options = {}) {
   };
 }
 
-const SAFE_FIELDS = 'originalName mimeType size owner parentFolder isStarred isTrashed sharedWith createdAt updatedAt';
+const SAFE_FIELDS = 'originalName mimeType size owner parentFolder isStarred isTrashed sharedWith createdAt updatedAt aiCaption.text';
 
 /**
- * advancedSearch(userId, { text, format, date, dateField, from, to, tz, location, folderId, teamId, currentFolderId, sort, limit, offset })
- * → { results, total, applied }. Throws SearchInputError for unknown filter values; an unknown or
+ * advancedSearch(userId, { text, category, documentType, topic, format, date, dateField, from, to, tz, location,
+ *   folderId, teamId, currentFolderId, sort, limit, offset })
+ * → { results, total, groups, applied }. `groups` counts the matching files per category and, once a
+ * category is chosen, per document type in it (ignoring the type filter, so each choice shows its count). Throws SearchInputError for unknown filter values; an unknown or
  * unreadable folder gives `{ results: [], total: 0, folderNotFound: true }`.
  */
 async function advancedSearch(userId, options = {}) {
@@ -312,7 +353,7 @@ async function advancedSearch(userId, options = {}) {
   const terms = queryTerms(opts.text);
 
   const where = await locationFilter(userId, opts);
-  if (!where) return { results: [], total: 0, folderNotFound: true, applied: applied(opts, terms) };
+  if (!where) return { results: [], total: 0, groups: { categories: [], documentTypes: [] }, folderNotFound: true, applied: applied(opts, terms) };
   const range = dateRange(opts);
   const filter = { $and: [await readableFileFilter(userId), where, ...(range ? [{ [DATE_FIELDS[opts.dateField]]: range }] : [])] };
 
@@ -322,6 +363,17 @@ async function advancedSearch(userId, options = {}) {
   // Confirm each file with the role check the file routes use, before anything about it is counted.
   const readable = await filterReadable(files, userId);
 
+  // What each readable file is: the person's correction, else the automatic classification.
+  const profiles = new Map((await FileContent.find({ file: { $in: readable.map(r => r.file._id) } })
+    .select('file aiCategory aiType primaryCategory documentType classificationSource topics userClassification').lean())
+    .map(c => [c.file.toString(), c]));
+  const kinds = new Map(readable.map(({ file }) => {
+    const profile = profiles.get(file._id.toString()) || null;
+    const cls = effectiveClassification(file, profile);
+    return [file._id.toString(), { cls, stems: kindStems(cls, profile?.aiType) }];
+  }));
+  const kindOf = (file) => kinds.get(file._id.toString());
+
   let scored;
   if (terms.length) {
     // Only files whose text holds at least one of the words are loaded, and only their text (no vectors).
@@ -329,7 +381,10 @@ async function advancedSearch(userId, options = {}) {
     const contents = await FileContent.find({ file: { $in: readable.map(r => r.file._id) }, extractedText: { $regex: anyTerm } })
       .select('file extractedText extractionMethod').lean();
     const byFile = new Map(contents.map(c => [c.file.toString(), c]));
-    const candidates = readable.filter(({ file }) => byFile.has(file._id.toString()) || terms.some(term => termRegex(term, 'i').test(normalizeName(file.originalName))));
+    const describes = (stems) => terms.some(term => stems.type.has(stemOf(term)) || stems.category.has(stemOf(term)) || stems.topic.has(stemOf(term)));
+    const candidates = readable.filter(({ file }) => byFile.has(file._id.toString())
+      || terms.some(term => termRegex(term, 'i').test(normalizeName(file.originalName)))
+      || describes(kindOf(file).stems));
     // Rarer words count more: a word in one candidate tells more than a word in all of them.
     const lowered = candidates.map(({ file }) => `${normalizeName(file.originalName)} ${byFile.get(file._id.toString())?.extractedText || ''}`);
     const weights = terms.map((term) => {
@@ -340,14 +395,14 @@ async function advancedSearch(userId, options = {}) {
     scored = candidates.map(({ file, access }) => {
       const content = byFile.get(file._id.toString());
       const text = content?.extractedText || '';
-      const match = scoreFile(file, text, terms, weights, opts.text);
+      const match = scoreFile(file, text, terms, weights, opts.text, kindOf(file).stems);
       if (!match) return null;
       const inFolder = opts.currentFolderId && file.parentFolder?.toString() === String(opts.currentFolderId) ? WEIGHTS.folder : 0;
       const snippet = match.matchedIn.includes('content') ? buildSnippet(text, terms, match.phrase) : null;
       return {
         file,
         access,
-        score: match.content + match.name + inFolder + recencyBoost(file),
+        score: match.content + match.name + match.kind + inFolder + recencyBoost(file),
         contentScore: match.content,
         matchedTerms: match.matchedTerms,
         matchedIn: match.matchedIn,
@@ -357,6 +412,19 @@ async function advancedSearch(userId, options = {}) {
   } else {
     scored = readable.map(({ file, access }) => ({ file, access, score: recencyBoost(file), contentScore: 0, matchedTerms: [], matchedIn: [], snippet: null }));
   }
+
+  // Topic, then category and document type. Group counts are taken along the way, from readable files only.
+  const wantedTopic = opts.topic.toLowerCase();
+  if (wantedTopic) scored = scored.filter(r => kindOf(r.file).cls.topics.some(t => t.toLowerCase() === wantedTopic));
+  const countBy = (list, key) => [...list.reduce((m, r) => m.set(kindOf(r.file).cls[key], (m.get(kindOf(r.file).cls[key]) || 0) + 1), new Map())]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const groups = { categories: countBy(scored, 'primaryCategory'), documentTypes: [] };
+  if (opts.category !== 'all') {
+    scored = scored.filter(r => kindOf(r.file).cls.primaryCategory === opts.category);
+    groups.documentTypes = countBy(scored, 'documentType');
+  }
+  if (opts.documentType !== 'all') scored = scored.filter(r => kindOf(r.file).cls.documentType === opts.documentType);
 
   scored.sort((a, b) => SORTERS[opts.sort](a, b) || SORTERS.name(a, b));
   const page = scored.slice(opts.offset, opts.offset + opts.limit);
@@ -388,15 +456,22 @@ async function advancedSearch(userId, options = {}) {
     matchedTerms,
     matchedIn,
     snippet,
+    classification: {
+      ...kindOf(file).cls,
+      canChange: access.role === 'owner' || access.role === 'editor',
+    },
   }));
 
-  return { results, total: scored.length, applied: applied(opts, terms), tookMs: Date.now() - started };
+  return { results, total: scored.length, groups, applied: applied(opts, terms), tookMs: Date.now() - started };
 }
 
 function applied(opts, terms) {
   return {
     text: opts.text,
     terms,
+    category: opts.category,
+    documentType: opts.documentType,
+    ...(opts.topic ? { topic: opts.topic } : {}),
     format: opts.format,
     date: opts.date,
     dateField: opts.dateField,

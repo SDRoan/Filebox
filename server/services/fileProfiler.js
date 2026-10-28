@@ -3,12 +3,14 @@ const FileContent = require('../models/FileContent');
 const ollamaClient = require('./ollamaClient');
 const config = require('../config/aiConfig');
 const { indexFile, needsIndex, removeOrphans } = require('./fileIndex');
+const { classifyAndSave } = require('./fileClassifier');
 
 /**
  * File Box AI reads each file's text once per version and notes what it is: a broad category
  * (homework, transcript, bill, certificate, ...), a specific kind, a short description and key facts
  * (amount due, due date, issuer, course, grade, ...). It also cuts the text into searchable passages
- * (fileIndex) so questions can be answered from the right part of the file.
+ * (fileIndex) so questions can be answered from the right part of the file. The same reading names up
+ * to 5 topics, and the file's Advanced Search category is worked out again from it (fileClassifier).
  * Runs in the background, only while Ollama is reachable and nobody is using File Box AI.
  */
 
@@ -68,8 +70,9 @@ Read the file name and its text, then return JSON with:
 - "type": what this file is, in 1-4 lowercase words (for example: calculus homework, electricity bill, official transcript, AWS certificate, offer letter)
 - "description": one or two plain sentences saying what this specific file is about
 - "facts": up to 6 key facts written in the file that someone might ask about later, each {"label", "value"}, copied exactly (for example: amount due, due date, issuer, account holder, course, grade, GPA, issue date, expiry date, total, institution, employer, deadline). Only facts stated in the text; an empty list if none.
+- "topics": up to 5 subjects this file is about, each 1-3 words in Title Case (for example: Operating Systems, Semaphores, Web Development, Payment). An empty list if it has no clear subject.
 A student's own submitted work (essays, writing assignments, problem sets, lab reports) is "homework or assignment".
-Describe what the file is, not topics it merely mentions.`,
+For "type" and "description", say what the file is, not subjects it merely mentions.`,
     content: `File name: ${file.originalName}\n\nText:`,
     context: sampleText(text),
     format: {
@@ -79,8 +82,9 @@ Describe what the file is, not topics it merely mentions.`,
         type: { type: 'string' },
         description: { type: 'string' },
         facts: { type: 'array', items: { type: 'object', properties: { label: { type: 'string' }, value: { type: 'string' } }, required: ['label', 'value'] } },
+        topics: { type: 'array', items: { type: 'string' } },
       },
-      required: ['category', 'type', 'description', 'facts'],
+      required: ['category', 'type', 'description', 'facts', 'topics'],
     },
   });
 
@@ -97,6 +101,11 @@ Describe what the file is, not topics it merely mentions.`,
       .map(f => ({ label: clean(f?.label, 40), value: clean(f?.value, 120) }))
       .filter(f => f.label && f.value)
       .slice(0, 6),
+    topics: [...new Map((Array.isArray(parsed.topics) ? parsed.topics : [])
+      .map(t => clean(t, 40))
+      .filter(t => t && t.split(' ').length <= 4)
+      .map(t => [t.toLowerCase(), t])).values()]
+      .slice(0, 5),
   };
 
   let embedding;
@@ -117,6 +126,8 @@ Describe what the file is, not topics it merely mentions.`,
       },
     }
   );
+  // The new aiCategory may change the automatic category; a person's correction is never touched.
+  await classifyAndSave(fileContent.file);
   return profile;
 }
 
@@ -142,13 +153,24 @@ async function runOnce() {
       ],
     }).sort({ updatedAt: -1 }).limit(BATCH);
 
+    // Nothing new to read: one older profile without topics gets them (one file per pass, never in bulk).
+    if (!pending.length) {
+      pending.push(...await FileContent.find({
+        extractionStatus: 'completed',
+        extractedText: { $nin: ['', null] },
+        aiProfileVersion: { $gte: PROFILE_VERSION },
+        topics: { $exists: false },
+      }).sort({ updatedAt: -1 }).limit(BATCH));
+    }
+
     let done = 0;
     for (const fileContent of pending) {
       const file = await File.findById(fileContent.file).select('originalName isTrashed').lean();
       if (!file) continue;
       try {
         if (!(await profileFile(file, fileContent, { background: true }))) {
-          await FileContent.updateOne({ _id: fileContent._id }, { $set: { aiProfiledAt: new Date(), aiProfileVersion: PROFILE_VERSION } });
+          // Nothing to note (too little text, or no answer): marked as read so it is not picked again.
+          await FileContent.updateOne({ _id: fileContent._id }, { $set: { aiProfiledAt: new Date(), aiProfileVersion: PROFILE_VERSION, topics: [] } });
         }
         if (health.embeddingModelAvailable && await needsIndex(fileContent)) await indexFile(file, fileContent, { background: true });
         done += 1;
@@ -199,4 +221,4 @@ function start() {
   setTimeout(() => runOnce().catch(() => {}), 5000);
 }
 
-module.exports = { profileFile, runOnce, start, noteActivity, profileDocument, textDocument, readingStatus, PROFILE_VERSION };
+module.exports = { profileFile, runOnce, start, noteActivity, profileDocument, textDocument, readingStatus, PROFILE_VERSION, CATEGORIES };

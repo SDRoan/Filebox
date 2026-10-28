@@ -141,7 +141,11 @@ app.set('io', io);
 
 // Database connection
 mongoose.connect(appConfig.database.uri)
-.then(() => console.log('MongoDB connected'))
+.then(() => {
+  console.log('MongoDB connected');
+  // Advanced Search categories for files read before they existed: rules and stored profiles only, no AI.
+  require('./services/fileClassifier').catchUp().catch(error => console.error('[Classify] Catch-up failed:', error.message));
+})
 .catch(err => console.error('MongoDB connection error:', err));
 
 // Cleanup job: permanently delete Trash items after the recovery period (30 days)

@@ -99,6 +99,44 @@ const FileContentSchema = new mongoose.Schema({
   aiEmbeddingSource: {
     type: String,
     default: ''
+  },
+  // Up to 5 subjects the file is about, written with the profile ("Operating Systems", "Semaphores").
+  // Left unset (not []) until a profile has looked, so older files can be picked up one at a time.
+  topics: {
+    type: [String],
+    default: undefined
+  },
+  // What kind of document this is for Advanced Search (services/fileClassifier.js): one category and one
+  // document type, worked out from rules and aiCategory. Metadata only; it never moves the file.
+  primaryCategory: {
+    type: String,
+    default: ''
+  },
+  documentType: {
+    type: String,
+    default: ''
+  },
+  classificationSource: {
+    type: String,
+    enum: ['', 'rules', 'profile', 'default'],
+    default: ''
+  },
+  classifiedAt: {
+    type: Date
+  },
+  classificationVersion: {
+    type: Number
+  },
+  // A person's correction. Always wins over the automatic fields above, and only the correction route
+  // writes it: profiling, classifying and re-reading the file never change it.
+  userClassification: {
+    type: new mongoose.Schema({
+      primaryCategory: String,
+      documentType: String,
+      by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      at: Date
+    }, { _id: false }),
+    default: undefined
   }
 }, {
   timestamps: true
