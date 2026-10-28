@@ -563,6 +563,84 @@ export const searchAPI = {
   },
 };
 
+// Advanced Search (server/services/advancedSearch.js). Every result, snippet and count comes from the
+// server's permission-checked search; the page only shows what it is sent.
+export interface FileClassification {
+  primaryCategory: string;
+  documentType: string;
+  topics: string[];
+  source: 'user' | 'rules' | 'profile' | 'default';
+  canChange?: boolean;
+}
+
+export interface AdvancedSearchResult {
+  _id: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  technicalType: 'pdf' | 'image' | 'document' | 'text' | 'code' | 'other';
+  createdAt: string;
+  updatedAt: string;
+  parentFolder: string | null;
+  folderName: string | null;
+  isStarred: boolean;
+  ownerName: string | null;
+  access: { role: 'owner' | 'editor' | 'viewer'; source: 'owned' | 'shared' | 'team'; teamName?: string };
+  score: number;
+  matchedTerms: string[];
+  matchedIn: Array<'name' | 'content' | 'type' | 'category' | 'topic'>;
+  snippet: { text: string; highlights: Array<[number, number]>; source: string } | null;
+  classification: FileClassification;
+}
+
+export interface SearchGroup { name: string; count: number }
+
+export interface AdvancedSearchResponse {
+  results: AdvancedSearchResult[];
+  total: number;
+  groups: { categories: SearchGroup[]; documentTypes: SearchGroup[] };
+  applied: Record<string, unknown> & { terms: string[] };
+}
+
+export interface AdvancedSearchParams {
+  q?: string;
+  category?: string;
+  documentType?: string;
+  topic?: string;
+  format?: string;
+  date?: string;
+  from?: string;
+  to?: string;
+  dateField?: string;
+  location?: string;
+  folderId?: string;
+  currentFolderId?: string;
+  sort?: string;
+  limit?: number;
+  offset?: number;
+  tz?: number;
+}
+
+export const advancedSearchAPI = {
+  search: async (params: AdvancedSearchParams, signal?: AbortSignal): Promise<AdvancedSearchResponse> => {
+    const response = await api.get('/search/advanced', { params, signal });
+    return response.data;
+  },
+  taxonomy: async (): Promise<{ categories: Array<{ name: string; documentTypes: string[] }> }> => {
+    const response = await api.get('/search/taxonomy');
+    return response.data;
+  },
+  // A person's own label for a file; { reset: true } goes back to the automatic one.
+  setClassification: async (fileId: string, body: { primaryCategory: string; documentType: string } | { reset: true }): Promise<{ classification: FileClassification }> => {
+    const response = await api.patch(`/search/classification/${fileId}`, body);
+    return response.data;
+  },
+  reclassify: async (fileId: string): Promise<{ classification: FileClassification; profile: string }> => {
+    const response = await api.post(`/search/classification/${fileId}/reclassify`);
+    return response.data;
+  },
+};
+
 // Relationships API
 export const relationshipsAPI = {
   createRelationship: async (

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import FileBrowser from './FileBrowser';
 import SearchBar from './SearchBar';
@@ -31,6 +31,7 @@ import { useAppearance } from '../context/AppearanceContext';
 import { useCompanion } from '../context/CompanionContext';
 import { FileItemType } from '../types';
 import { getWorkspacePage, pagePath } from '../config/workspaceNavigation';
+import AdvancedSearch from './AdvancedSearch';
 import { filesAPI, preferencesAPI } from '../services/api';
 import { applyAccent, rememberAccent } from '../theme/accent';
 import './Dashboard.css';
@@ -57,6 +58,9 @@ const Dashboard: React.FC = () => {
   const [openFileRequest, setOpenFileRequest] = useState<{ id: string; at: number } | null>(null);
 
   const currentFolderId = folderStack[folderStack.length - 1];
+  // Advanced Search opened from inside a folder can search just that folder.
+  const insideFolder = (currentView === 'files' || currentView === 'teams') && currentFolderId && currentFolderId !== 'root';
+  const advancedSearchLink = insideFolder ? `/search?folder=${encodeURIComponent(currentFolderId)}` : '/search';
 
   // Tell File Box AI where the person is, so "this folder" or "here" mean something to it.
   const { setPageContext, setPage, setFolder } = useCompanion();
@@ -175,9 +179,13 @@ const Dashboard: React.FC = () => {
           </button>
           <div className="workspace-breadcrumb"><span>{appearance.brandName.trim() || 'File Box'}</span><span aria-hidden="true">/</span><strong>{page.label}</strong></div>
           {currentView !== 'home' && <SearchBar onFileClick={openFile} onFolderClick={handleFolderClick} />}
+          {currentView !== 'home' && currentView !== 'search' && (
+            <Link className="adv-entry-link" to={advancedSearchLink}>Advanced search</Link>
+          )}
           <TopBarColor />
         </header>
         <div className={`workspace-view workspace-view-${currentView}`}>
+        {currentView === 'search' && <AdvancedSearch />}
         {currentView === 'home' && (
           <HomeView onOpenFile={openFile} onOpenFolder={handleFolderClick} />
         )}

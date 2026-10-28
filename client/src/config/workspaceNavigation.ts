@@ -21,6 +21,7 @@ export const workspacePages: WorkspacePage[] = [
   { id: 'storage', path: '/storage', label: 'Storage' },
   { id: 'settings', path: '/settings', label: 'Settings' },
   { id: 'customize', path: '/customize', label: 'Customize' },
+  { id: 'search', path: '/search', label: 'Advanced Search', secondary: true },
   { id: 'secured-links', path: '/secured-links', label: 'Secured links', secondary: true },
   { id: 'relationships', path: '/connections', label: 'File connections', secondary: true },
   { id: 'templates', path: '/templates', label: 'Templates', secondary: true },

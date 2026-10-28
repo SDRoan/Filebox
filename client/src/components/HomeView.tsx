@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { homeAPI, searchAPI, HomeOverview, HomeSuggestion } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useAppearance } from '../context/AppearanceContext';
@@ -140,6 +140,7 @@ const HomeView: React.FC<HomeViewProps> = ({ onOpenFile, onOpenFolder }) => {
           />
           {query.trim() && <kbd>Enter to ask File Box</kbd>}
         </form>
+        <Link className="adv-entry-link home-adv-link" to="/search">Advanced search</Link>
         {home.showShortcuts && (
           <div className="home-chips" aria-label="Things File Box can do">
             {CHIPS.map(chip => <button key={chip.label} onClick={() => runChip(chip)}>{chip.label}</button>)}
