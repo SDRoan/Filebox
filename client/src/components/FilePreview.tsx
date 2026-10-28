@@ -3,10 +3,9 @@ import { useFileFocus } from '../hooks/useFileFocus';
 import { FileItemType } from '../types';
 import { filesAPI } from '../services/api';
 import CodeViewer from './CodeViewer';
-import FileMemory from './FileMemory';
 import PredictiveOrganization from './PredictiveOrganization';
 import FileEditor from './FileEditor';
-import { MemoryIcon, DownloadIcon, CloseIcon, EditIcon, SignatureIcon } from './Icons';
+import { DownloadIcon, CloseIcon, EditIcon, SignatureIcon } from './Icons';
 import SignPdfDialog from './SignPdfDialog';
 import { capabilitiesFor, AccessRole } from '../utils/permissions';
 import { useCompanion } from '../context/CompanionContext';
@@ -33,7 +32,6 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
-  const [showMemory, setShowMemory] = useState(false);
   const [showSign, setShowSign] = useState(false);
   // Owners and editors can sign PDFs (same rule as the file menu).
   const canSign = /pdf/i.test(file.mimeType || '') && capabilitiesFor(((file as any).access as AccessRole) || 'owner').canEdit;
@@ -310,14 +308,6 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
             </span>
           </div>
           <div className="file-preview-actions">
-            <button 
-              onClick={() => setShowMemory(true)} 
-              className="preview-action-btn memory-btn"
-              title="View File Memory"
-            >
-              <MemoryIcon size={16} color="#ffffff" />
-              <span>Memory</span>
-            </button>
             {isEditableFile() && (
               <button 
                 onClick={() => setShowEditor(true)} 
@@ -442,9 +432,6 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
             loadPreview(); // Reload preview after save
           }}
         />
-      )}
-      {showMemory && (
-        <FileMemory fileId={file._id} onClose={() => setShowMemory(false)} />
       )}
       {showSign && (
         <SignPdfDialog file={file} onClose={() => setShowSign(false)} onSigned={() => loadPreview()} />
