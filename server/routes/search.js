@@ -43,9 +43,13 @@ router.get('/ai', auth, async (req, res) => {
  */
 router.get('/advanced', auth, async (req, res) => {
   try {
-    const { q, category, documentType, topic, format, date, dateField, from, to, tz, location, folderId, teamId, currentFolderId, sort, limit, offset } = req.query;
+    const { q, category, documentType, topic, format, date, dateField, from, to, tz, location, folderId, teamId, currentFolderId, sort, limit, offset, parse, semantic } = req.query;
+    // parse: 'rules' reads filters out of the words; 'model' may also ask the local model once (after Enter).
+    // semantic: 'on' only when the person asked to search by meaning.
+    if (parse !== undefined && !['off', 'rules', 'model'].includes(parse)) return res.status(400).json({ message: `Unknown value "${parse}"` });
+    if (semantic !== undefined && !['off', 'on'].includes(semantic)) return res.status(400).json({ message: `Unknown value "${semantic}"` });
     const result = await advancedSearch(req.user._id, {
-      text: q, category, documentType, topic, format, date, dateField, from, to, tz, location, folderId, teamId, currentFolderId, sort, limit, offset,
+      text: q, category, documentType, topic, format, date, dateField, from, to, tz, location, folderId, teamId, currentFolderId, sort, limit, offset, parse, semantic,
     });
     // Same answer for a folder that does not exist and one the user cannot open.
     if (result.folderNotFound) return res.status(404).json({ message: 'Folder not found' });

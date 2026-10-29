@@ -49,6 +49,14 @@
 .filebox-ai-files button:hover { border-color: var(--fb-g-a7bc96, #a7bc96); }
 .filebox-ai-files span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .filebox-ai-files small { color: var(--fb-g-8a967e, #8a967e); font-size: 11px; }
+/* Advanced Search results: the matching passage (plain text, server highlights) and why it matched. */
+.filebox-ai-file-match { padding: 4px 9px 2px 31px; }
+.filebox-ai-snippet { margin: 0; font-size: 11.5px; line-height: 1.45; color: var(--fb-g-56644c, #56644c); overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.filebox-ai-snippet mark { padding: 0 1px; color: inherit; background: var(--fb-g-dfe9d3, #dfe9d3); border-radius: 2px; font-weight: 600; }
+.filebox-ai-reason { margin: 2px 0 0; font-size: 11px; color: var(--fb-g-8a967e, #8a967e); }
+.filebox-ai-search-link { display: inline-flex; align-items: center; min-height: 32px; margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--fb-g-3f6543, #3f6543); text-decoration: none; }
+.filebox-ai-search-link:hover { text-decoration: underline; }
+.filebox-ai-search-link:focus-visible { outline: 2px solid var(--fb-g-3f6543, #3f6543); outline-offset: 2px; border-radius: 4px; }
 .filebox-ai-confirm { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12px; color: var(--fb-g-7d8e70, #7d8e70); }
 
 @media (max-width: 1100px) {

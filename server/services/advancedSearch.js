@@ -6,6 +6,9 @@ const TeamFolder = require('../models/TeamFolder');
 const FileContent = require('../models/FileContent');
 const { readableFileFilter, filterReadable, getFolderRole, getTeamRole } = require('./permissions');
 const { TAXONOMY, CATEGORIES, TYPE_WORDS, CATEGORY_WORDS, effectiveClassification } = require('./fileClassifier');
+const { parseQuery, parseWithModel } = require('./searchQueryParser');
+const ollamaClient = require('./ollamaClient');
+const FileChunk = require('../models/FileChunk');
 
 /**
  * Advanced Search: find files by the words inside them and by what kind of document they are
@@ -13,6 +16,9 @@ const { TAXONOMY, CATEGORIES, TYPE_WORDS, CATEGORY_WORDS, effectiveClassificatio
  * Works only from what File Box already stores (the text read at upload, including OCR of scans and
  * pictures), so a search never opens a file on disk, never runs OCR and never calls the AI model.
  * The whole text of every file is searched, so words near the end of a long file are found too.
+ * Two opt-in extras: `parse` reads filters out of plain words ("invoices from September"; rules, or one
+ * model call for a request the rules cannot place), and `semantic` ranks by meaning with one query
+ * embedding compared against vectors File Box already stored. Neither ever runs per result.
  *
  * Every match is rechecked with the same role check the file routes use before anything about it
  * (name, snippet, category, total, group counts) is counted or returned; files the person cannot read
@@ -287,14 +293,18 @@ function scoreFile(file, text, terms, weights, query, kind) {
       ...(typeTerms.length ? ['type'] : []), ...(categoryTerms.length ? ['category'] : []), ...(topicTerms.length ? ['topic'] : []),
     ],
     phrase: phraseInText ? phrase : null,
+    // The words really are in the file: the exact phrase, or most of the (rarity-weighted) words.
+    strong: phraseInText || keyword >= 0.6,
   };
 }
 
 const recencyBoost = (file) => WEIGHTS.recency * Math.exp(-Math.max(0, Date.now() - new Date(file.updatedAt || file.createdAt).getTime()) / (90 * 86400000));
 
+// A file found only by meaning always comes after every file that contains the words.
+const wordsFirst = (a, b) => (a.meaningOnly === b.meaningOnly ? 0 : a.meaningOnly ? 1 : -1);
 const SORTERS = {
-  best: (a, b) => b.score - a.score,
-  content: (a, b) => b.contentScore - a.contentScore || b.score - a.score,
+  best: (a, b) => wordsFirst(a, b) || b.score - a.score,
+  content: (a, b) => wordsFirst(a, b) || b.contentScore - a.contentScore || b.score - a.score,
   modified: (a, b) => new Date(b.file.updatedAt) - new Date(a.file.updatedAt),
   newest: (a, b) => new Date(b.file.createdAt) - new Date(a.file.createdAt),
   oldest: (a, b) => new Date(a.file.createdAt) - new Date(b.file.createdAt),
@@ -333,6 +343,7 @@ function readOptions(options = {}) {
     teamId: options.teamId,
     currentFolderId: options.currentFolderId,
     sort: pick(options.sort, SORTS, text ? 'best' : 'modified'),
+    semantic: pick(options.semantic, ['off', 'auto', 'on'], 'off'),
     limit: Math.min(MAX_LIMIT, Math.max(1, parseInt(options.limit, 10) || 30)),
     offset: Math.max(0, parseInt(options.offset, 10) || 0),
   };
@@ -349,6 +360,17 @@ const SAFE_FIELDS = 'originalName mimeType size owner parentFolder isStarred isT
  */
 async function advancedSearch(userId, options = {}) {
   const started = Date.now();
+  let parsed = null;
+  if (options.parse && options.parse !== 'off' && String(options.text || '').trim()) {
+    const context = { tz: Number(options.tz) || 0, hasFolderFocus: Boolean(options.currentFolderId) };
+    parsed = options.parse === 'model' ? await parseWithModel(options.text, context) : { ...parseQuery(options.text, context), usedModel: false };
+    // Only a kind of file ("invoice", "my transcript"): kept as words, so files that mention it still show
+    // (files of that type already rank higher). Filters are read once there is more: a date, a format, a place.
+    const keys = Object.keys(parsed.filters);
+    const onlyKind = keys.length > 0 && keys.every(k => k === 'documentType' || k === 'category') && parsed.filters.documentType && !parsed.text && !parsed.contentCue;
+    if (onlyKind) parsed = { ...parsed, filters: {}, text: options.text, understood: [] };
+    else options = mergeParsed(options, parsed);
+  }
   const opts = readOptions(options);
   const terms = queryTerms(opts.text);
 
@@ -365,7 +387,7 @@ async function advancedSearch(userId, options = {}) {
 
   // What each readable file is: the person's correction, else the automatic classification.
   const profiles = new Map((await FileContent.find({ file: { $in: readable.map(r => r.file._id) } })
-    .select('file aiCategory aiType primaryCategory documentType classificationSource topics userClassification').lean())
+    .select('file aiCategory aiType primaryCategory documentType classificationSource topics userClassification extractionMethod').lean())
     .map(c => [c.file.toString(), c]));
   const kinds = new Map(readable.map(({ file }) => {
     const profile = profiles.get(file._id.toString()) || null;
@@ -407,10 +429,30 @@ async function advancedSearch(userId, options = {}) {
         matchedTerms: match.matchedTerms,
         matchedIn: match.matchedIn,
         snippet: snippet && { ...snippet, source: textSource(content.extractionMethod, technicalType(file)) },
+        strong: match.strong,
       };
     }).filter(Boolean);
   } else {
     scored = readable.map(({ file, access }) => ({ file, access, score: recencyBoost(file), contentScore: 0, matchedTerms: [], matchedIn: [], snippet: null }));
+  }
+
+  // ---- By meaning: one embedding of the search, compared with the vectors stored for each readable file.
+  // `weak` tells the page when offering "Search by meaning" could help (it never searches by meaning itself).
+  // Weak means no file really contains the words; a few exact hits for a rare word are strong.
+  const weak = Boolean(terms.length) && !scored.some(r => r.strong);
+  const semantic = { requested: opts.semantic, used: false, added: 0, reason: 'off', weak };
+  if (opts.semantic !== 'off') {
+    if (!terms.length) semantic.reason = 'no-words';
+    else if (opts.semantic === 'auto' && !weak) semantic.reason = 'strong-word-matches';
+    else {
+      const health = await ollamaClient.health().catch(() => ({ reachable: false }));
+      if (!health.reachable || !health.embeddingModelAvailable) semantic.reason = 'unavailable';
+      else {
+        Object.assign(semantic, await meaningMatches(opts.text, readable, scored, profiles), { reason: opts.semantic === 'on' ? 'requested' : 'weak-word-matches' });
+        scored = semantic.scored;
+        delete semantic.scored;
+      }
+    }
   }
 
   // Topic, then category and document type. Group counts are taken along the way, from readable files only.
@@ -462,7 +504,115 @@ async function advancedSearch(userId, options = {}) {
     },
   }));
 
-  return { results, total: scored.length, groups, applied: applied(opts, terms), tookMs: Date.now() - started };
+  return {
+    results,
+    total: scored.length,
+    groups,
+    applied: {
+      ...applied(opts, terms),
+      ...(parsed ? { parsed: { understood: parsed.understood, confidence: parsed.confidence, vague: parsed.vague || '', usedModel: Boolean(parsed.usedModel), cached: Boolean(parsed.cached), original: String(options.originalText || '') } } : {}),
+      semantic,
+    },
+    tookMs: Date.now() - started,
+  };
+}
+
+const DEFAULTS = { category: ['', 'all'], documentType: ['', 'all'], format: ['', 'all'], date: ['', 'any'], dateField: ['', 'modified'], location: ['', 'everywhere'], sort: ['', 'best'] };
+const isSet = (key, value) => value !== undefined && value !== null && !DEFAULTS[key].includes(value);
+
+/** Parsed filters fill in only what the request did not set explicitly; explicit choices always win. */
+function mergeParsed(options, parsed) {
+  const merged = { ...options, originalText: options.text, text: parsed.text };
+  const f = parsed.filters;
+  const fromParse = new Set();
+  for (const key of ['category', 'documentType', 'format', 'location', 'sort']) {
+    if (!isSet(key, options[key]) && f[key]) { merged[key] = f[key]; fromParse.add(key); }
+  }
+  if (!isSet('date', options.date) && f.date) {
+    Object.assign(merged, { date: f.date, from: f.from, to: f.to });
+    if (!isSet('dateField', options.dateField) && f.dateField) merged.dateField = f.dateField;
+  }
+  if (merged.location === 'folder' && fromParse.has('location')) merged.folderId = options.currentFolderId;
+  // A parsed category that does not hold an explicitly chosen type (or the other way round) is dropped.
+  const cat = merged.category;
+  const type = merged.documentType;
+  if (isSet('category', cat) && isSet('documentType', type) && !TAXONOMY[cat]?.includes(type)) {
+    if (fromParse.has('category')) delete merged.category; else delete merged.documentType;
+  }
+  return merged;
+}
+
+const cosine = (a, b) => {
+  let dot = 0;
+  let na = 0;
+  let nb = 0;
+  for (let i = 0; i < a.length; i += 1) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+  return na && nb ? dot / Math.sqrt(na * nb) : 0;
+};
+// nomic-embed-text, measured on File Box passages: unrelated text scores 0.45-0.61, a real match 0.62-0.70
+// and clearly above the rest. A file is added by meaning alone only above the floor and close to the best.
+const MEANING_FLOOR = 0.6;
+const MEANING_NEAR_BEST = 0.04;
+const MEANING_TOP = 0.8;
+const MEANING_WEIGHT = 2;
+const MAX_MEANING_FILES = 400;
+const MAX_MEANING_ONLY = 10;
+const trimPassage = (text) => {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  if (flat.length <= SNIPPET_CHARS) return flat;
+  const cut = flat.lastIndexOf(' ', SNIPPET_CHARS);
+  return `${flat.slice(0, cut > 120 ? cut : SNIPPET_CHARS)}…`;
+};
+
+/**
+ * One embedding of the search, compared with each readable file's stored profile vector and passage
+ * vectors. Word matches get a small boost; files found only by meaning are added after them, with their
+ * closest passage as the snippet (no highlights: no words matched).
+ */
+async function meaningMatches(text, readable, scored, profiles) {
+  const [query] = await ollamaClient.embed([`search_query: ${text}`]);
+  const recent = [...readable].sort((a, b) => new Date(b.file.updatedAt) - new Date(a.file.updatedAt)).slice(0, MAX_MEANING_FILES);
+  const ids = recent.map(r => r.file._id);
+  const [vectors, chunks] = await Promise.all([
+    FileContent.find({ file: { $in: ids }, aiEmbedding: { $exists: true } }).select('file aiEmbedding').lean(),
+    FileChunk.find({ file: { $in: ids }, embedding: { $exists: true } }).select('file text embedding').lean(),
+  ]);
+  const best = new Map();
+  const note = (id, value, passage) => {
+    const prev = best.get(id);
+    if (!prev || value > prev.value) best.set(id, { value, passage: passage ?? prev?.passage });
+    else if (passage && !prev.passage) prev.passage = passage;
+  };
+  vectors.forEach(v => note(v.file.toString(), cosine(query, v.aiEmbedding)));
+  chunks.forEach(c => note(c.file.toString(), cosine(query, c.embedding), c.text));
+  const strength = (id) => Math.max(0, Math.min(1, ((best.get(id)?.value || 0) - MEANING_FLOOR) / (MEANING_TOP - MEANING_FLOOR)));
+  const top = Math.max(0, ...[...best.values()].map(b => b.value));
+  const closeToBest = (id) => (best.get(id)?.value || 0) >= top - MEANING_NEAR_BEST;
+
+  const matched = new Set(scored.map(r => r.file._id.toString()));
+  const boosted = scored.map((r) => {
+    const m = strength(r.file._id.toString());
+    return m > 0 ? { ...r, score: r.score + m, matchedIn: [...r.matchedIn, 'meaning'] } : r;
+  });
+  const added = recent
+    .filter(({ file }) => !matched.has(file._id.toString()) && strength(file._id.toString()) > 0 && closeToBest(file._id.toString()))
+    .sort((a, b) => strength(b.file._id.toString()) - strength(a.file._id.toString()))
+    .slice(0, MAX_MEANING_ONLY)
+    .map(({ file, access }) => {
+      const id = file._id.toString();
+      const passage = best.get(id).passage;
+      return {
+        file,
+        access,
+        score: MEANING_WEIGHT * strength(id) + recencyBoost(file),
+        contentScore: 0,
+        matchedTerms: [],
+        matchedIn: ['meaning'],
+        meaningOnly: true,
+        snippet: passage ? { text: trimPassage(passage), highlights: [], source: textSource(profiles.get(id)?.extractionMethod, technicalType(file)) } : null,
+      };
+    });
+  return { used: true, reason: 'weak-word-matches', added: added.length, scored: [...boosted, ...added] };
 }
 
 function applied(opts, terms) {

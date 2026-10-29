@@ -12,6 +12,11 @@ import './AdvancedSearch.css';
  * Every filter lives in the URL, so opening a file and coming back keeps the search. Results, snippets and
  * every count come from the server's permission-checked search (GET /api/search/advanced); this page
  * never counts or filters files itself. Grouping by category is only a view: files stay in their folders.
+ *
+ * Plain words ("invoices from September") are read into filters by the server's rules as you type, with
+ * no AI. Pressing Enter lets the server ask the local model once, only when the rules could not place
+ * something ("last spring"). "Search by meaning" is a separate button; nothing here searches by meaning
+ * on its own. Filters chosen in the menus always win over ones read from the words.
  */
 
 const CATEGORIES = ['Work', 'School', 'Financial', 'Personal', 'Other'];
@@ -42,6 +47,12 @@ interface Filters {
   folder: string;
   sort: string;
   topic: string;
+  // Search the words exactly as typed (no filters read from them).
+  exact: boolean;
+  // Enter was pressed: the server may ask the local model once to read the words.
+  understand: boolean;
+  // The person asked to search by meaning.
+  meaning: boolean;
 }
 
 /** The search as the URL describes it. Unknown or unsafe values are dropped. */
@@ -69,6 +80,9 @@ function readFilters(params: URLSearchParams, typesFor: (category: string) => st
     folder,
     sort,
     topic: (params.get('topic') || '').slice(0, 60),
+    exact: params.get('exact') === '1',
+    understand: params.get('understand') === '1' && params.get('exact') !== '1',
+    meaning: params.get('meaning') === '1' && Boolean(q.trim()),
   };
 }
 
@@ -149,7 +163,7 @@ const AdvancedSearch: React.FC = () => {
     if (input === filters.q || (!input.trim() && !filters.q)) return undefined;
     const timer = setTimeout(() => {
       typedQ.current = input.trim() ? input : '';
-      update({ q: input.trim() ? input : null });
+      update({ q: input.trim() ? input : null, understand: null, meaning: null });
     }, TYPING_DELAY);
     return () => clearTimeout(timer);
   }, [input, filters.q, update]);
@@ -169,6 +183,8 @@ const AdvancedSearch: React.FC = () => {
     currentFolderId: filters.folder || undefined,
     sort: filters.sort,
     tz: new Date().getTimezoneOffset(),
+    parse: filters.exact ? 'off' : filters.understand ? 'model' : 'rules',
+    semantic: filters.meaning ? 'on' : undefined,
   }), [filters]);
   const requestKey = JSON.stringify(request);
 
@@ -244,7 +260,7 @@ const AdvancedSearch: React.FC = () => {
   const typeChips = (data?.groups.documentTypes || []).filter(g => g.count > 0);
 
   const activeFilters = [filters.category, filters.type, filters.topic, filters.format !== 'all', filters.date !== 'any', filters.location !== 'everywhere'].filter(Boolean).length;
-  const clearFilters = () => update({ category: null, type: null, topic: null, format: null, date: null, from: null, to: null, dateField: null, location: null, sort: null });
+  const clearFilters = () => update({ category: null, type: null, topic: null, format: null, date: null, from: null, to: null, dateField: null, location: null, sort: null, understand: null });
 
   const summary = (() => {
     if (loading && !data) return 'Searching…';
@@ -287,6 +303,66 @@ const AdvancedSearch: React.FC = () => {
       </div>
     );
   };
+
+  // ---- What the server read out of the words, as removable pills. Removing one turns the rest into
+  // ordinary filters (and searches the remaining words exactly), so nothing is read again behind the scenes.
+  const parsed = data?.applied.parsed;
+  const appliedOf = (key: string) => (data?.applied as any)?.[key] as string | undefined;
+  const removeUnderstood = (key: string) => {
+    const a = (k: string) => appliedOf(k);
+    const keep = (k: string) => k !== key;
+    update({
+      q: keep('text') ? (a('text') || null) : null,
+      category: keep('category') && a('category') !== 'all' ? a('category') || null : null,
+      type: keep('documentType') && a('documentType') !== 'all' ? a('documentType') || null : null,
+      format: keep('format') && a('format') !== 'all' ? a('format') || null : null,
+      date: keep('date') && a('date') !== 'any' ? a('date') || null : null,
+      from: keep('date') ? a('from') || null : null,
+      to: keep('date') ? a('to') || null : null,
+      dateField: keep('date') && a('dateField') === 'uploaded' ? 'uploaded' : null,
+      location: keep('location') && a('location') !== 'everywhere' ? a('location') || null : null,
+      sort: keep('sort') ? a('sort') || null : null,
+      exact: '1',
+      understand: null,
+    });
+  };
+  const readPieces = (parsed?.understood || []).filter(u => u.key !== 'text');
+  // A time the rules could not place ("last spring"): said plainly, never guessed.
+  const vagueNote = parsed?.confidence === 'low' && !parsed.usedModel && parsed.vague ? (
+    <p className="adv-understood adv-understood-note">
+      <span>File Box couldn't place “{parsed.vague}”. Press Enter to let File Box AI work it out, or pick a date below.</span>
+    </p>
+  ) : null;
+  const understoodRow = filters.exact ? (
+    <p className="adv-understood">
+      <span>Searching these exact words.</span>
+      <button type="button" className="adv-button-quiet" onClick={() => update({ exact: null })}>Read filters from my words</button>
+    </p>
+  ) : parsed && readPieces.length > 0 ? (
+    <div className="adv-understood" aria-label="Understood as">
+      <span>Understood as{parsed.usedModel ? ' (with File Box AI)' : ''}:</span>
+      {parsed.understood.map(u => (
+        <button type="button" key={`${u.key}-${u.label}`} className="adv-pill" onClick={() => removeUnderstood(u.key)} aria-label={`Remove ${u.label}`}>
+          {u.key === 'text' ? `Words ${u.label}` : u.label} <span aria-hidden="true">×</span>
+        </button>
+      ))}
+      <button type="button" className="adv-button-quiet" onClick={() => update({ exact: '1', understand: null })}>Search these exact words</button>
+    </div>
+  ) : null;
+
+  const meaningOffer = data && filters.q.trim() && !filters.meaning && data.applied.semantic?.weak ? (
+    <div className="adv-meaning">
+      <p>Not what you're after? File Box can also look for files that mean the same thing, even with different words.</p>
+      <button type="button" className="adv-button-secondary" onClick={() => update({ meaning: '1' })}>Search by meaning</button>
+    </div>
+  ) : filters.meaning && data?.applied.semantic ? (
+    <p className="adv-meaning-note">
+      {data.applied.semantic.used
+        ? `Searched by meaning${data.applied.semantic.added ? `: ${data.applied.semantic.added} more ${data.applied.semantic.added === 1 ? 'file' : 'files'} found by meaning, listed after the word matches` : ''}.`
+        : 'Searching by meaning is not available right now (File Box AI is not running).'}
+      {' '}<button type="button" className="adv-button-quiet" onClick={() => update({ meaning: null })}>Words only</button>
+    </p>
+  ) : null;
 
   const filterControls = (
     <>
@@ -368,7 +444,11 @@ const AdvancedSearch: React.FC = () => {
         <p>Find files by what is written inside them or by what kind of document they are.</p>
       </header>
 
-      <form className="adv-query" role="search" onSubmit={event => { event.preventDefault(); update({ q: input.trim() ? input : null }); }}>
+      <form className="adv-query" role="search" onSubmit={event => {
+        event.preventDefault();
+        typedQ.current = input.trim() ? input : '';
+        update({ q: input.trim() ? input : null, understand: input.trim() && !filters.exact ? '1' : null });
+      }}>
         <label htmlFor="adv-query-input">Words or text you remember</label>
         <div className="adv-query-row">
           <input id="adv-query-input" ref={inputRef} type="search" value={input} autoComplete="off" maxLength={300}
@@ -398,6 +478,9 @@ const AdvancedSearch: React.FC = () => {
           </button>
         </p>
       )}
+
+      {understoodRow}
+      {!filters.exact && vagueNote}
 
       <nav className="adv-browse" aria-label={filters.category ? `${filters.category} document types` : 'Browse by category'}>
         {!filters.category ? (
@@ -453,6 +536,7 @@ const AdvancedSearch: React.FC = () => {
         </div>
       )}
       {!error && data && data.total === 0 && !loading && emptyState()}
+      {!error && !loading && meaningOffer}
 
       {!error && results.length > 0 && (
         <ul className={`adv-results ${loading ? 'is-loading' : ''}`} aria-busy={loading} aria-label="Search results">

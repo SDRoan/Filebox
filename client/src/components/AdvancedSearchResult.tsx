@@ -9,7 +9,7 @@ import { capabilitiesFor } from '../utils/permissions';
 import { fileKind, formatRelativeTime } from '../utils/fileDisplay';
 
 const FORMAT_LABEL: Record<Result['technicalType'], string> = { pdf: 'PDF', image: 'Image', document: 'Document', text: 'Text', code: 'Code', other: 'Other' };
-const REASON_LABEL: Record<Result['matchedIn'][number], string> = { content: 'in text', name: 'in name', type: 'document type', category: 'category', topic: 'topic' };
+const REASON_LABEL: Record<Result['matchedIn'][number], string> = { content: 'in text', name: 'in name', type: 'document type', category: 'category', topic: 'topic', meaning: 'by meaning' };
 const MAX_TOPICS = 3;
 
 /**

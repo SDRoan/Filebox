@@ -3,7 +3,8 @@ import { useCompanion } from '../context/CompanionContext';
 import CompanionGreeting from './CompanionGreeting';
 import { isScreenFollowUp, isScreenQuestion, isVisualQuestion, readScreen, recentActivity, screenContext, screenFingerprint } from '../companion/screen';
 import { captureFileBox } from '../companion/capture';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { SnippetText } from './AdvancedSearchResult';
 import { AssistantScreen, aiAssistantAPI, filesAPI, AssistantHistoryMessage, AssistantChoice, AssistantResolved, FileAIActionsInfo } from '../services/api';
 import DuplicateReview from './DuplicateReview';
 import OrganizeReview from './OrganizeReview';
@@ -24,6 +25,11 @@ interface FoundFile {
   teamName?: string;
   trashed?: boolean;
   kind?: string;
+  // From Advanced Search: what the file is, the passage that matched, and why it matched.
+  category?: string;
+  documentType?: string;
+  snippet?: { text: string; highlights: Array<[number, number]>; source: string };
+  reason?: string;
 }
 
 interface PendingAction {
@@ -77,6 +83,8 @@ interface Message {
   notice?: boolean;
   // The folder an Organize review covers (asked about from inside that folder).
   panelFolderId?: string;
+  // The same search on the Advanced Search page ("/search?q=…&category=…").
+  searchLink?: string;
   // Shown under a question that used the screen ("Using current screen", "Using page 4 of 12").
   screenLabel?: string;
   // Where a screen answer came from (DOM text, PDF page text, a page render, the picture itself, OCR or a screenshot).
@@ -323,6 +331,7 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
         role: 'assistant',
         content: response.answer || 'Done.',
         files: response.files?.length ? response.files : undefined,
+        searchLink: typeof response.searchLink === 'string' && response.searchLink.startsWith('/search') ? response.searchLink : undefined,
         pendingAction: response.pendingAction,
         panel: response.panel,
         screenSource: response.screen?.source,
@@ -389,17 +398,23 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
     return () => setAskHandler(null);
   }, [variant, send, setAskHandler]);
 
+  // Hand-overs through the address (/ai?prefill=, /ai?file=, /ai?q=) are for the File Box AI page only.
+  // The Ask File Box panel is open over other pages, whose own ?q= (Advanced Search) is not a question.
+  const readsAddress = variant === 'page';
+
   // Home's "Summarize documents" chip: /ai?prefill=<text> fills the box without sending.
   useEffect(() => {
+    if (!readsAddress) return;
     const prefill = new URLSearchParams(location.search).get('prefill');
     if (prefill) {
       setInput(prefill);
       inputRef.current?.focus();
     }
-  }, [location.search]);
+  }, [location.search, readsAddress]);
 
   // "Ask File Box AI" from a file menu: /ai?file=<id> preselects that file.
   useEffect(() => {
+    if (!readsAddress) return;
     const fileId = new URLSearchParams(location.search).get('file');
     if (!fileId) return;
     setSelectedFileId(fileId);
@@ -410,17 +425,17 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
       })
       .catch(() => setSelectedFileId(''));
     inputRef.current?.focus();
-  }, [location.search]);
+  }, [location.search, readsAddress]);
 
   // Questions handed over from Home or search: /ai?q=...
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const q = params.get('q');
-    if (!q || autoSentRef.current || !status) return;
+    if (!readsAddress || !q || autoSentRef.current || !status) return;
     autoSentRef.current = true;
     navigate(location.pathname, { replace: true });
     send(q, params.get('file') || undefined);
-  }, [location.search, location.pathname, status, navigate, send]);
+  }, [location.search, location.pathname, status, navigate, send, readsAddress]);
 
   const confirmAction = async (message: Message) => {
     if (!message.pendingAction) return;
@@ -695,12 +710,23 @@ const AIAssistant: React.FC<AIAssistantProps> = ({ variant = 'page', suggestions
                     <li key={file.id}>
                       <button onClick={() => openFile(file)}>
                         <DocumentIcon size={14} /><span>{file.name}</span>
-                        {file.kind && <small className="filebox-ai-kind">{file.kind.charAt(0).toUpperCase() + file.kind.slice(1)}</small>}
+                        {file.category && file.documentType
+                          ? <small className="filebox-ai-kind">{file.category} · {file.documentType}</small>
+                          : file.kind && <small className="filebox-ai-kind">{file.kind.charAt(0).toUpperCase() + file.kind.slice(1)}</small>}
                         <small className={`source-${file.trashed ? 'trash' : file.source || 'owned'}`}>{sourceLabel(file)}</small>
                       </button>
+                      {(file.snippet || file.reason) && (
+                        <div className="filebox-ai-file-match">
+                          {file.snippet && <p className="filebox-ai-snippet"><SnippetText text={file.snippet.text} highlights={file.snippet.highlights} /></p>}
+                          {file.reason && <p className="filebox-ai-reason">Matched {file.reason}</p>}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>
+              )}
+              {message.searchLink && (
+                <Link className="filebox-ai-search-link" to={message.searchLink}>Open in Advanced Search</Link>
               )}
               {message.choices && (
                 <ul className="filebox-ai-choices" aria-label={message.choices.slot === 'folder' ? 'Choose a folder' : 'Choose a file'}>

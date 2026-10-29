@@ -13,6 +13,9 @@ const { searchWorkspace } = require('./workspaceSearch');
 const intentRouter = require('./intentRouter');
 const { understandRequest } = require('./requestUnderstanding');
 const { findFiles, rankReadableFiles } = require('./aiFileFinder');
+const { advancedSearch } = require('./advancedSearch');
+const { parseQuery } = require('./searchQueryParser');
+const { effectiveClassification } = require('./fileClassifier');
 const { noteActivity } = require('./fileProfiler');
 const { ensureIndexed, searchPassages, keywordScores, KEYWORD_WEIGHT } = require('./fileIndex');
 const { correctionsFor } = require('./aiFeedback');
@@ -244,9 +247,14 @@ class OllamaWorkspaceAssistant {
   /** Add what File Box read each file to be ("electricity bill", "calculus homework") to result items. */
   async withKinds(items) {
     if (!items?.length) return items;
-    const kinds = new Map((await FileContent.find({ file: { $in: items.map(item => item.id) } }).select('file aiType').lean())
-      .map(c => [c.file.toString(), c.aiType]));
-    return items.map(item => (kinds.get(item.id) ? { ...item, kind: kinds.get(item.id) } : item));
+    const contents = new Map((await FileContent.find({ file: { $in: items.map(item => item.id) } })
+      .select('file aiType aiCategory primaryCategory documentType classificationSource topics userClassification').lean())
+      .map(c => [c.file.toString(), c]));
+    return items.map((item) => {
+      const content = contents.get(item.id);
+      const cls = effectiveClassification({ originalName: item.name, mimeType: item.mimeType }, content || null);
+      return { ...item, ...(content?.aiType ? { kind: content.aiType } : {}), category: cls.primaryCategory, documentType: cls.documentType };
+    });
   }
 
   searchItem(file) {
@@ -1148,7 +1156,28 @@ Be brief and direct.`,
     })).trim();
   }
 
-  async handleSearch(route, { userId, question }) {
+  /**
+   * Which search answers this request:
+   *   trash    - "in the trash": the existing trash-aware search (Advanced Search never includes Trash)
+   *   advanced - filters (category, date, format, place) or "mentions / contains / about": Advanced Search
+   *   type     - only a kind of file ("my transcript"): findFiles, then Advanced Search by type if it finds nothing
+   *   finder   - a plain name or description ("find my resume", "budget.pdf"): findFiles, as before
+   * The rules here never call the model; the one understanding call has already happened.
+   */
+  searchPath(route, question, folderId) {
+    if (this.questionAsksForTrash(question)) return { path: 'trash' };
+    const parsed = parseQuery(question, { hasFolderFocus: Boolean(folderId) });
+    const f = parsed.filters;
+    const filtered = Boolean(f.category && !f.documentType) || ['format', 'date', 'location'].some(key => f[key]);
+    if (filtered || parsed.contentCue || route.lookFor === 'words_inside_files') return { path: 'advanced', parsed };
+    if (f.documentType && !parsed.text) return { path: 'type', parsed };
+    return { path: 'finder', parsed };
+  }
+
+  async handleSearch(route, { userId, question, folderId }) {
+    const plan = this.searchPath(route, question, folderId);
+    if (plan.path === 'advanced') return this.advancedSearchReply(route, { userId, folderId }, plan.parsed, 'advanced');
+
     let found;
     if (route.mode !== 'offline') {
       try {
@@ -1159,9 +1188,139 @@ Be brief and direct.`,
     }
     if (!found) found = await this.searchForQuestion(userId, question);
     let { files } = found;
+    if (plan.path === 'type' && !files.length) {
+      return this.advancedSearchReply(route, { userId, folderId }, { ...plan.parsed, text: '' }, 'type-fallback');
+    }
     if (/\b(newest|latest|most\s+recent)\b/i.test(question)) files = [...files].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
     else if (/\boldest\b/i.test(question)) files = [...files].sort((a, b) => new Date(a.updatedAt) - new Date(b.updatedAt));
-    return this.reply(route, { answer: this.findAnswer(question, files, found.hiddenContentMatches, found.query), provider: 'local-search', files: await this.withKinds(files) });
+    return this.reply(route, {
+      answer: this.findAnswer(question, files, found.hiddenContentMatches, found.query),
+      provider: 'local-search',
+      files: await this.withKinds(files),
+      search: { path: plan.path },
+    });
+  }
+
+  /**
+   * Answer from the shared Advanced Search engine (the same one the Advanced Search page uses), with each
+   * file's category, the matching passage and why it matched. Access is decided inside that engine.
+   */
+  async advancedSearchReply(route, { userId, folderId }, parsed, path) {
+    const f = parsed.filters;
+    const text = parsed.text || (route.lookFor === 'words_inside_files' && !parsed.contentCue ? route.searchTerms || '' : '');
+    const options = {
+      text,
+      ...f,
+      folderId: f.location === 'folder' ? folderId : undefined,
+      currentFolderId: folderId || undefined,
+      // Offline, or when the words already match well, no embedding is made.
+      semantic: route.mode === 'offline' ? 'off' : 'auto',
+      limit: 8,
+    };
+    const result = await advancedSearch(userId, options);
+    if (result.folderNotFound) {
+      return this.reply(route, { answer: "I can't search that folder: it isn't available anymore.", provider: 'advanced-search', search: { path } });
+    }
+    const folderName = f.location === 'folder' && folderId ? (await folderById(userId, folderId))?.name : null;
+    const files = result.results.map(r => this.advancedItem(r));
+    const link = this.advancedSearchLink(result.applied, folderId);
+    let answer;
+    if (!result.total) {
+      answer = `I couldn't find any ${this.describeSearch(result.applied, folderName, 0)}. You can widen the search in Advanced Search.`;
+    } else {
+      // Found only by meaning: say so instead of claiming the files mention the words.
+      const byMeaningOnly = result.results.length > 0 && result.results.every(r => r.matchedIn.join() === 'meaning');
+      answer = `I found ${result.total} ${this.describeSearch(result.applied, folderName, result.total, { byMeaningOnly })}`
+        + `${result.total > files.length ? `; here are the first ${files.length}` : ''}.`;
+      if (result.applied.semantic?.added && !byMeaningOnly) answer += ' Some of these match by meaning rather than the exact words.';
+      answer += ' Select one to open it, or ask me about it.';
+    }
+    return this.reply(route, {
+      answer,
+      provider: 'advanced-search',
+      files,
+      searchLink: link,
+      search: { path, semantic: Boolean(result.applied.semantic?.used), meaningOnly: result.applied.semantic?.added || 0, filters: f, text },
+    });
+  }
+
+  /** A result row for the chat: the usual fields plus category, snippet and why it matched. */
+  advancedItem(r) {
+    const { source, role, teamName } = r.access;
+    let folder = r.folderName || 'My Files';
+    if (source === 'team') folder = teamName ? `Team Space: ${teamName}` : 'Team Space';
+    if (source === 'shared') folder = r.ownerName ? `Shared by ${r.ownerName}` : 'Shared with you';
+    const labels = { content: 'in text', name: 'in name', type: 'document type', category: 'category', topic: 'topic', meaning: 'by meaning' };
+    const words = r.matchedTerms.slice(0, 4).map(t => `“${t}”`).join(', ');
+    const reasons = r.matchedIn.map(m => labels[m]).filter(Boolean).join(', ');
+    return {
+      id: String(r._id),
+      name: r.originalName,
+      mimeType: r.mimeType,
+      size: r.size,
+      source,
+      role,
+      ownerName: source === 'owned' ? undefined : r.ownerName || undefined,
+      teamName,
+      trashed: false,
+      folder,
+      parentFolder: source === 'owned' ? (r.parentFolder ? String(r.parentFolder) : null) : null,
+      updatedAt: r.updatedAt,
+      category: r.classification.primaryCategory,
+      documentType: r.classification.documentType,
+      snippet: r.snippet || undefined,
+      reason: words && reasons ? `${words} · ${reasons}` : reasons || undefined,
+    };
+  }
+
+  /** The same search on the Advanced Search page, so it can be refined there. */
+  advancedSearchLink(applied, folderId) {
+    const q = new URLSearchParams();
+    if (applied.text) q.set('q', applied.text);
+    if (applied.category && applied.category !== 'all') q.set('category', applied.category);
+    if (applied.documentType && applied.documentType !== 'all') q.set('type', applied.documentType);
+    if (applied.format && applied.format !== 'all') q.set('format', applied.format);
+    if (applied.date && applied.date !== 'any') {
+      q.set('date', applied.date);
+      if (applied.from) q.set('from', applied.from);
+      if (applied.to) q.set('to', applied.to);
+      if (applied.dateField === 'uploaded') q.set('dateField', 'uploaded');
+    }
+    if (applied.location && applied.location !== 'everywhere') q.set('location', applied.location);
+    if (folderId) q.set('folder', folderId);
+    const str = q.toString();
+    return `/search${str ? `?${str}` : ''}`;
+  }
+
+  // "invoices from September 2026", "School files that mention “semaphores”", "PDFs shared with you".
+  describeSearch(applied, folderName, count, { byMeaningOnly = false } = {}) {
+    const PLURAL = { 'Exam / Quiz': 'exams or quizzes', 'ID / Personal Document': 'ID documents', 'Spreadsheet / Data': 'spreadsheets', 'Notes': 'notes', 'Meeting Notes': 'meeting notes', 'Personal Notes': 'personal notes', 'Unknown': 'unsorted files', 'Source Code': 'code files', 'Study Material': 'study materials', 'Lecture Material': 'lecture materials', 'Travel': 'travel documents', 'Photo': 'photos', 'Insurance': 'insurance documents' };
+    const FORMAT = { pdf: 'PDFs', image: 'images', document: 'documents', text: 'text files', code: 'code files', other: 'files' };
+    const type = applied.documentType !== 'all' ? applied.documentType : '';
+    const category = applied.category !== 'all' ? applied.category : '';
+    const format = applied.format !== 'all' ? applied.format : '';
+    const ONE_FORMAT = { pdf: 'PDF', image: 'image', document: 'document', text: 'text file', code: 'code file', other: 'file' };
+    const one = count === 1;
+    let noun = type ? (one ? type.replace(' / ', ' or ').toLowerCase().replace(/^id or personal document$/, 'ID document') : PLURAL[type] || `${type.toLowerCase()}s`)
+      : format ? (one ? ONE_FORMAT[format] : FORMAT[format]) : one ? 'file' : 'files';
+    if (category && !type) noun = `${category} ${noun}`;
+    if (type && format) noun += ` (${format === 'pdf' ? 'PDF' : format})`;
+    const parts = [noun];
+    if (applied.text) parts.push(byMeaningOnly ? `that ${one ? 'seems' : 'seem'} to be about “${applied.text}” (by meaning, not the exact words)` : `that ${one ? 'mentions' : 'mention'} “${applied.text}”`);
+    if (applied.date && applied.date !== 'any') {
+      const verb = applied.dateField === 'uploaded' ? 'uploaded' : 'from';
+      const month = applied.from && applied.to && /-01$/.test(applied.from) && applied.from.slice(0, 7) === applied.to.slice(0, 7)
+        ? new Date(`${applied.from}T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }) : '';
+      const preset = { today: 'today', week: 'this week', month: 'this month', year: 'this year' }[applied.date];
+      parts.push(preset ? `${verb === 'from' ? 'from' : verb} ${preset}`
+        : month ? `${verb === 'from' ? 'from' : `${verb} in`} ${month}`
+          : applied.from && applied.to ? `${verb} between ${applied.from} and ${applied.to}` : applied.from ? `${verb} since ${applied.from}` : `${verb} before ${applied.to}`);
+    }
+    if (applied.location === 'shared') parts.push('shared with you');
+    if (applied.location === 'team') parts.push('in your Team Spaces');
+    if (applied.location === 'my-files') parts.push('in My Files');
+    if (applied.location === 'folder') parts.push(folderName ? `in "${folderName}"` : 'in this folder');
+    return parts.join(' ');
   }
 
   /**
@@ -1230,7 +1389,8 @@ Be brief and direct.`,
       // Ollama is running: never fall back to guessing. Try twice, then say File Box AI is busy.
       for (let attempt = 1; attempt <= 2; attempt += 1) {
         try {
-          return { ...(await understandRequest(question, { hasSelectedFile, history })), mode: 'ai' };
+          const route = { ...(await understandRequest(question, { hasSelectedFile, history })), mode: 'ai' };
+          return this.searchOverride(route, question, { fileId }) || route;
         } catch (error) {
           console.error(`[File Box AI] Understanding failed (attempt ${attempt}):`, error.message);
         }
@@ -1240,6 +1400,29 @@ Be brief and direct.`,
     // Offline rules only when Ollama is not running at all.
     const fileNames = aiActionExecutor.extractFileNames(question) || [];
     return { ...intentRouter.routeIntent(question, { hasSelectedFile, fileNames }), mode: 'offline' };
+  }
+
+  /**
+   * The model sometimes files a plain search under a fact question or chat ("I don't remember the name, but
+   * it said AF8841", "my transcript"). When the rules are sure it is a search for files, it is answered as
+   * one, from the same single model call. Never with a file open, and never for questions that ask for a
+   * fact ("When is my rent due?", "How much was the bill?").
+   */
+  searchOverride(route, question, { fileId }) {
+    if (fileId || !['drive_question', 'chat'].includes(route.intent)) return null;
+    const asksForFact = /^\s*(?:when|how|why|who|whose|is|are|does|did|can|could|should|will|what(?!\s+(?:files?|documents?|pdfs?)\b))\b/i.test(question);
+    if (asksForFact && !intentRouter.SEARCH_START.test(question.trim())) return null;
+    const rules = intentRouter.routeIntent(question);
+    const parsed = parseQuery(question);
+    const looksLikeSearch = ['search', 'smart_search'].includes(rules.intent) || /\b(?:it|i)\s+(?:said|wrote|mentioned)\b/i.test(question);
+    if (!looksLikeSearch || !(parsed.text || Object.keys(parsed.filters).length)) return null;
+    return {
+      ...route,
+      intent: 'smart_search',
+      lookFor: parsed.contentCue ? 'words_inside_files' : 'what_the_file_is',
+      searchTerms: route.searchTerms || parsed.text,
+      rule: `${route.rule}+rules:search`,
+    };
   }
 
   /** A file as the chat lists it (clickable in the answer). */

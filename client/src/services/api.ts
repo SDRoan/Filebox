@@ -588,7 +588,7 @@ export interface AdvancedSearchResult {
   access: { role: 'owner' | 'editor' | 'viewer'; source: 'owned' | 'shared' | 'team'; teamName?: string };
   score: number;
   matchedTerms: string[];
-  matchedIn: Array<'name' | 'content' | 'type' | 'category' | 'topic'>;
+  matchedIn: Array<'name' | 'content' | 'type' | 'category' | 'topic' | 'meaning'>;
   snippet: { text: string; highlights: Array<[number, number]>; source: string } | null;
   classification: FileClassification;
 }
@@ -599,7 +599,13 @@ export interface AdvancedSearchResponse {
   results: AdvancedSearchResult[];
   total: number;
   groups: { categories: SearchGroup[]; documentTypes: SearchGroup[] };
-  applied: Record<string, unknown> & { terms: string[] };
+  applied: Record<string, unknown> & {
+    terms: string[];
+    text?: string;
+    // What was read out of plain words ("invoices from September"), when the search asked for that.
+    parsed?: { understood: Array<{ key: string; label: string }>; confidence: 'high' | 'low' | 'model'; vague: string; usedModel: boolean; cached: boolean; original: string };
+    semantic?: { requested: string; used: boolean; added: number; reason: string; weak: boolean };
+  };
 }
 
 export interface AdvancedSearchParams {
@@ -619,6 +625,10 @@ export interface AdvancedSearchParams {
   limit?: number;
   offset?: number;
   tz?: number;
+  // 'rules' reads filters out of the words; 'model' may also ask the local model once (after Enter).
+  parse?: 'off' | 'rules' | 'model';
+  // 'on' only when the person asked to search by meaning.
+  semantic?: 'on';
 }
 
 export const advancedSearchAPI = {

@@ -43,6 +43,13 @@
 .adv-button-primary:disabled, .adv-button-secondary:disabled, .adv-button-quiet:disabled { opacity: 0.5; cursor: default; }
 .adv-search button:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
+/* ---- What was read out of the words, and searching by meaning */
+.adv-understood { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 0; font-size: 0.85rem; color: var(--text-secondary); }
+.adv-understood > span { font-weight: 600; }
+.adv-meaning { margin-top: 16px; padding: 14px 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; background: var(--bg-secondary); border: 1px solid var(--border-light); border-radius: var(--radius-lg, 12px); }
+.adv-meaning p { margin: 0; font-size: 0.88rem; color: var(--text-secondary); flex: 1 1 260px; }
+.adv-meaning-note { margin: 12px 0 0; font-size: 0.85rem; color: var(--text-secondary); }
+
 /* ---- Pills and browse strip */
 .adv-pills { margin: 14px 0 0; }
 .adv-pill { min-height: 34px; padding: 0 12px; font: inherit; font-size: 0.85rem; color: var(--primary-dark); background: var(--bg-tertiary); border: 1px solid var(--border-medium); border-radius: 999px; cursor: pointer; }
