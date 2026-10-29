@@ -9,6 +9,7 @@ const User = require('../models/User');
 const grid = require('../utils/boardGrid');
 const { effectiveClassification } = require('./fileClassifier');
 const { technicalType } = require('./advancedSearch');
+const { cleanDoc, RichTextError } = require('./richTextSchema');
 
 /**
  * Boards: a person's tabbed workspace. Every value that reaches the database is checked here; nothing
@@ -41,7 +42,33 @@ class BoardInputError extends Error {
   constructor(message, status = 400, extra = {}) { super(message); this.status = status; Object.assign(this, extra); }
 }
 const BLOCK_ID = /^[a-z0-9]{10}$/;
-const BLOCK_TYPES = ['file', 'folder'];
+const BLOCK_TYPES = ['file', 'folder', 'note', 'text'];
+const NOTE_COLORS = Object.freeze(['yellow', 'pink', 'blue', 'green', 'purple', 'orange']);
+const REF_TYPES = ['file', 'folder'];
+const NOTE_CONTROL = new RegExp('[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]', 'g');
+
+/** A sticky note: plain text only. Title one line, up to 80 characters; body up to 4,000; one of six colours. */
+function cleanNote(raw) {
+  if (raw !== undefined && (raw === null || typeof raw !== 'object' || Array.isArray(raw))) throw new BoardInputError('This note could not be saved.');
+  const text = (value) => (typeof value === 'string' ? value : '');
+  const title = text(raw?.title).replace(/\s+/g, ' ').replace(NOTE_CONTROL, '').trim();
+  const body = text(raw?.body).replace(/\r\n?/g, '\n').replace(NOTE_CONTROL, '');
+  if (Array.from(title).length > LIMITS.noteTitle) throw new BoardInputError(`Note titles can be up to ${LIMITS.noteTitle} characters.`);
+  if (Array.from(body).length > LIMITS.noteBody) throw new BoardInputError(`A note can hold up to ${LIMITS.noteBody.toLocaleString('en-US')} characters.`);
+  return { title, body, color: NOTE_COLORS.includes(raw?.color) ? raw.color : 'yellow' };
+}
+
+/** A text area's document, cleaned against the rich-text allowlist (services/richTextSchema.js). */
+function cleanTextBlock(raw) {
+  if (raw === undefined) return { doc: { type: 'doc', content: [{ type: 'paragraph' }] } };
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new BoardInputError('This text could not be saved.');
+  try {
+    return { doc: cleanDoc(raw.doc).doc };
+  } catch (error) {
+    if (error instanceof RichTextError) throw new BoardInputError(error.message, error.status);
+    throw error;
+  }
+}
 const UNAVAILABLE_TO_ADD = "Something you tried to add isn't available.";
 
 const newTabId = () => {
@@ -295,8 +322,11 @@ async function resolveBlocks(userId, blocks) {
     blocks.filter(b => b.type === 'file').map(b => b.fileId),
     blocks.filter(b => b.type === 'folder').map(b => b.folderId));
   return blocks.map((b) => {
+    const place = { id: b.id, type: b.type, x: b.x, y: b.y, w: b.w, h: b.h };
+    if (b.type === 'note') return { ...place, note: b.note };
+    if (b.type === 'text') return { ...place, text: b.text };
     const ref = b.type === 'file' ? files.get(idOf(b.fileId)) : folders.get(idOf(b.folderId));
-    return { id: b.id, type: b.type, x: b.x, y: b.y, w: b.w, h: b.h, ref: ref || { available: false } };
+    return { ...place, ref: ref || { available: false } };
   });
 }
 
@@ -335,16 +365,28 @@ async function saveBlocks(userId, tabId, body = {}) {
     let base = stored.get(id);
     if (!base) {
       const type = BLOCK_TYPES.includes(raw.type) ? raw.type : null;
-      const refId = type === 'file' ? raw.fileId : type === 'folder' ? raw.folderId : null;
-      if (!type || typeof refId !== 'string' || !mongoose.isValidObjectId(refId) || String(new mongoose.Types.ObjectId(refId)) !== refId) {
-        throw new BoardInputError(UNAVAILABLE_TO_ADD);
+      if (!type) throw new BoardInputError(UNAVAILABLE_TO_ADD);
+      if (type === 'note') base = { id, type, note: cleanNote(raw.note) };
+      else if (type === 'text') base = { id, type, text: cleanTextBlock(raw.text) };
+      else {
+        const refId = type === 'file' ? raw.fileId : raw.folderId;
+        if (typeof refId !== 'string' || !mongoose.isValidObjectId(refId) || String(new mongoose.Types.ObjectId(refId)) !== refId) {
+          throw new BoardInputError(UNAVAILABLE_TO_ADD);
+        }
+        base = { id, type, ...(type === 'file' ? { fileId: refId } : { folderId: refId }) };
+        added[type].push(refId);
       }
-      base = { id, type, ...(type === 'file' ? { fileId: refId } : { folderId: refId }) };
-      added[type].push(refId);
+    } else if (base.type === 'note' && raw.note !== undefined) {
+      // A note's or text area's words come from the browser only when they were edited; otherwise the stored ones stay.
+      base = { ...base, note: cleanNote(raw.note) };
+    } else if (base.type === 'text' && raw.text !== undefined) {
+      base = { ...base, text: cleanTextBlock(raw.text) };
     }
-    const key = `${base.type}:${idOf(base.type === 'file' ? base.fileId : base.folderId)}`;
-    if (refs.has(key)) throw new BoardInputError(`That ${base.type} is already on this tab.`);
-    refs.add(key);
+    if (REF_TYPES.includes(base.type)) {
+      const key = `${base.type}:${idOf(base.type === 'file' ? base.fileId : base.folderId)}`;
+      if (refs.has(key)) throw new BoardInputError(`That ${base.type} is already on this tab.`);
+      refs.add(key);
+    }
     return { ...base, x: raw.x, y: raw.y, w: raw.w, h: raw.h };
   });
 
@@ -355,7 +397,7 @@ async function saveBlocks(userId, tabId, body = {}) {
 
   const blocks = grid.normalize(next).map(b => ({
     id: b.id, type: b.type, x: b.x, y: b.y, w: b.w, h: b.h,
-    ...(b.type === 'file' ? { fileId: idOf(b.fileId) } : { folderId: idOf(b.folderId) }),
+    ...(b.type === 'file' ? { fileId: idOf(b.fileId) } : b.type === 'folder' ? { folderId: idOf(b.folderId) } : b.type === 'note' ? { note: b.note } : { text: b.text }),
   }));
   const bytes = tabBytes({ ...current, blocks });
   if (bytes > LIMITS.tabBytes) throw new BoardInputError('This tab is too large to save.', 413);
@@ -380,4 +422,4 @@ async function conflict(userId, tabId) {
   return new BoardInputError('This board was changed somewhere else.', 409, { tab: publicTab(latest), blocks: await resolveBlocks(userId, latest.blocks || []) });
 }
 
-module.exports = { LIMITS, COLORS, SIZES: grid.SIZES, BoardInputError, cleanName, cleanIcon, cleanColor, listTabs, createTab, updateTab, deleteTab, getTab, saveBlocks, resolveBlocks, DEFAULT_TAB_NAME };
+module.exports = { LIMITS, COLORS, NOTE_COLORS, SIZES: grid.SIZES, BoardInputError, cleanName, cleanIcon, cleanColor, listTabs, createTab, updateTab, deleteTab, getTab, saveBlocks, resolveBlocks, DEFAULT_TAB_NAME };

@@ -15,7 +15,7 @@ const fail = (res, error) => {
 
 router.get('/', auth, async (req, res) => {
   try {
-    res.json({ tabs: await boards.listTabs(req.user._id), limits: boards.LIMITS, colors: boards.COLORS, sizes: boards.SIZES });
+    res.json({ tabs: await boards.listTabs(req.user._id), limits: boards.LIMITS, colors: boards.COLORS, noteColors: boards.NOTE_COLORS, sizes: boards.SIZES });
   } catch (error) { fail(res, error); }
 });
 

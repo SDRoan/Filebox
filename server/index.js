@@ -59,6 +59,8 @@ app.use(cors({
 app.use('/api/users/preferences/background', express.json({ limit: '4mb' }));
 // Ask File Box screen awareness: a question may carry one screenshot of the visible File Box screen.
 app.use('/api/ai-assistant/chat', express.json({ limit: '6mb' }));
+// Boards: a text area can hold up to 100 KB and a tab up to 1 MB (checked by the Boards service itself).
+app.use('/api/workspace-boards', express.json({ limit: '1536kb' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

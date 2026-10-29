@@ -11,6 +11,8 @@ const MAX_Y = 2000;
 const SIZES = Object.freeze({
   file: Object.freeze({ w: 3, h: 2, minW: 2, minH: 2, maxW: 6, maxH: 4 }),
   folder: Object.freeze({ w: 3, h: 2, minW: 2, minH: 2, maxW: 6, maxH: 4 }),
+  note: Object.freeze({ w: 3, h: 3, minW: 2, minH: 2, maxW: 6, maxH: 6 }),
+  text: Object.freeze({ w: 6, h: 4, minW: 3, minH: 2, maxW: 12, maxH: 12 }),
 });
 
 const int = (value, min, max, fallback) => (Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) : fallback);

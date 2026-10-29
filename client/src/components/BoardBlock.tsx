@@ -1,8 +1,10 @@
 import React from 'react';
 import ItemActions from './ItemActions';
 import { DocumentIcon, ImageIcon, VideoIcon, AudioIcon, FolderIcon, StarredIcon } from './Icons';
-import { BoardBlock as Block } from '../services/api';
+import { BoardBlock as AnyBlock } from '../services/api';
 import { fileKind, formatRelativeTime } from '../utils/fileDisplay';
+
+type Block = Extract<AnyBlock, { type: 'file' | 'folder' }>;
 
 const FORMAT_LABEL: Record<string, string> = { pdf: 'PDF', image: 'Image', document: 'Document', text: 'Text', code: 'Code', other: 'File' };
 

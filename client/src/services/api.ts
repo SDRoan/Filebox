@@ -601,10 +601,24 @@ export type BoardRef =
     itemCount?: number;
   };
 
-export interface BoardBlock { id: string; type: 'file' | 'folder'; x: number; y: number; w: number; h: number; ref: BoardRef }
+export type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'purple' | 'orange';
+export interface BoardNote { title: string; body: string; color: NoteColor }
+// A text area's document: ProseMirror/TipTap JSON, cleaned by the server against an allowlist (never HTML).
+export interface RichTextNode { type: string; attrs?: Record<string, unknown>; content?: RichTextNode[]; text?: string; marks?: Array<{ type: string; attrs?: Record<string, unknown> }> }
+export interface BoardText { doc: RichTextNode }
 
-// What a save sends: positions for every block, and the file/folder id only for blocks added since the last save.
-export interface BoardBlockInput { id: string; type: 'file' | 'folder'; x: number; y: number; w: number; h: number; fileId?: string; folderId?: string }
+interface BoardPlace { id: string; x: number; y: number; w: number; h: number }
+export type BoardBlock =
+  | (BoardPlace & { type: 'file' | 'folder'; ref: BoardRef })
+  | (BoardPlace & { type: 'note'; note: BoardNote })
+  | (BoardPlace & { type: 'text'; text: BoardText });
+
+// What a save sends: positions for every block; a file/folder id only for blocks added since the last save;
+// a note's or text area's words only when they changed (the server keeps the stored ones otherwise).
+export interface BoardBlockInput {
+  id: string; type: BoardBlock['type']; x: number; y: number; w: number; h: number;
+  fileId?: string; folderId?: string; note?: BoardNote; text?: BoardText;
+}
 
 export interface BoardLimits { tabs: number; blocksPerTab: number; tabName: number; noteTitle: number; noteBody: number; richTextChars: number; richTextBytes: number; tabBytes: number; totalBytes: number }
 
@@ -633,6 +647,21 @@ export const workspaceBoardsAPI = {
   saveBlocks: async (tabId: string, rev: number, blocks: BoardBlockInput[]): Promise<{ tab: BoardTab; blocks: BoardBlock[] }> => {
     const response = await api.put(`/workspace-boards/tabs/${tabId}/blocks`, { rev, blocks });
     return response.data;
+  },
+  /**
+   * Best-effort save while the page is being hidden or closed (fetch keepalive, which browsers limit to about
+   * 64 KB). Not guaranteed to finish; returns false when it could not even be sent.
+   */
+  saveBlocksOnLeave: (tabId: string, rev: number, blocks: BoardBlockInput[]): boolean => {
+    const token = LOCAL_PREVIEW_ENABLED ? sessionStorage.getItem('filebox-local-token') : localStorage.getItem('token');
+    const body = JSON.stringify({ rev, blocks });
+    if (!token || body.length > 60000) return false;
+    try {
+      fetch(`${API_URL}/workspace-boards/tabs/${tabId}/blocks`, { method: 'PUT', keepalive: true, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body }).catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
   },
 };
 

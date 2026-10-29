@@ -7,13 +7,15 @@
 export const COLS = 12;
 export const MAX_Y = 2000;
 
-export type GridBlockType = 'file' | 'folder';
+export type GridBlockType = 'file' | 'folder' | 'note' | 'text';
 export interface GridBlock { id: string; type: GridBlockType; x: number; y: number; w: number; h: number }
 export interface BlockSize { w: number; h: number; minW: number; minH: number; maxW: number; maxH: number }
 
 export const SIZES: Record<GridBlockType, BlockSize> = {
   file: { w: 3, h: 2, minW: 2, minH: 2, maxW: 6, maxH: 4 },
   folder: { w: 3, h: 2, minW: 2, minH: 2, maxW: 6, maxH: 4 },
+  note: { w: 3, h: 3, minW: 2, minH: 2, maxW: 6, maxH: 6 },
+  text: { w: 6, h: 4, minW: 3, minH: 2, maxW: 12, maxH: 12 },
 };
 
 const int = (value: number, min: number, max: number, fallback: number) => (Number.isFinite(value) ? Math.min(max, Math.max(min, Math.round(value))) : fallback);

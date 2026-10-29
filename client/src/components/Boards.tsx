@@ -16,8 +16,8 @@ import './Boards.css';
 
 /**
  * Boards (/boards): a person's own tabbed workspace. Each tab is a board of File Box files and folders,
- * placed by reference: adding one never moves or copies it, and removing one never deletes it. Sticky
- * notes and text come next.
+ * placed by reference: adding one never moves or copies it, and removing one never deletes it, plus
+ * sticky notes (plain text) and text areas (rich text, edited with TipTap, loaded when first needed).
  *
  * Tabs are saved with the account. Which tab is open is remembered in this browser only, so switching
  * tabs never writes anything to the server.
@@ -30,7 +30,7 @@ const writeLastTab = (userId: string | undefined, tabId: string) => { try { loca
 const errorMessage = (error: any, fallback: string) => error?.response?.data?.message || fallback;
 
 /** "+ Add": a small menu, usable with the keyboard (arrows, Enter, Escape). */
-const AddMenu: React.FC<{ disabled: boolean; onFile: () => void; onFolder: () => void }> = ({ disabled, onFile, onFolder }) => {
+const AddMenu: React.FC<{ disabled: boolean; onFile: () => void; onFolder: () => void; onNote: () => void; onText: () => void }> = ({ disabled, onFile, onFolder, onNote, onText }) => {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -57,8 +57,8 @@ const AddMenu: React.FC<{ disabled: boolean; onFile: () => void; onFolder: () =>
         <div ref={menu} className="boards-add-menu" role="menu" aria-label="Add to this board" onKeyDown={onMenuKey}>
           <button type="button" role="menuitem" onClick={() => choose(onFile)}>File</button>
           <button type="button" role="menuitem" onClick={() => choose(onFolder)}>Folder</button>
-          <button type="button" role="menuitem" aria-disabled="true" className="is-coming">Sticky note <span>Coming next</span></button>
-          <button type="button" role="menuitem" aria-disabled="true" className="is-coming">Text area <span>Coming next</span></button>
+          <button type="button" role="menuitem" onClick={() => choose(onNote)}>Sticky note</button>
+          <button type="button" role="menuitem" onClick={() => choose(onText)}>Text area</button>
         </div>
       )}
     </div>
@@ -116,6 +116,8 @@ const Boards: React.FC = () => {
   const [dialog, setDialog] = useState<null | { kind: 'create' | 'addFile' | 'addFolder' } | { kind: 'rename' | 'delete'; tab: BoardTab }>(null);
   const [notice, setNotice] = useState<BoardNotice | null>(null);
   const [opened, setOpened] = useState<BoardBlock | null>(null);
+  // The one text area being edited (only it has a live editor).
+  const [editingId, setEditingId] = useState('');
   const navigate = useNavigate();
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -233,11 +235,18 @@ const Boards: React.FC = () => {
   const updateTabMeta = useCallback((tab: BoardTab) => setTabs(prev => prev.map(t => (t.id === tab.id ? { ...t, ...tab } : t))), []);
   const showNotice = useCallback((n: BoardNotice | null) => { setNotice(n); if (n) setAnnouncement(n.text); }, []);
   const board = useBoardTabBlocks({ tab: active, onTab: updateTabMeta, onNotice: showNotice });
-  useEffect(() => { setNotice(null); }, [activeId]);
+  useEffect(() => { setNotice(null); setEditingId(''); }, [activeId]);
+  // A new note or text area opens for typing straight away.
+  const focusNew = (id: string, type: 'note' | 'text') => {
+    if (type === 'text') { setEditingId(id); return; }
+    setTimeout(() => document.querySelector<HTMLElement>(`[data-block-id="${id}"] .board-note-title`)?.focus(), 80);
+  };
+  const addNote = () => focusNew(board.addNote(), 'note');
+  const addText = () => focusNew(board.addText(), 'text');
   const room = (limits?.blocksPerTab || 150) - board.blocks.length;
 
   const openBlock = (block: BoardBlock) => {
-    if (!block.ref.available) return;
+    if ((block.type !== 'file' && block.type !== 'folder') || !block.ref.available) return;
     if (block.type === 'file') { setOpened(block); return; }
     // A folder opens in My Files (or Team Spaces for a Team Space folder); nothing about it changes.
     if (block.ref.source === 'team') navigate(pagePath('teams'));
@@ -292,7 +301,7 @@ const Boards: React.FC = () => {
         <div className="boards-panel" role="tabpanel" id={`board-panel-${active.id}`} aria-labelledby={`board-tab-${active.id}`} tabIndex={0}>
           <div className="boards-panel-head">
             <h2>{active.icon && <span aria-hidden="true">{active.icon} </span>}{active.name}</h2>
-            <AddMenu disabled={room <= 0 || board.loading} onFile={() => setDialog({ kind: 'addFile' })} onFolder={() => setDialog({ kind: 'addFolder' })} />
+            <AddMenu disabled={room <= 0 || board.loading} onFile={() => setDialog({ kind: 'addFile' })} onFolder={() => setDialog({ kind: 'addFolder' })} onNote={addNote} onText={addText} />
             <ItemActions className="boards-tab-menu" label={`Options for tab ${active.name}`}>
               <button type="button" onClick={() => setDialog({ kind: 'rename', tab: active })}>Rename…</button>
               <button type="button" className="is-danger" onClick={() => { setDeleteError(''); setDialog({ kind: 'delete', tab: active }); }}>Delete tab…</button>
@@ -318,19 +327,15 @@ const Boards: React.FC = () => {
               <div className="boards-empty-actions">
                 <button type="button" className="boards-empty-action" onClick={() => setDialog({ kind: 'addFile' })}>Add file</button>
                 <button type="button" className="boards-empty-action" onClick={() => setDialog({ kind: 'addFolder' })}>Add folder</button>
-                {['Add sticky note', 'Add text area'].map(label => (
-                  <button type="button" key={label} className="boards-coming" aria-disabled="true" aria-describedby="boards-coming-note"
-                    onClick={() => setAnnouncement(`${label}: coming next.`)}>
-                    {label}
-                  </button>
-                ))}
+                <button type="button" className="boards-empty-action" onClick={addNote}>Add sticky note</button>
+                <button type="button" className="boards-empty-action" onClick={addText}>Add text area</button>
               </div>
-              <p id="boards-coming-note" className="boards-coming-note">Sticky notes and text areas are coming next.</p>
             </div>
           )}
 
           {!board.loading && !board.error && board.blocks.length > 0 && (
-            <BoardGrid blocks={board.blocks} pending={board.pending} onChange={board.change}
+            <BoardGrid blocks={board.blocks} pending={board.pending} saveState={board.saveState} editingId={editingId} onEditingChange={setEditingId}
+              onChange={board.change} onEdit={board.edit} onFlush={board.flush}
               onOpen={openBlock} onRemove={board.remove} onAnnounce={setAnnouncement} />
           )}
         </div>
@@ -358,7 +363,7 @@ const Boards: React.FC = () => {
             showNotice(board.addFolder(folderId) ? { text: `Added the folder to ${active?.name}. It stays where it is.` } : { tone: 'error', text: 'That folder is already on this tab.' });
           }} />
       )}
-      {opened && opened.ref.available && opened.ref.fileId && (
+      {opened && opened.type === 'file' && opened.ref.available && opened.ref.fileId && (
         <FilePreview file={{ _id: opened.ref.fileId, originalName: opened.ref.name, mimeType: opened.ref.mimeType || '', size: opened.ref.size || 0, access: opened.ref.role } as unknown as FileItemType}
           onClose={() => setOpened(null)} />
       )}
