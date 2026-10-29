@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { filesAPI } from '../services/api';
 import { timeBucket } from '../utils/fileDisplay';
 import FileRowList, { FileRowItem } from './FileRowList';
+import AddToBoardDialog from './AddToBoardDialog';
 import './OverviewPages.css';
 
 interface RecentViewProps {
@@ -12,6 +13,7 @@ const BUCKETS = ['Today', 'Yesterday', 'Earlier this week', 'Older'];
 
 const RecentView: React.FC<RecentViewProps> = ({ onOpenFile }) => {
   const [files, setFiles] = useState<FileRowItem[]>([]);
+  const [boardFile, setBoardFile] = useState<FileRowItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -44,9 +46,10 @@ const RecentView: React.FC<RecentViewProps> = ({ onOpenFile }) => {
       {grouped.map(group => (
         <section className="overview-section" key={group.bucket}>
           <div className="overview-section-head"><h2>{group.bucket}</h2></div>
-          <FileRowList files={group.files} onOpen={onOpenFile} />
+          <FileRowList files={group.files} onOpen={onOpenFile} onAddToBoard={setBoardFile} />
         </section>
       ))}
+      {boardFile && <AddToBoardDialog item={{ type: 'file', id: boardFile._id, name: boardFile.originalName }} onClose={() => setBoardFile(null)} />}
     </div>
   );
 };

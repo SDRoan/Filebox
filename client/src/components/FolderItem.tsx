@@ -5,8 +5,9 @@ import { Folder } from '../types';
 import { filesAPI } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import MoveCopyModal from './MoveCopyModal';
+import AddToBoardDialog from './AddToBoardDialog';
 import ClassificationBadge from './ClassificationBadge';
-import { FolderIcon, DownloadIcon, PackageIcon, StarredIcon, TrashIcon, RestoreIcon } from './Icons';
+import { FolderIcon, DownloadIcon, PackageIcon, StarredIcon, TrashIcon, RestoreIcon, BoardsIcon } from './Icons';
 import './FolderItem.css';
 
 interface FolderItemProps {
@@ -37,6 +38,7 @@ const FolderItem: React.FC<FolderItemProps> = ({
   const ownerId = typeof folder.owner === 'object' && folder.owner ? ((folder.owner as any)._id || (folder.owner as any).id) : folder.owner;
   const isOwner = !ownerId || !user || ownerId === user.id;
   const [showMoveModal, setShowMoveModal] = useState(false);
+  const [showAddToBoard, setShowAddToBoard] = useState(false);
 
   const handleDownloadAsZip = async () => {
     try {
@@ -95,10 +97,12 @@ const FolderItem: React.FC<FolderItemProps> = ({
           )}
         </div>
       </div>
-      {(showTrash || isOwner) && (
       <ItemActions className="folder-actions" label={`Actions for ${folder.name}`}>
         {!showTrash ? (
           <>
+            <button onClick={() => setShowAddToBoard(true)} className="icon-button" title="Add to board…">
+              <BoardsIcon size={18} color="currentColor" />
+            </button>
             {isOwner && (
               <button onClick={handleDownloadAsZip} className="icon-button" title="Download as ZIP">
                 <DownloadIcon size={18} color="currentColor" />
@@ -139,6 +143,8 @@ const FolderItem: React.FC<FolderItemProps> = ({
           </>
         )}
       </ItemActions>
+      {showAddToBoard && (
+        <AddToBoardDialog item={{ type: 'folder', id: folder._id, name: folder.name }} onClose={() => setShowAddToBoard(false)} />
       )}
       {showMoveModal && (
         <MoveCopyModal

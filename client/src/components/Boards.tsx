@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { workspaceBoardsAPI, BoardTab, BoardLimits, BoardBlock } from '../services/api';
 import ItemActions from './ItemActions';
 import BoardDialog from './BoardDialog';
+import BoardTabDialog, { TabLook } from './BoardTabDialog';
 import BoardGrid from './BoardGrid';
 import BoardAddFileDialog from './BoardAddFileDialog';
 import FolderPickerModal from './FolderPickerModal';
@@ -12,6 +13,7 @@ import { BoardsIcon, PlusIcon } from './Icons';
 import { useBoardTabBlocks, BoardNotice } from '../hooks/useBoardTabBlocks';
 import { pagePath } from '../config/workspaceNavigation';
 import { FileItemType } from '../types';
+import { readOpenTab, writeOpenTab, tabAccent } from '../utils/boardTabs';
 import './Boards.css';
 
 /**
@@ -19,13 +21,10 @@ import './Boards.css';
  * placed by reference: adding one never moves or copies it, and removing one never deletes it, plus
  * sticky notes (plain text) and text areas (rich text, edited with TipTap, loaded when first needed).
  *
- * Tabs are saved with the account. Which tab is open is remembered in this browser only, so switching
- * tabs never writes anything to the server.
+ * Tabs are saved with the account, with their order and which one is the default. Opening Boards fresh
+ * shows the default tab; within one browser session a reload or coming back returns to the tab that was
+ * open (kept in sessionStorage), so switching tabs never writes anything to the server.
  */
-
-const lastTabKey = (userId?: string) => `filebox-boards-last-tab-${userId || 'me'}`;
-const readLastTab = (userId?: string) => { try { return localStorage.getItem(lastTabKey(userId)) || ''; } catch { return ''; } };
-const writeLastTab = (userId: string | undefined, tabId: string) => { try { localStorage.setItem(lastTabKey(userId), tabId); } catch { /* only a convenience */ } };
 
 const errorMessage = (error: any, fallback: string) => error?.response?.data?.message || fallback;
 
@@ -65,47 +64,6 @@ const AddMenu: React.FC<{ disabled: boolean; onFile: () => void; onFolder: () =>
   );
 };
 
-/** Name a new tab, or rename one. */
-const TabNameDialog: React.FC<{ mode: 'create' | 'rename'; initial: string; max: number; onSave: (name: string) => Promise<string | null>; onClose: () => void }> = ({ mode, initial, max, onSave, onClose }) => {
-  const [name, setName] = useState(initial);
-  const [error, setError] = useState('');
-  const [saving, setSaving] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  // Counted in characters as people see them (an emoji is one), the same way the server counts.
-  const length = Array.from(name.trim()).length;
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!name.trim()) { setError('Give the tab a name.'); return; }
-    setSaving(true);
-    const problem = await onSave(name);
-    if (problem) {
-      setError(problem);
-      setSaving(false);
-      // The field was disabled while saving; put the cursor back so they can fix it or save again.
-      setTimeout(() => inputRef.current?.focus(), 0);
-    }
-  };
-  return (
-    <BoardDialog title={mode === 'create' ? 'New tab' : 'Rename tab'} onClose={onClose}>
-      <form onSubmit={submit}>
-        <label className="boards-field">
-          <span>Tab name</span>
-          <input ref={inputRef} value={name} maxLength={max + 10} onChange={event => { setName(event.target.value); setError(''); }}
-            placeholder="Work, School, Bills, Project A…" aria-invalid={Boolean(error) || length > max} aria-describedby="boards-name-help" disabled={saving} />
-        </label>
-        <p id="boards-name-help" className={`boards-field-help ${length > max ? 'is-over' : ''}`}>{length}/{max}</p>
-        {error && <p className="boards-dialog-error" role="alert">{error}</p>}
-        <div className="boards-dialog-actions">
-          <button type="button" className="boards-button-secondary" onClick={onClose} disabled={saving}>Cancel</button>
-          <button type="submit" className="boards-button-primary" disabled={saving || !name.trim() || length > max || (mode === 'rename' && name.trim() === initial)}>
-            {saving ? 'Saving…' : mode === 'create' ? 'Create tab' : 'Save'}
-          </button>
-        </div>
-      </form>
-    </BoardDialog>
-  );
-};
-
 const Boards: React.FC = () => {
   const { user } = useAuth();
   const [tabs, setTabs] = useState<BoardTab[]>([]);
@@ -113,12 +71,17 @@ const Boards: React.FC = () => {
   const [activeId, setActiveId] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [dialog, setDialog] = useState<null | { kind: 'create' | 'addFile' | 'addFolder' } | { kind: 'rename' | 'delete'; tab: BoardTab }>(null);
+  const [dialog, setDialog] = useState<null | { kind: 'create' | 'addFile' | 'addFolder' } | { kind: 'edit' | 'delete'; tab: BoardTab }>(null);
   const [notice, setNotice] = useState<BoardNotice | null>(null);
   const [opened, setOpened] = useState<BoardBlock | null>(null);
   // The one text area being edited (only it has a live editor).
   const [editingId, setEditingId] = useState('');
   const navigate = useNavigate();
+  const location = useLocation();
+  // "Open board" after Add to board… from a file menu asks for that tab.
+  const requestedTab = (location.state as { openTabId?: string } | null)?.openTabId;
+  // A notice to show once a newly opened tab is on screen (switching tabs clears notices).
+  const noticeAfterSwitch = useRef<BoardNotice | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [announcement, setAnnouncement] = useState('');
@@ -135,7 +98,7 @@ const Boards: React.FC = () => {
 
   const choose = useCallback((list: BoardTab[], preferred?: string) => {
     const found = (id?: string) => (id && list.some(t => t.id === id) ? id : '');
-    return found(preferred) || found(readLastTab(user?.id)) || list.find(t => t.isDefault)?.id || list[0]?.id || '';
+    return found(preferred) || found(readOpenTab(user?.id)) || list.find(t => t.isDefault)?.id || list[0]?.id || '';
   }, [user?.id]);
 
   useEffect(() => {
@@ -145,20 +108,30 @@ const Boards: React.FC = () => {
         if (cancelled) return;
         setTabs(data.tabs);
         setLimits(data.limits);
-        setActiveId(choose(data.tabs));
+        setActiveId(choose(data.tabs, requestedTab));
         setLoading(false);
       })
       .catch((error) => { if (!cancelled) { setLoadError(errorMessage(error, 'Boards are not available right now.')); setLoading(false); } });
     return () => { cancelled = true; };
+    // The requested tab only matters when the page first opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [choose]);
 
   const activate = (id: string) => {
     setActiveId(id);
-    writeLastTab(user?.id, id);
+    writeOpenTab(user?.id, id);
   };
+  // The open tab is remembered for this session even when it was chosen for us (default, deleted, …).
+  useEffect(() => { if (activeId) writeOpenTab(user?.id, activeId); }, [activeId, user?.id]);
 
   // Tabs pattern: arrow keys move between tabs (and open them), Home/End jump to the first/last.
+  // Alt + Shift + Left/Right moves the tab itself.
   const onTabKeyDown = (event: React.KeyboardEvent, index: number) => {
+    if (event.altKey && event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      event.preventDefault();
+      moveTab(tabs[index], event.key === 'ArrowLeft' ? -1 : 1);
+      return;
+    }
     const last = tabs.length - 1;
     const target = { ArrowRight: index === last ? 0 : index + 1, ArrowLeft: index === 0 ? last : index - 1, Home: 0, End: last }[event.key];
     if (target === undefined) return;
@@ -167,9 +140,9 @@ const Boards: React.FC = () => {
     tabRefs.current.get(tabs[target].id)?.focus();
   };
 
-  const createTab = async (name: string) => {
+  const createTab = async ({ name, icon, color }: TabLook) => {
     try {
-      const { tab } = await workspaceBoardsAPI.createTab({ name });
+      const { tab } = await workspaceBoardsAPI.createTab({ name, icon, color });
       setTabs(prev => [...prev, tab]);
       activate(tab.id);
       setDialog(null);
@@ -181,28 +154,78 @@ const Boards: React.FC = () => {
     }
   };
 
-  const renameTab = async (tab: BoardTab, name: string) => {
+  const editTab = async (tab: BoardTab, { name, icon, color }: TabLook) => {
     try {
-      const { tab: saved } = await workspaceBoardsAPI.updateTab(tab.id, { name, rev: tab.rev });
-      setTabs(prev => prev.map(t => (t.id === saved.id ? saved : t)));
+      const { tab: saved } = await workspaceBoardsAPI.updateTab(tab.id, { name, icon, color, rev: tab.rev });
+      setTabs(prev => prev.map(t => (t.id === saved.id ? { ...t, ...saved } : t)));
       setDialog(null);
-      setAnnouncement(`Renamed to ${saved.name}.`);
+      setAnnouncement(`Saved ${saved.name}.`);
       return null;
     } catch (error: any) {
       // Changed on another device: show what is saved now, and let them try again from there.
       if (error?.response?.status === 409 && error.response.data?.tab) {
         const latest: BoardTab = error.response.data.tab;
         setTabs(prev => prev.map(t => (t.id === latest.id ? latest : t)));
-        setDialog({ kind: 'rename', tab: latest });
+        setDialog({ kind: 'edit', tab: latest });
         setAnnouncement('This tab was changed somewhere else. Showing the latest version.');
-        return 'This tab was changed somewhere else. Its latest name is shown; try again.';
+        return 'This tab was changed somewhere else. Its latest version is shown; try again.';
       }
       if (error?.response?.status === 404) {
         setTabs(prev => prev.filter(t => t.id !== tab.id));
         setDialog(null);
         return null;
       }
-      return errorMessage(error, "Couldn't rename the tab. Try again.");
+      return errorMessage(error, "Couldn't save the tab. Try again.");
+    }
+  };
+
+  /** Move a tab one place left or right (saved at once; never touches the tab's blocks or revision). */
+  const moveTab = async (tab: BoardTab, direction: -1 | 1) => {
+    const from = tabs.findIndex(t => t.id === tab.id);
+    const to = from + direction;
+    if (from < 0 || to < 0 || to >= tabs.length) return;
+    const before = tabs;
+    const next = [...tabs];
+    next.splice(from, 1);
+    next.splice(to, 0, tab);
+    setTabs(next);
+    focusTab(tab.id);
+    setAnnouncement(`Moved ${tab.name} to position ${to + 1} of ${next.length}.`);
+    try {
+      const { tabs: saved } = await workspaceBoardsAPI.reorderTabs(next.map(t => t.id));
+      setTabs(saved);
+    } catch (error: any) {
+      const latest: BoardTab[] | undefined = error?.response?.data?.tabs;
+      setTabs(latest || before);
+      setAnnouncement(latest ? 'Your tabs were changed somewhere else. Showing the latest order.' : "Couldn't move the tab. Try again.");
+      showNotice({ tone: 'error', text: latest ? 'Your tabs were changed somewhere else. Showing the latest order.' : "Couldn't move the tab. Try again." });
+    }
+  };
+
+  /** Copy a tab after it (its latest words are saved first). Opens the copy. */
+  const duplicateTab = async (tab: BoardTab) => {
+    try {
+      await board.flush();
+      const { tab: copy, tabs: list, skipped } = await workspaceBoardsAPI.duplicateTab(tab.id);
+      setTabs(list);
+      noticeAfterSwitch.current = {
+        text: `Duplicated ${tab.name} as ${copy.name}. Files and folders were not copied; the new tab points at the same items.${skipped ? ` ${skipped} unavailable ${skipped === 1 ? 'item was' : 'items were'} left out.` : ''}`,
+      };
+      activate(copy.id);
+      setAnnouncement(`Duplicated as ${copy.name}.`);
+      focusTab(copy.id);
+    } catch (error) {
+      showNotice({ tone: 'error', text: errorMessage(error, "Couldn't duplicate the tab. Try again.") });
+    }
+  };
+
+  const makeDefault = async (tab: BoardTab) => {
+    try {
+      const { tabs: list } = await workspaceBoardsAPI.setDefaultTab(tab.id);
+      setTabs(list);
+      showNotice({ text: `${tab.name} is now your default tab. It opens first when you come to Boards.` });
+    } catch (error) {
+      showNotice({ tone: 'error', text: errorMessage(error, "Couldn't change the default tab. Try again.") });
     }
   };
 
@@ -228,6 +251,24 @@ const Boards: React.FC = () => {
     }
   };
 
+  // The tab strip scrolls sideways when tabs do not fit: fade the edge that has more, and keep the open tab in view.
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [scrollEdges, setScrollEdges] = useState({ left: false, right: false });
+  const measureStrip = useCallback(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    const next = { left: el.scrollLeft > 2, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 2 };
+    setScrollEdges(prev => (prev.left === next.left && prev.right === next.right ? prev : next));
+  }, []);
+  useEffect(() => {
+    tabRefs.current.get(activeId)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    measureStrip();
+  }, [activeId, tabs, measureStrip]);
+  useEffect(() => {
+    window.addEventListener('resize', measureStrip);
+    return () => window.removeEventListener('resize', measureStrip);
+  }, [measureStrip]);
+
   const active = tabs.find(t => t.id === activeId);
   const atLimit = Boolean(limits && tabs.length >= limits.tabs);
 
@@ -235,7 +276,11 @@ const Boards: React.FC = () => {
   const updateTabMeta = useCallback((tab: BoardTab) => setTabs(prev => prev.map(t => (t.id === tab.id ? { ...t, ...tab } : t))), []);
   const showNotice = useCallback((n: BoardNotice | null) => { setNotice(n); if (n) setAnnouncement(n.text); }, []);
   const board = useBoardTabBlocks({ tab: active, onTab: updateTabMeta, onNotice: showNotice });
-  useEffect(() => { setNotice(null); setEditingId(''); }, [activeId]);
+  useEffect(() => {
+    setNotice(noticeAfterSwitch.current);
+    noticeAfterSwitch.current = null;
+    setEditingId('');
+  }, [activeId]);
   // A new note or text area opens for typing straight away.
   const focusNew = (id: string, type: 'note' | 'text') => {
     if (type === 'text') { setEditingId(id); return; }
@@ -244,6 +289,8 @@ const Boards: React.FC = () => {
   const addNote = () => focusNew(board.addNote(), 'note');
   const addText = () => focusNew(board.addText(), 'text');
   const room = (limits?.blocksPerTab || 150) - board.blocks.length;
+  const unavailable = board.blocks.filter(b => (b.type === 'file' || b.type === 'folder') && !b.ref.available).length;
+  const activeIndex = tabs.findIndex(t => t.id === activeId);
 
   const openBlock = (block: BoardBlock) => {
     if ((block.type !== 'file' && block.type !== 'folder') || !block.ref.available) return;
@@ -264,13 +311,14 @@ const Boards: React.FC = () => {
 
   return (
     <section className="boards" aria-labelledby="boards-title">
+      <div className="boards-top">
       <header className="boards-head">
         <h1 id="boards-title">Boards</h1>
         <p>Your own spaces for files, folders and notes. Placing something on a board never moves it.</p>
       </header>
 
       <div className="boards-tabbar">
-        <div className="boards-tabs" role="tablist" aria-label="Board tabs">
+        <div ref={stripRef} className={`boards-tabs ${scrollEdges.left ? 'can-scroll-left' : ''} ${scrollEdges.right ? 'can-scroll-right' : ''}`} role="tablist" aria-label="Board tabs" onScroll={measureStrip}>
           {tabs.map((tab, index) => (
             <button
               key={tab.id}
@@ -281,12 +329,14 @@ const Boards: React.FC = () => {
               aria-selected={tab.id === activeId}
               aria-controls={`board-panel-${tab.id}`}
               tabIndex={tab.id === activeId ? 0 : -1}
-              className={`boards-tab ${tab.id === activeId ? 'is-active' : ''}`}
+              className={`boards-tab ${tab.id === activeId ? 'is-active' : ''} ${tabAccent(tab.color) ? 'has-color' : ''}`}
+              style={tabAccent(tab.color) ? { ['--tab-accent' as any]: tabAccent(tab.color) } : undefined}
               onClick={() => activate(tab.id)}
               onKeyDown={(event) => onTabKeyDown(event, index)}
             >
               {tab.icon && <span className="boards-tab-icon" aria-hidden="true">{tab.icon}</span>}
               <span className="boards-tab-name">{tab.name}</span>
+              {tab.isDefault && <span className="boards-tab-default" title="Default tab" aria-hidden="true">⌂</span>}
               {tab.isDefault && <span className="boards-visually-hidden"> (default)</span>}
             </button>
           ))}
@@ -296,6 +346,7 @@ const Boards: React.FC = () => {
           <PlusIcon size={16} />
         </button>
       </div>
+      </div>
 
       {active && (
         <div className="boards-panel" role="tabpanel" id={`board-panel-${active.id}`} aria-labelledby={`board-tab-${active.id}`} tabIndex={0}>
@@ -303,7 +354,14 @@ const Boards: React.FC = () => {
             <h2>{active.icon && <span aria-hidden="true">{active.icon} </span>}{active.name}</h2>
             <AddMenu disabled={room <= 0 || board.loading} onFile={() => setDialog({ kind: 'addFile' })} onFolder={() => setDialog({ kind: 'addFolder' })} onNote={addNote} onText={addText} />
             <ItemActions className="boards-tab-menu" label={`Options for tab ${active.name}`}>
-              <button type="button" onClick={() => setDialog({ kind: 'rename', tab: active })}>Rename…</button>
+              <button type="button" onClick={() => setDialog({ kind: 'edit', tab: active })}>Edit tab…</button>
+              <button type="button" onClick={() => duplicateTab(active)} disabled={atLimit} title={atLimit ? `You can have up to ${limits?.tabs} tabs` : undefined}>Duplicate tab</button>
+              {activeIndex > 0 && <button type="button" onClick={() => moveTab(active, -1)}>Move left</button>}
+              {activeIndex < tabs.length - 1 && <button type="button" onClick={() => moveTab(active, 1)}>Move right</button>}
+              {active.isDefault
+                ? <span className="boards-menu-note" role="note">✓ Default tab</span>
+                : <button type="button" onClick={() => makeDefault(active)}>Set as default tab</button>}
+              {unavailable > 0 && <button type="button" onClick={() => board.removeUnavailable()}>Remove unavailable items ({unavailable})</button>}
               <button type="button" className="is-danger" onClick={() => { setDeleteError(''); setDialog({ kind: 'delete', tab: active }); }}>Delete tab…</button>
             </ItemActions>
           </div>
@@ -368,17 +426,18 @@ const Boards: React.FC = () => {
           onClose={() => setOpened(null)} />
       )}
       {dialog?.kind === 'create' && limits && (
-        <TabNameDialog mode="create" initial="" max={limits.tabName} onSave={createTab} onClose={() => setDialog(null)} />
+        <BoardTabDialog mode="create" initial={{ name: '', icon: '', color: '' }} max={limits.tabName} onSave={createTab} onClose={() => setDialog(null)} />
       )}
-      {dialog?.kind === 'rename' && limits && (
-        <TabNameDialog key={dialog.tab.id} mode="rename" initial={dialog.tab.name} max={limits.tabName}
-          onSave={(name) => renameTab(dialog.tab, name)} onClose={() => setDialog(null)} />
+      {dialog?.kind === 'edit' && limits && (
+        <BoardTabDialog key={dialog.tab.id} mode="edit" initial={{ name: dialog.tab.name, icon: dialog.tab.icon, color: dialog.tab.color }} max={limits.tabName}
+          onSave={(look) => editTab(dialog.tab, look)} onClose={() => setDialog(null)} />
       )}
       {dialog?.kind === 'delete' && (
         <BoardDialog title={`Delete “${dialog.tab.name}”?`} describedBy="boards-delete-text" onClose={() => !deleting && setDialog(null)}>
           <p id="boards-delete-text" className="boards-dialog-text">
             This removes the tab and everything placed on it. Files and folders stay exactly where they are in File Box.
             {tabs.length === 1 && ' It is your only tab, so a new empty tab will take its place.'}
+            {tabs.length > 1 && dialog.tab.isDefault && ` It is your default tab, so ${tabs.find(t => t.id !== dialog.tab.id)?.name} will become the default.`}
           </p>
           {deleteError && <p className="boards-dialog-error" role="alert">{deleteError}</p>}
           <div className="boards-dialog-actions">

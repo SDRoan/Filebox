@@ -51,6 +51,7 @@ const BoardBlock: React.FC<BoardBlockProps> = ({ block, pending = false, phone, 
           <p className="board-block-name">{block.type === 'file' ? 'File no longer available' : 'Folder no longer available'}</p>
           {menu}
         </div>
+        <p className="board-block-why">It may have been deleted, moved to Trash, or is no longer shared with you.</p>
         <button type="button" className="board-block-remove" onClick={onRemove}>Remove from board</button>
       </div>
     );

@@ -2,12 +2,13 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { FileItem } from '../types';
 import { shareAPI, filesAPI } from '../services/api';
 import ShareDialog from './ShareDialog';
+import AddToBoardDialog from './AddToBoardDialog';
 import { fileKind, formatRelativeTime } from '../utils/fileDisplay';
 import { useAuth } from '../context/AuthContext';
 import { io, Socket } from 'socket.io-client';
 import FileSortFilter, { SortOption, SortOrder, FilterOption } from './FileSortFilter';
 import FilePreview from './FilePreview';
-import { UsersIcon, ArrowUpIcon, BellIcon, SearchIcon, AnalyticsIcon, FolderIcon, UserIcon, ImageIcon, DocumentIcon, SummaryIcon, VideoIcon, AudioIcon, PaperclipIcon, EditIcon, EyeIcon, DownloadIcon, TrashIcon, AnalyticsIcon as ActivityIcon } from './Icons';
+import { UsersIcon, ArrowUpIcon, BellIcon, SearchIcon, AnalyticsIcon, FolderIcon, UserIcon, ImageIcon, DocumentIcon, SummaryIcon, VideoIcon, AudioIcon, PaperclipIcon, EditIcon, EyeIcon, DownloadIcon, TrashIcon, BoardsIcon, AnalyticsIcon as ActivityIcon } from './Icons';
 import './SharedFiles.css';
 
 // SharedFile extends FileItem but allows owner to be optional and have backend shape
@@ -49,6 +50,7 @@ const SharedFiles: React.FC = () => {
   const [showActivity, setShowActivity] = useState<string | null>(null);
   const [fileActivity, setFileActivity] = useState<{ [key: string]: any[] }>({});
   const [sharingFile, setSharingFile] = useState<SharedFile | null>(null);
+  const [boardFile, setBoardFile] = useState<SharedFile | null>(null);
   const { user } = useAuth();
   const socketRef = useRef<Socket | null>(null);
 
@@ -505,6 +507,17 @@ const SharedFiles: React.FC = () => {
                           >
                             <DownloadIcon size={18} color="currentColor" />
                           </button>
+                          <button
+                            className="action-button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBoardFile(file);
+                            }}
+                            title="Add to board…"
+                            aria-label={`Add ${file.originalName} to a board`}
+                          >
+                            <BoardsIcon size={18} color="currentColor" />
+                          </button>
                           {activeTab === 'by-me' ? (
                             <button
                               className="action-button"
@@ -580,6 +593,9 @@ const SharedFiles: React.FC = () => {
         )}
       </div>
 
+      {boardFile && (
+        <AddToBoardDialog item={{ type: 'file', id: boardFile._id, name: boardFile.originalName }} onClose={() => setBoardFile(null)} />
+      )}
       {sharingFile && (
         <ShareDialog
           fileId={sharingFile._id}

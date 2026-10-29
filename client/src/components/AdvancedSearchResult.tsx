@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import ItemActions from './ItemActions';
 import ShareDialog from './ShareDialog';
+import AddToBoardDialog from './AddToBoardDialog';
 import MoveCopyModal from './MoveCopyModal';
 import ChangeCategoryDialog from './ChangeCategoryDialog';
 import { DocumentIcon, ImageIcon, VideoIcon, AudioIcon, StarredIcon } from './Icons';
@@ -66,7 +67,7 @@ interface AdvancedSearchResultProps {
 }
 
 const AdvancedSearchResult: React.FC<AdvancedSearchResultProps> = ({ result, taxonomy, dateField, activeTopic, onOpen, onShowInFolder, onTopic, onChanged, onStarred }) => {
-  const [dialog, setDialog] = useState<'' | 'share' | 'move' | 'category'>('');
+  const [dialog, setDialog] = useState<'' | 'share' | 'move' | 'category' | 'board'>('');
   const cardRef = useRef<HTMLLIElement>(null);
   const caps = capabilitiesFor(result.access.role);
   const cls = result.classification;
@@ -159,6 +160,7 @@ const AdvancedSearchResult: React.FC<AdvancedSearchResultProps> = ({ result, tax
             <button type="button" onClick={() => onOpen(result)}>Open</button>
             {caps.canDownload && <button type="button" onClick={download}>Download</button>}
             <button type="button" onClick={() => onShowInFolder(result)}>Show in folder</button>
+            <button type="button" onClick={() => setDialog('board')}>Add to board…</button>
             {caps.canShare && <button type="button" onClick={() => setDialog('share')}>Share</button>}
             {caps.canMove && <button type="button" onClick={() => setDialog('move')}>Move</button>}
             {cls.canChange && <button type="button" onClick={() => setDialog('category')}>Change category</button>}
@@ -166,6 +168,7 @@ const AdvancedSearchResult: React.FC<AdvancedSearchResultProps> = ({ result, tax
           </ItemActions>
         </div>
       </div>
+      {dialog === 'board' && <AddToBoardDialog item={{ type: 'file', id: result._id, name: result.originalName }} onClose={closeDialog} />}
       {dialog === 'share' && <ShareDialog fileId={result._id} fileName={result.originalName} onClose={closeDialog} />}
       {dialog === 'move' && (
         <MoveCopyModal itemId={result._id} itemName={result.originalName} itemType="file" operation="move" onClose={closeDialog}

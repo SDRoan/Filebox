@@ -6,6 +6,7 @@ import FilePreview from './FilePreview';
 import MoveCopyModal from './MoveCopyModal';
 import ShareDialog from './ShareDialog';
 import FileAIDialog from './FileAIDialog';
+import AddToBoardDialog from './AddToBoardDialog';
 import { capabilitiesFor, AccessRole } from '../utils/permissions';
 import { formatRelativeTime } from '../utils/fileDisplay';
 import { shareAPI } from '../services/api';
@@ -14,7 +15,7 @@ import FileComments from './FileComments';
 import FileActivity from './FileActivity';
 import FileRelationships from './FileRelationships';
 import ClassificationBadge from './ClassificationBadge';
-import { ImageIcon, VideoIcon, AudioIcon, DocumentIcon, SummaryIcon, AnalyticsIcon, EyeIcon, PackageIcon, CopyIcon, ShareIcon, ScrollIcon, CommentIcon, DownloadIcon, StarredIcon, TrashIcon, RestoreIcon, LinkIcon, EditIcon, AIAssistantIcon, SignatureIcon } from './Icons';
+import { ImageIcon, VideoIcon, AudioIcon, DocumentIcon, SummaryIcon, AnalyticsIcon, EyeIcon, PackageIcon, CopyIcon, ShareIcon, ScrollIcon, CommentIcon, DownloadIcon, StarredIcon, TrashIcon, RestoreIcon, LinkIcon, EditIcon, AIAssistantIcon, SignatureIcon, BoardsIcon } from './Icons';
 import SignPdfDialog from './SignPdfDialog';
 import ImageThumbnail from './ImageThumbnail';
 import ImageCaption from './ImageCaption';
@@ -62,6 +63,7 @@ const FileItem: React.FC<FileItemProps> = ({
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showAIDialog, setShowAIDialog] = useState(false);
+  const [showAddToBoard, setShowAddToBoard] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
   const [showSign, setShowSign] = useState(false);
   const [showComments, setShowComments] = useState(false);
@@ -350,6 +352,9 @@ const FileItem: React.FC<FileItemProps> = ({
                   <LinkIcon size={18} color="currentColor" />
                 </button>
               )}
+              <button onClick={() => setShowAddToBoard(true)} className="icon-button" title="Add to board…">
+                <BoardsIcon size={18} color="currentColor" />
+              </button>
               <button onClick={() => setShowAIDialog(true)} className="icon-button" title="Ask File Box">
                 <AIAssistantIcon size={18} color="currentColor" />
               </button>
@@ -468,6 +473,9 @@ const FileItem: React.FC<FileItemProps> = ({
             onMove?.();
           }}
         />
+      )}
+      {showAddToBoard && (
+        <AddToBoardDialog item={{ type: 'file', id: file._id, name: file.originalName }} onClose={() => setShowAddToBoard(false)} />
       )}
       {showAIDialog && (
         <FileAIDialog fileId={file._id} fileName={file.originalName} onClose={() => setShowAIDialog(false)} />

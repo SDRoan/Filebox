@@ -17,6 +17,20 @@
 .overview-section-head button:hover { text-decoration: underline; }
 
 .file-row-list { list-style: none; margin: 0; padding: 0; }
+.file-row-list li.has-actions { display: flex; align-items: center; gap: 4px; }
+.file-row-list li.has-actions > .file-row { flex: 1; min-width: 0; }
+/* Recent: a small actions menu per row ("Add to board…"), like the Advanced Search result menu. */
+.file-row-menu { position: relative; flex: none; }
+.file-row-menu summary { display: grid; place-items: center; width: 36px; height: 36px; color: var(--text-tertiary); border-radius: var(--radius-md, 8px); cursor: pointer; list-style: none; }
+.file-row-menu summary::-webkit-details-marker { display: none; }
+.file-row-menu summary:hover, .file-row-menu[open] summary { background: var(--bg-secondary); color: var(--text-primary); }
+.file-row-menu summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.file-row-menu .item-actions-popover {
+  position: absolute; right: 0; top: 40px; z-index: 30; display: flex; flex-direction: column; min-width: 170px; padding: 6px;
+  background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: var(--radius-md, 8px); box-shadow: var(--shadow-lg);
+}
+.file-row-menu .item-actions-popover button { min-height: 38px; padding: 0 12px; font: inherit; font-size: 0.88rem; text-align: left; color: var(--text-primary); background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+.file-row-menu .item-actions-popover button:hover, .file-row-menu .item-actions-popover button:focus-visible { background: var(--bg-secondary); }
 .file-row { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto 130px; align-items: center; gap: 12px; width: 100%; padding: 9px 8px; border: 0; border-radius: calc(6px * var(--fb-radius-scale, 1)); background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .file-row:hover { background: var(--fb-g-f2f5ee, #f2f5ee); }
 .file-row:focus-visible { outline: 2px solid var(--fb-g-9bb68d, #9bb68d); outline-offset: 1px; }
@@ -103,6 +117,8 @@
   .file-row { grid-template-columns: 30px minmax(0, 1fr); row-gap: 2px; }
   .file-row-detail { grid-column: 2; font-size: 11px; }
   .file-row-meta { display: none; }
+  .file-row-menu summary { width: 44px; height: 44px; }
+  .file-row-menu .item-actions-popover button { min-height: 44px; }
   .settings-account > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .home-search kbd { display: none; }
 }

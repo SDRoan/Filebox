@@ -639,6 +639,30 @@ export const workspaceBoardsAPI = {
     const response = await api.delete(`/workspace-boards/tabs/${tabId}`);
     return response.data;
   },
+  /** Copy a tab (its notes, text and the items it points at that are available now; never the files themselves). */
+  duplicateTab: async (tabId: string): Promise<{ tab: BoardTab; tabs: BoardTab[]; skipped: number }> => {
+    const response = await api.post(`/workspace-boards/tabs/${tabId}/duplicate`);
+    return response.data;
+  },
+  // Every tab id once, in the new order. A 409 carries the latest { tabs }.
+  reorderTabs: async (tabIds: string[]): Promise<{ tabs: BoardTab[] }> => {
+    const response = await api.put('/workspace-boards/tabs/order', { tabIds });
+    return response.data;
+  },
+  setDefaultTab: async (tabId: string): Promise<{ tabs: BoardTab[] }> => {
+    const response = await api.post(`/workspace-boards/tabs/${tabId}/default`);
+    return response.data;
+  },
+  /** Which of my tabs already hold this file or folder. */
+  placements: async (ref: { fileId?: string; folderId?: string }): Promise<{ tabIds: string[] }> => {
+    const response = await api.get('/workspace-boards/placements', { params: ref });
+    return response.data;
+  },
+  /** Add a file or folder to a tab at the first free spot (checked and placed by the server). */
+  addRef: async (tabId: string, type: 'file' | 'folder', id: string): Promise<{ tab: BoardTab; added: boolean }> => {
+    const response = await api.post(`/workspace-boards/tabs/${tabId}/refs`, { type, id });
+    return response.data;
+  },
   getTab: async (tabId: string): Promise<{ tab: BoardTab; blocks: BoardBlock[] }> => {
     const response = await api.get(`/workspace-boards/tabs/${tabId}`);
     return response.data;

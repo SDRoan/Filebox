@@ -295,8 +295,8 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     schedule(TYPING_DELAY, true);
   }, [schedule]);
 
-  /** Save now if anything is waiting (a note or text area lost focus). */
-  const flush = useCallback(() => { if (pending.current.actions.length) save(); }, [save]);
+  /** Save now if anything is waiting (a note or text area lost focus). Resolves once every save so far is done. */
+  const flush = useCallback((): Promise<void> => (pending.current.actions.length ? save() : queue.current), [save]);
 
   const addFiles = useCallback((files: AdvancedSearchResult[]) => {
     const onBoard = new Set(blocksRef.current.filter(b => b.type === 'file').map(refIdOf));
@@ -389,5 +389,37 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     });
   }, [schedule, onNotice]);
 
-  return { blocks, loading, error, pending: pendingRefs, saveState, change, edit, flush, addFiles, addFolder, addNote, addText, remove };
+  /** Take every unavailable file and folder off the board at once; one Undo puts them all back (until saved). */
+  const removeUnavailable = useCallback(() => {
+    const gone = blocksRef.current.filter(b => (b.type === 'file' || b.type === 'folder') && !b.ref.available);
+    if (!gone.length) return 0;
+    const ids = new Set(gone.map(b => b.id));
+    gone.forEach((b) => {
+      removedUnavailable.current.add(b.id);
+      pending.current.newRefs.delete(b.id);
+      pending.current.actions.push({ kind: 'remove', id: b.id });
+    });
+    syncPending();
+    setBlocks(blocksRef.current.filter(b => !ids.has(b.id)));
+    schedule(UNDO_WINDOW);
+    const count = `${gone.length} unavailable ${gone.length === 1 ? 'item' : 'items'}`;
+    onNotice({
+      text: `Removed ${count} from this board.`,
+      undo: () => {
+        // They can only come back before the removal was saved (they are not available to add again).
+        if (gone.some(b => !removedUnavailable.current.has(b.id))) {
+          onNotice({ tone: 'error', text: 'Those items can no longer be put back: they are not available to you.' });
+          return;
+        }
+        const back = gone.filter(b => !blocksRef.current.some(x => x.id === b.id));
+        setBlocks(back.reduce((list, b) => place([...list, b], b), blocksRef.current));
+        pending.current.actions.push({ kind: 'add', blocks: back });
+        schedule(0);
+        onNotice({ text: `Put back ${count}.` });
+      },
+    });
+    return gone.length;
+  }, [schedule, onNotice]);
+
+  return { blocks, loading, error, pending: pendingRefs, saveState, change, edit, flush, addFiles, addFolder, addNote, addText, remove, removeUnavailable };
 }

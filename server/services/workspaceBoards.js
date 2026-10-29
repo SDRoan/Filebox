@@ -131,9 +131,9 @@ async function settleDefault(userId, tabs) {
   return tabs.map(t => ({ ...t, isDefault: t.tabId === keep.tabId }));
 }
 
-async function createTabRecord(userId, { name, icon = '', color = '', isDefault = false }, existing) {
+async function createTabRecord(userId, { name, icon = '', color = '', isDefault = false, blocks = [] }, existing) {
   const order = existing.length ? Math.max(...existing.map(t => t.order)) + 1 : 0;
-  const record = { user: userId, tabId: newTabId(), name, icon, color, order, isDefault, rev: 0, blocks: [] };
+  const record = { user: userId, tabId: newTabId(), name, icon, color, order, isDefault, rev: 0, blocks };
   record.bytes = tabBytes(record);
   const total = existing.reduce((sum, t) => sum + (t.bytes || 0), 0);
   if (total + record.bytes > LIMITS.totalBytes) throw new BoardInputError('Your Boards are full. Remove something to add more.', 413);
@@ -160,7 +160,7 @@ async function createTab(userId, body = {}) {
 }
 
 /**
- * Rename a tab (and later: icon and color). `rev` must be the revision the browser last saw; if the tab
+ * Rename a tab, or change its emoji or color. `rev` must be the revision the browser last saw; if the tab
  * changed since (another device), nothing is saved and the current tab is returned with a 409.
  */
 async function updateTab(userId, tabId, body = {}) {
@@ -395,17 +395,8 @@ async function saveBlocks(userId, tabId, body = {}) {
     if (added.file.some(id => !files.has(id)) || added.folder.some(id => !folders.has(id))) throw new BoardInputError(UNAVAILABLE_TO_ADD);
   }
 
-  const blocks = grid.normalize(next).map(b => ({
-    id: b.id, type: b.type, x: b.x, y: b.y, w: b.w, h: b.h,
-    ...(b.type === 'file' ? { fileId: idOf(b.fileId) } : b.type === 'folder' ? { folderId: idOf(b.folderId) } : b.type === 'note' ? { note: b.note } : { text: b.text }),
-  }));
-  const bytes = tabBytes({ ...current, blocks });
-  if (bytes > LIMITS.tabBytes) throw new BoardInputError('This tab is too large to save.', 413);
-  const others = await WorkspaceTab.aggregate([
-    { $match: { user: new mongoose.Types.ObjectId(idOf(userId)), tabId: { $ne: tabId } } },
-    { $group: { _id: null, total: { $sum: '$bytes' } } },
-  ]);
-  if ((others[0]?.total || 0) + bytes > LIMITS.totalBytes) throw new BoardInputError('Your Boards are full. Remove something to add more.', 413);
+  const blocks = storedBlocks(next);
+  const bytes = await checkSize(userId, current, blocks);
 
   const updated = await WorkspaceTab.findOneAndUpdate(
     { user: userId, tabId, rev: body.rev },
@@ -416,10 +407,142 @@ async function saveBlocks(userId, tabId, body = {}) {
   return { tab: publicTab(updated), blocks: await resolveBlocks(userId, updated.blocks) };
 }
 
+/** Blocks as they are stored: laid out without overlaps, with only the fields each type keeps. */
+const storedBlocks = (list) => grid.normalize(list).map(b => ({
+  id: b.id, type: b.type, x: b.x, y: b.y, w: b.w, h: b.h,
+  ...(b.type === 'file' ? { fileId: idOf(b.fileId) } : b.type === 'folder' ? { folderId: idOf(b.folderId) } : b.type === 'note' ? { note: b.note } : { text: b.text }),
+}));
+
+/** The tab's new size in bytes, if it fits within the tab and per-person limits. */
+async function checkSize(userId, current, blocks) {
+  const bytes = tabBytes({ ...current, blocks });
+  if (bytes > LIMITS.tabBytes) throw new BoardInputError('This tab is too large to save.', 413);
+  const others = await WorkspaceTab.aggregate([
+    { $match: { user: new mongoose.Types.ObjectId(idOf(userId)), tabId: { $ne: current.tabId } } },
+    { $group: { _id: null, total: { $sum: '$bytes' } } },
+  ]);
+  if ((others[0]?.total || 0) + bytes > LIMITS.totalBytes) throw new BoardInputError('Your Boards are full. Remove something to add more.', 413);
+  return bytes;
+}
+
+// ---- Tab management (Phase 4). Order and the default are not content: they never change a tab's
+// revision or its "updated" time, so they never conflict with block saves.
+
+/** "Work copy", "Work copy 2", … kept within the name limit and different from every existing name. */
+function copyName(name, taken) {
+  for (let n = 1; ; n += 1) {
+    const suffix = n === 1 ? ' copy' : ` copy ${n}`;
+    const candidate = `${[...name].slice(0, LIMITS.tabName - suffix.length).join('').trimEnd()}${suffix}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+/** Write only the orders that change. */
+async function writeOrder(userId, tabIds, tabs) {
+  const orderOf = new Map(tabs.map(t => [t.tabId, t.order]));
+  const ops = tabIds.flatMap((tabId, order) => (orderOf.get(tabId) === order ? [] : [{ updateOne: { filter: { user: userId, tabId }, update: { $set: { order } }, timestamps: false } }]));
+  if (ops.length) await WorkspaceTab.bulkWrite(ops, { timestamps: false });
+}
+
+/**
+ * Copy a tab: its name (as "… copy"), emoji, colour, layout, sticky notes and text areas, and the files
+ * and folders it points at that the person can open now (never the files or folders themselves).
+ * Unavailable items are left out and counted. The copy sits right after the original.
+ */
+async function duplicateTab(userId, tabId) {
+  if (!TAB_ID.test(tabId || '')) throw new BoardInputError('Tab not found.', 404);
+  const source = await WorkspaceTab.findOne({ user: userId, tabId }).lean();
+  if (!source) throw new BoardInputError('Tab not found.', 404);
+  const existing = await WorkspaceTab.find({ user: userId }).select('tabId name order bytes').sort({ order: 1, createdAt: 1 }).lean();
+  if (existing.length >= LIMITS.tabs) throw new BoardInputError(`You can have up to ${LIMITS.tabs} tabs.`, 409);
+  const srcBlocks = source.blocks || [];
+  const { files, folders } = await resolveRefs(userId,
+    srcBlocks.filter(b => b.type === 'file').map(b => idOf(b.fileId)),
+    srcBlocks.filter(b => b.type === 'folder').map(b => idOf(b.folderId)), { withDetails: false });
+  const ids = new Set();
+  const freshId = () => { let id; do { id = newTabId(); } while (ids.has(id)); ids.add(id); return id; };
+  const kept = srcBlocks.filter(b => (b.type === 'file' ? files.has(idOf(b.fileId)) : b.type === 'folder' ? folders.has(idOf(b.folderId)) : true));
+  const blocks = storedBlocks(kept.map(b => ({ ...b, id: freshId() })));
+  const record = await createTabRecord(userId, { name: copyName(source.name, new Set(existing.map(t => t.name))), icon: source.icon || '', color: source.color || '', blocks }, existing);
+  const order = existing.map(t => t.tabId);
+  order.splice(order.indexOf(tabId) + 1, 0, record.tabId);
+  await writeOrder(userId, order, [...existing, record]);
+  return { tab: publicTab({ ...record, order: order.indexOf(record.tabId) }), tabs: await listTabs(userId), skipped: srcBlocks.length - kept.length };
+}
+
+/** Put the tabs in this order. The list must name every one of the person's tabs exactly once. */
+async function reorderTabs(userId, body = {}) {
+  const tabIds = body.tabIds;
+  const tabs = await WorkspaceTab.find({ user: userId }).select('tabId order').lean();
+  const known = new Set(tabs.map(t => t.tabId));
+  const valid = Array.isArray(tabIds) && tabIds.length === known.size && new Set(tabIds).size === tabIds.length && tabIds.every(id => typeof id === 'string' && known.has(id));
+  if (!valid) throw new BoardInputError('Your tabs were changed somewhere else. Showing the latest order.', 409, { tabs: await listTabs(userId) });
+  await writeOrder(userId, tabIds, tabs);
+  return listTabs(userId);
+}
+
+/** Make this the tab that opens when Boards is opened. Exactly one tab is the default afterwards. */
+async function setDefaultTab(userId, tabId) {
+  if (!TAB_ID.test(tabId || '')) throw new BoardInputError('Tab not found.', 404);
+  if (!(await WorkspaceTab.exists({ user: userId, tabId }))) throw new BoardInputError('Tab not found.', 404);
+  // One update for all of this person's tabs (unchanged ones are not rewritten); listTabs settles any race.
+  await WorkspaceTab.updateMany({ user: userId }, [{ $set: { isDefault: { $eq: ['$tabId', tabId] } } }], { timestamps: false });
+  return listTabs(userId);
+}
+
+/** Which of this person's own tabs already hold this file or folder (ids only). */
+async function placements(userId, query = {}) {
+  const type = query.fileId !== undefined ? 'file' : query.folderId !== undefined ? 'folder' : null;
+  const refId = type === 'file' ? query.fileId : query.folderId;
+  if (!type || typeof refId !== 'string' || !mongoose.isValidObjectId(refId)) throw new BoardInputError('Choose a file or folder.');
+  const field = type === 'file' ? 'fileId' : 'folderId';
+  const tabs = await WorkspaceTab.find({ user: userId, blocks: { $elemMatch: { type, [field]: refId } } }).select('tabId').lean();
+  return { tabIds: tabs.map(t => t.tabId) };
+}
+
+/**
+ * "Add to board" from a file or folder menu: the server checks the person can open it now and places it
+ * at the first free spot. Retries a few times if the tab is being saved at the same moment.
+ */
+async function addRef(userId, tabId, body = {}) {
+  if (!TAB_ID.test(tabId || '')) throw new BoardInputError('Tab not found.', 404);
+  const type = REF_TYPES.includes(body.type) ? body.type : null;
+  const refId = body.id;
+  if (!type || typeof refId !== 'string' || !mongoose.isValidObjectId(refId) || String(new mongoose.Types.ObjectId(refId)) !== refId) throw new BoardInputError(UNAVAILABLE_TO_ADD);
+  const { files, folders } = await resolveRefs(userId, type === 'file' ? [refId] : [], type === 'folder' ? [refId] : [], { withDetails: false });
+  if (!(type === 'file' ? files : folders).has(refId)) throw new BoardInputError(UNAVAILABLE_TO_ADD);
+  const field = type === 'file' ? 'fileId' : 'folderId';
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    // Another save got there first: wait a moment (a little longer each time, at random) and try again.
+    if (attempt) await new Promise(resolve => setTimeout(resolve, 10 * attempt + Math.random() * 30));
+    const current = await WorkspaceTab.findOne({ user: userId, tabId }).lean();
+    if (!current) throw new BoardInputError('Tab not found.', 404);
+    const list = current.blocks || [];
+    if (list.some(b => b.type === type && idOf(b[field]) === refId)) return { tab: publicTab(current), added: false };
+    if (list.length >= LIMITS.blocksPerTab) throw new BoardInputError(`This board is full (${LIMITS.blocksPerTab} items).`, 409);
+    let id;
+    do { id = newTabId(); } while (list.some(b => b.id === id));
+    const { w, h } = grid.SIZES[type];
+    const spot = grid.firstFit(list, w, h);
+    const blocks = storedBlocks([...list, { id, type, x: spot.x, y: spot.y, w, h, [field]: refId }]);
+    const bytes = await checkSize(userId, current, blocks);
+    const updated = await WorkspaceTab.findOneAndUpdate(
+      { user: userId, tabId, rev: current.rev },
+      { $set: { blocks, bytes }, $inc: { rev: 1 } },
+      { new: true }
+    ).lean();
+    if (updated) return { tab: publicTab(updated), added: true, blockId: id };
+  }
+  throw new BoardInputError('This board is being changed right now. Try again.', 409);
+}
+
 async function conflict(userId, tabId) {
   const latest = await WorkspaceTab.findOne({ user: userId, tabId }).lean();
   if (!latest) return new BoardInputError('Tab not found.', 404);
   return new BoardInputError('This board was changed somewhere else.', 409, { tab: publicTab(latest), blocks: await resolveBlocks(userId, latest.blocks || []) });
 }
 
-module.exports = { LIMITS, COLORS, NOTE_COLORS, SIZES: grid.SIZES, BoardInputError, cleanName, cleanIcon, cleanColor, listTabs, createTab, updateTab, deleteTab, getTab, saveBlocks, resolveBlocks, DEFAULT_TAB_NAME };
+module.exports = {
+  LIMITS, COLORS, NOTE_COLORS, SIZES: grid.SIZES, BoardInputError, cleanName, cleanIcon, cleanColor, listTabs, createTab, updateTab, deleteTab,
+  getTab, saveBlocks, resolveBlocks, duplicateTab, reorderTabs, setDefaultTab, placements, addRef, DEFAULT_TAB_NAME,
+};

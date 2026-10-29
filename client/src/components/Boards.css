@@ -1,7 +1,7 @@
 /* Boards (/boards). Colors, corners and fonts come from the theme, so Customize and dark mode apply. */
 
 .boards { flex: 1 1 auto; width: 100%; max-width: 1180px; min-width: 0; margin: 0 auto; padding: 32px 32px 48px; color: var(--text-primary); }
-.boards *, .boards *::before, .boards *::after { box-sizing: border-box; }
+.boards *, .boards *::before, .boards *::after, .boards-dialog-backdrop *, .boards-dialog-backdrop *::before, .boards-dialog-backdrop *::after { box-sizing: border-box; }
 .boards-head h1 { margin: 0; font-size: 1.6rem; font-weight: 650; letter-spacing: -0.01em; }
 .boards-head p { margin: 6px 0 0; color: var(--text-secondary); }
 .boards-status { color: var(--text-secondary); }
@@ -96,7 +96,7 @@
 .board-block-star { flex: none; margin-top: 6px; color: #b7791f; }
 .board-block-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; min-width: 0; }
 .board-chip { padding: 1px 7px; font-size: 0.72rem; font-weight: 600; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-light); border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.board-block-meta { margin: auto 0 0; font-size: 0.74rem; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.board-block-meta { margin: auto 0 0; font-size: 0.74rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .board-block-remove { align-self: flex-start; margin-top: auto; min-height: 32px; padding: 0 10px; font: inherit; font-size: 0.8rem; font-weight: 600; color: var(--primary-dark); background: var(--bg-primary); border: 1px solid var(--border-medium); border-radius: 6px; cursor: pointer; }
 .board-block-menu { position: relative; flex: none; }
 .board-block-menu summary { display: grid; place-items: center; width: 32px; height: 32px; color: var(--text-tertiary); border-radius: 6px; cursor: pointer; list-style: none; }
@@ -124,11 +124,12 @@
 .board-picker-list { display: flex; flex-direction: column; gap: 4px; max-height: min(52vh, 440px); margin-top: 10px; overflow-y: auto; }
 .board-picker-row { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 6px 10px; border: 1px solid var(--border-light); border-radius: var(--radius-md, 8px); cursor: pointer; }
 .board-picker-row:hover { background: var(--bg-secondary); }
-.board-picker-row.is-on-tab { opacity: 0.7; cursor: default; }
+.board-picker-row.is-on-tab { cursor: default; background: var(--bg-secondary); }
+.board-picker-row.is-on-tab .board-picker-name { color: var(--text-secondary); }
 .board-picker-row input { flex: none; width: 18px; height: 18px; accent-color: var(--primary); }
 .board-picker-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .board-picker-name { font-weight: 600; font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.board-picker-meta { font-size: 0.76rem; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board-picker-meta { font-size: 0.76rem; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board-picker-tag { flex: none; font-size: 0.72rem; font-weight: 600; color: var(--text-secondary); }
 .board-picker-empty { color: var(--text-secondary); font-size: 0.9rem; }
 .board-picker-more { align-self: center; margin-top: 6px; }
@@ -142,7 +143,7 @@
 .boards-field > span { font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); }
 .boards-field input { min-height: 44px; padding: 0 12px; font: inherit; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border-medium); border-radius: var(--radius-md, 8px); }
 .boards-field input[aria-invalid="true"] { border-color: #9b2c2c; }
-.boards-field-help { margin: 6px 0 0; font-size: 0.76rem; text-align: right; color: var(--text-tertiary); }
+.boards-field-help { margin: 6px 0 0; font-size: 0.76rem; text-align: right; color: var(--text-secondary); }
 .boards-field-help.is-over { color: #9b2c2c; font-weight: 600; }
 .boards-dialog-text { margin: 0; color: var(--text-secondary); line-height: 1.5; }
 .boards-dialog-error { margin: 10px 0 0; font-size: 0.86rem; color: #9b2c2c; }
@@ -159,7 +160,7 @@
 .board-drag-grip:hover { color: var(--text-primary); background: #0000000d; }
 .board-grid.is-dragging .board-drag-grip { cursor: grabbing; }
 .board-note-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.board-note-kind { flex: 1; min-width: 0; font-size: 0.72rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-tertiary); }
+.board-note-kind { flex: 1; min-width: 0; font-size: 0.72rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-secondary); }
 .board-note-card, .board-text-card {
   display: flex; flex-direction: column; gap: 4px; width: 100%; height: 100%; padding: 8px 10px 10px; overflow: hidden;
   border: 1px solid var(--border-light); border-radius: inherit; box-shadow: var(--shadow-sm);
@@ -183,10 +184,10 @@
 
 .board-text-card { background: var(--bg-primary); }
 .board-text-card.is-editing { border-color: var(--primary-light); box-shadow: 0 0 0 2px #4c7a4433, var(--shadow-sm); overflow: visible; }
-.board-text-status { flex: none; font-size: 0.72rem; color: var(--text-tertiary); }
+.board-text-status { flex: none; font-size: 0.72rem; color: var(--text-secondary); }
 .rt-view, .rt-content { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 2px 4px; font-size: 0.9rem; line-height: 1.5; color: var(--text-primary); overflow-wrap: anywhere; user-select: text; }
 .rt-view { cursor: text; }
-.rt-empty { margin: 0; color: var(--text-tertiary); }
+.rt-empty { margin: 0; color: var(--text-secondary); }
 .rt-wrap { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; gap: 4px; }
 .rt-content .ProseMirror { min-height: 100%; outline: none; }
 .rt-view p, .rt-content p { margin: 0 0 6px; }
@@ -207,7 +208,7 @@
 .rt-content ul[data-type="taskList"] li > label { flex: none; margin-top: 3px; }
 .rt-check { flex: none; display: inline-grid; place-items: center; width: 15px; height: 15px; margin-top: 3px; font-size: 0.7rem; color: #fff; border: 1.5px solid var(--border-dark); border-radius: 3px; }
 .rt-tasks li.is-checked .rt-check { background: var(--primary); border-color: var(--primary); }
-.rt-tasks li.is-checked > div, .rt-content li[data-checked="true"] > div { color: var(--text-tertiary); text-decoration: line-through; }
+.rt-tasks li.is-checked > div, .rt-content li[data-checked="true"] > div { color: var(--text-secondary); text-decoration: line-through; }
 .rt-content p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; color: var(--text-tertiary); pointer-events: none; }
 
 .rt-toolbar { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 3px; background: var(--bg-secondary); border: 1px solid var(--border-light); border-radius: 8px; }
@@ -227,6 +228,61 @@
 .rt-toolbar.is-phone .rt-popover { position: fixed; top: auto; bottom: calc(var(--rt-kb, 0px) + 60px); left: 8px; right: 8px; max-width: none; }
 .rt-toolbar.is-phone .rt-swatch { width: 44px; height: 44px; }
 body.rt-phone-editing .companion-launcher { display: none; }
+
+/* Tab management (Phase 4). A tab's colour only tints a small bar on top and the active underline; text keeps its colour. */
+.boards-tab.has-color { box-shadow: inset 0 3px 0 var(--tab-accent); }
+.boards-tab.is-active.has-color { box-shadow: inset 0 3px 0 var(--tab-accent), inset 0 -3px 0 var(--tab-accent); }
+.boards-tab-default { flex: none; font-size: 0.8rem; line-height: 1; color: var(--text-secondary); }
+.boards-tabs { scroll-padding-inline: 28px; }
+.boards-tabs.can-scroll-left { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 28px); mask-image: linear-gradient(to right, transparent 0, #000 28px); }
+.boards-tabs.can-scroll-right { -webkit-mask-image: linear-gradient(to left, transparent 0, #000 28px); mask-image: linear-gradient(to left, transparent 0, #000 28px); }
+.boards-tabs.can-scroll-left.can-scroll-right { -webkit-mask-image: linear-gradient(to right, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%); mask-image: linear-gradient(to right, transparent 0, #000 28px, #000 calc(100% - 28px), transparent 100%); }
+.boards-tab-menu .item-actions-popover button:disabled { color: var(--text-tertiary); cursor: default; }
+.boards-menu-note { display: block; min-height: 38px; padding: 10px 12px; font-size: 0.88rem; color: var(--text-secondary); }
+
+/* Over a Customize background: the blurred page colour File Box uses for its top bar, kept at least 88% opaque
+   here so the heading, description and tab names stay readable however far the background fade is set. */
+.boards-top { border-radius: var(--radius-lg, 12px); }
+html.fb-has-backdrop .boards-top, html.fb-has-backdrop .boards-panel-head {
+  background: color-mix(in srgb, var(--fb-header-bg, var(--fb-page-bg, #fdfdfb)) max(var(--fb-bg-header), 88%), transparent); backdrop-filter: blur(12px);
+}
+html.fb-has-backdrop .boards-top { padding: 16px 18px 0; }
+html.fb-has-backdrop .boards-panel-head { padding: 6px 10px; border-radius: var(--radius-md, 8px); }
+
+/* Edit tab */
+.board-tab-preview { display: flex; align-items: flex-end; min-height: 56px; margin: 0 0 14px; padding: 10px 12px 0; background: var(--bg-secondary); border-bottom: 1px solid var(--border-light); border-radius: var(--radius-md, 8px) var(--radius-md, 8px) 0 0; }
+.board-tab-preview .boards-tab { cursor: default; }
+.board-tab-fieldset { min-width: 0; margin: 14px 0 0; padding: 0; border: 0; }
+.board-tab-fieldset legend { padding: 0; margin-bottom: 8px; font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); }
+.board-emoji-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(38px, 1fr)); gap: 4px; }
+.board-emoji { display: grid; place-items: center; height: 38px; padding: 0; font-size: 1.2rem; line-height: 1; background: transparent; border: 1px solid transparent; border-radius: var(--radius-md, 8px); cursor: pointer; }
+.board-emoji:hover { background: var(--bg-secondary); }
+.board-emoji.is-on { background: var(--bg-tertiary); border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.board-emoji-none { font-size: 1rem; color: var(--text-tertiary); }
+.board-emoji-typed { margin-top: 10px; }
+.board-emoji-typed input { max-width: 140px; }
+.board-color-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.board-color { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; background: var(--swatch, var(--bg-primary)); border: 2px solid transparent; border-radius: 50%; cursor: pointer; }
+.board-color.is-none { border: 2px dashed var(--border-medium); }
+.board-color.is-on { box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--text-primary); }
+.board-color-dot { font-size: 0.85rem; font-weight: 700; color: #fff; }
+.board-color.is-none .board-color-dot { color: var(--text-tertiary); }
+.board-color-name { margin: 6px 0 0; min-height: 1.2em; font-size: 0.8rem; color: var(--text-secondary); }
+.board-emoji:focus-visible, .board-color:focus-visible, .board-picker-row input:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* Add to board */
+.add-to-board-row { gap: 10px; }
+.add-to-board-bar { flex: none; align-self: stretch; width: 4px; border-radius: 2px; background: transparent; }
+.add-to-board-bar.has-color { background: var(--tab-accent); }
+.add-to-board-icon { flex: none; font-size: 1.15rem; }
+.add-to-board-row.is-on-tab { cursor: not-allowed; }
+
+/* Unavailable items: a reason, with nothing about the item itself. */
+.board-block-why { margin: 0; font-size: 0.74rem; line-height: 1.35; color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+@media (prefers-reduced-motion: reduce) {
+  .board-block, .board-grid.is-dragging .board-block, .board-block-resize { transition: none; }
+}
 
 @media (max-width: 600px) {
   .boards { padding: 22px 16px 32px; }
@@ -249,4 +305,13 @@ body.rt-phone-editing .companion-launcher { display: none; }
   .boards-tab-menu .item-actions-popover button { min-height: 44px; }
   .board-note-title, .board-note-body { font-size: 1rem; }
   .board-list-item.type-note, .board-list-item.type-text { height: 220px; }
+  /* Dialogs become sheets along the bottom of the screen. */
+  .boards-dialog-backdrop { align-items: end; padding: 0; }
+  .boards-dialog, .boards-dialog.is-wide { width: 100%; max-height: 92dvh; overflow-y: auto; border-radius: 16px 16px 0 0; padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+  .board-emoji-grid { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
+  .board-emoji { height: 44px; }
+  .board-color { width: 44px; height: 44px; }
+  .board-block-menu .item-actions-popover .board-note-swatch { width: 44px; min-height: 44px; height: 44px; }
+  .boards-menu-note { min-height: 44px; }
+  html.fb-has-backdrop .boards-top { padding: 14px 12px 0; }
 }
