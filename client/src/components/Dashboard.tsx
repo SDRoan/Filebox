@@ -32,6 +32,7 @@ import { useCompanion } from '../context/CompanionContext';
 import { FileItemType } from '../types';
 import { getWorkspacePage, pagePath } from '../config/workspaceNavigation';
 import AdvancedSearch from './AdvancedSearch';
+import Boards from './Boards';
 import { filesAPI, preferencesAPI } from '../services/api';
 import { applyAccent, rememberAccent } from '../theme/accent';
 import './Dashboard.css';
@@ -186,6 +187,7 @@ const Dashboard: React.FC = () => {
         </header>
         <div className={`workspace-view workspace-view-${currentView}`}>
         {currentView === 'search' && <AdvancedSearch />}
+        {currentView === 'boards' && <Boards />}
         {currentView === 'home' && (
           <HomeView onOpenFile={openFile} onOpenFolder={handleFolderClick} />
         )}

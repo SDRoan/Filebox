@@ -8,7 +8,7 @@ import { formatBytes } from '../utils/fileDisplay';
 import {
   HomeIcon, FilesIcon, SharedIcon, RecentIcon, StarredIcon, AIAssistantIcon, TeamFoldersIcon,
   FileRequestsIcon, SignatureIcon, CloudBackupIcon, TrashIcon, SettingsIcon, BackIcon, PlusIcon,
-  UploadIcon, FolderIcon,
+  UploadIcon, FolderIcon, BoardsIcon,
 } from './Icons';
 import './Sidebar.css';
 
@@ -31,7 +31,7 @@ export const sidebarSections: NavSection[] = [
     id: 'main',
     items: [
       { id: 'home', Icon: HomeIcon }, { id: 'files', Icon: FilesIcon }, { id: 'shared', Icon: SharedIcon },
-      { id: 'recent', Icon: RecentIcon }, { id: 'starred', Icon: StarredIcon },
+      { id: 'recent', Icon: RecentIcon }, { id: 'starred', Icon: StarredIcon }, { id: 'boards', Icon: BoardsIcon },
     ],
   },
   { id: 'ai', title: 'AI', items: [{ id: 'ai-assistant', Icon: AIAssistantIcon }] },

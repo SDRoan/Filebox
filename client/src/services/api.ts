@@ -563,6 +563,42 @@ export const searchAPI = {
   },
 };
 
+// Boards (/boards): a person's own tabbed workspace (server/services/workspaceBoards.js).
+export interface BoardTab {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  order: number;
+  isDefault: boolean;
+  // Revision the browser last saw; sent back with every change so another device's edit is never overwritten.
+  rev: number;
+  blocks: unknown[];
+  blockCount: number;
+  updatedAt?: string;
+}
+
+export interface BoardLimits { tabs: number; blocksPerTab: number; tabName: number; noteTitle: number; noteBody: number; richTextChars: number; richTextBytes: number; tabBytes: number; totalBytes: number }
+
+export const workspaceBoardsAPI = {
+  list: async (): Promise<{ tabs: BoardTab[]; limits: BoardLimits; colors: string[] }> => {
+    const response = await api.get('/workspace-boards');
+    return response.data;
+  },
+  createTab: async (body: { name: string; icon?: string; color?: string }): Promise<{ tab: BoardTab }> => {
+    const response = await api.post('/workspace-boards/tabs', body);
+    return response.data;
+  },
+  updateTab: async (tabId: string, body: { name?: string; icon?: string; color?: string; rev: number }): Promise<{ tab: BoardTab }> => {
+    const response = await api.patch(`/workspace-boards/tabs/${tabId}`, body);
+    return response.data;
+  },
+  deleteTab: async (tabId: string): Promise<{ tabs: BoardTab[]; deleted: string }> => {
+    const response = await api.delete(`/workspace-boards/tabs/${tabId}`);
+    return response.data;
+  },
+};
+
 // Advanced Search (server/services/advancedSearch.js). Every result, snippet and count comes from the
 // server's permission-checked search; the page only shows what it is sent.
 export interface FileClassification {

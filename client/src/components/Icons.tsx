@@ -482,6 +482,16 @@ export const BookmarkIcon: React.FC<IconProps> = (props) => (
   </Icon>
 );
 
+// Boards: the same rounded blocks as My Files' Board view switch (box, circle, pill).
+export const BoardsIcon: React.FC<IconProps> = ({ size = 20, color = 'currentColor', className = '', style }) => (
+  <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.3" className={className}
+    style={{ display: 'inline-block', verticalAlign: 'middle', ...style }} aria-hidden="true">
+    <rect x="1.5" y="2.5" width="9" height="8" rx="2.5" />
+    <circle cx="15" cy="6.5" r="3.5" />
+    <rect x="5" y="13" width="12.5" height="5" rx="2.5" />
+  </svg>
+);
+
 // Grid Icon
 export const GridIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>

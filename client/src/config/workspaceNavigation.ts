@@ -12,6 +12,7 @@ export const workspacePages: WorkspacePage[] = [
   { id: 'shared', path: '/shared', label: 'Shared' },
   { id: 'recent', path: '/recent', label: 'Recent' },
   { id: 'starred', path: '/starred', label: 'Starred' },
+  { id: 'boards', path: '/boards', label: 'Boards' },
   { id: 'ai-assistant', path: '/ai', label: 'File Box AI' },
   { id: 'teams', path: '/team-spaces', label: 'Team Spaces' },
   { id: 'requests', path: '/file-requests', label: 'File Requests' },

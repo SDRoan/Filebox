@@ -73,6 +73,8 @@ app.use('/api/files', fileRoutes);
 app.use('/api/share', shareRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/boards', boardRoutes);
+// Boards page: a person's own tabbed workspace (references to files and folders, plus notes).
+app.use('/api/workspace-boards', require('./routes/workspaceBoards'));
 app.use('/api/companion', companionRoutes);
 app.use('/api/comments', commentRoutes);
 app.use('/api/team-folders', teamFolderRoutes);
