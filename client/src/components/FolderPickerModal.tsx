@@ -9,10 +9,15 @@ interface FolderPickerModalProps {
   onClose: () => void;
   excludeFolderId?: string; // Don't show this folder (to prevent moving into itself)
   currentFolderId?: string;
+  // Optional wording for other uses (Boards: "Add a folder"); without them the picker reads as before.
+  title?: string;
+  confirmLabel?: string;
 }
 
 const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
   onSelect,
+  title,
+  confirmLabel,
   onClose,
   excludeFolderId,
   currentFolderId,
@@ -116,7 +121,7 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
     <div className="folder-picker-overlay" onClick={onClose}>
       <div className="folder-picker-modal" onClick={(e) => e.stopPropagation()}>
         <div className="folder-picker-header">
-          <h3>Select Destination Folder</h3>
+          <h3>{title || 'Select Destination Folder'}</h3>
           <button className="close-btn" onClick={onClose}>
             <CloseIcon size={18} color="currentColor" />
           </button>
@@ -187,6 +192,7 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
                       + New Folder
                     </button>
                   </div>
+                  {confirmLabel && <p className="folder-picker-hint">{confirmLabel}: click a folder. Double-click to look inside it.</p>}
                   <div className="folder-list">
                 <div
                   className="folder-item root-item"

@@ -578,6 +578,34 @@ export interface BoardTab {
   updatedAt?: string;
 }
 
+// A block's file or folder as the person can see it now. Anything they cannot open is only { available: false }.
+export type BoardRef =
+  | { available: false }
+  | {
+    available: true;
+    fileId?: string;
+    folderId?: string;
+    name: string;
+    mimeType?: string;
+    size?: number;
+    technicalType?: 'pdf' | 'image' | 'document' | 'text' | 'code' | 'other';
+    updatedAt?: string;
+    source: 'owned' | 'shared' | 'team';
+    role?: 'owner' | 'editor' | 'viewer';
+    isStarred?: boolean;
+    parentFolder?: string | null;
+    ownerName?: string | null;
+    teamName?: string;
+    category?: string;
+    documentType?: string;
+    itemCount?: number;
+  };
+
+export interface BoardBlock { id: string; type: 'file' | 'folder'; x: number; y: number; w: number; h: number; ref: BoardRef }
+
+// What a save sends: positions for every block, and the file/folder id only for blocks added since the last save.
+export interface BoardBlockInput { id: string; type: 'file' | 'folder'; x: number; y: number; w: number; h: number; fileId?: string; folderId?: string }
+
 export interface BoardLimits { tabs: number; blocksPerTab: number; tabName: number; noteTitle: number; noteBody: number; richTextChars: number; richTextBytes: number; tabBytes: number; totalBytes: number }
 
 export const workspaceBoardsAPI = {
@@ -595,6 +623,15 @@ export const workspaceBoardsAPI = {
   },
   deleteTab: async (tabId: string): Promise<{ tabs: BoardTab[]; deleted: string }> => {
     const response = await api.delete(`/workspace-boards/tabs/${tabId}`);
+    return response.data;
+  },
+  getTab: async (tabId: string): Promise<{ tab: BoardTab; blocks: BoardBlock[] }> => {
+    const response = await api.get(`/workspace-boards/tabs/${tabId}`);
+    return response.data;
+  },
+  // A 409 carries the latest { tab, blocks } (changed on another device).
+  saveBlocks: async (tabId: string, rev: number, blocks: BoardBlockInput[]): Promise<{ tab: BoardTab; blocks: BoardBlock[] }> => {
+    const response = await api.put(`/workspace-boards/tabs/${tabId}/blocks`, { rev, blocks });
     return response.data;
   },
 };

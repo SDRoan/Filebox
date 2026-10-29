@@ -1,14 +1,23 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { workspaceBoardsAPI, BoardTab, BoardLimits } from '../services/api';
+import { workspaceBoardsAPI, BoardTab, BoardLimits, BoardBlock } from '../services/api';
 import ItemActions from './ItemActions';
+import BoardDialog from './BoardDialog';
+import BoardGrid from './BoardGrid';
+import BoardAddFileDialog from './BoardAddFileDialog';
+import FolderPickerModal from './FolderPickerModal';
+import FilePreview from './FilePreview';
 import { BoardsIcon, PlusIcon } from './Icons';
+import { useBoardTabBlocks, BoardNotice } from '../hooks/useBoardTabBlocks';
+import { pagePath } from '../config/workspaceNavigation';
+import { FileItemType } from '../types';
 import './Boards.css';
 
 /**
- * Boards (/boards): a person's own tabbed workspace. Each tab is a board where they will place File Box
- * files and folders (by reference, never moved or copied), sticky notes and text. This first version
- * manages the tabs themselves; the blocks arrive in the next steps.
+ * Boards (/boards): a person's own tabbed workspace. Each tab is a board of File Box files and folders,
+ * placed by reference: adding one never moves or copies it, and removing one never deletes it. Sticky
+ * notes and text come next.
  *
  * Tabs are saved with the account. Which tab is open is remembered in this browser only, so switching
  * tabs never writes anything to the server.
@@ -20,41 +29,38 @@ const writeLastTab = (userId: string | undefined, tabId: string) => { try { loca
 
 const errorMessage = (error: any, fallback: string) => error?.response?.data?.message || fallback;
 
-/** A small modal dialog: focus stays inside, Escape closes it, focus goes back where it came from. */
-const BoardDialog: React.FC<{ title: string; describedBy?: string; onClose: () => void; children: React.ReactNode }> = ({ title, describedBy, onClose, children }) => {
-  const ref = useRef<HTMLDivElement>(null);
-  // Where focus was before the dialog opened (taken once, before the dialog moves it).
-  const opener = useRef<HTMLElement | null>(null);
-  if (opener.current === null) opener.current = document.activeElement as HTMLElement | null;
-  useEffect(() => {
-    const node = ref.current;
-    const back = opener.current;
-    node?.querySelector<HTMLElement>('[data-autofocus], input, button')?.focus();
-    // Back to the opener only once the dialog has really left the page (React may unmount and remount it
-    // in development), and not when something else already took focus (a new tab that was just created).
-    return () => {
-      setTimeout(() => {
-        const free = !document.activeElement || document.activeElement === document.body;
-        if (!node?.isConnected && free && back?.isConnected) back.focus();
-      }, 0);
-    };
-  }, []);
-  const onKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Escape') { event.stopPropagation(); onClose(); return; }
-    if (event.key !== 'Tab' || !ref.current) return;
-    const focusable = Array.from(ref.current.querySelectorAll<HTMLElement>('input, button:not(:disabled)'));
-    if (!focusable.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+/** "+ Add": a small menu, usable with the keyboard (arrows, Enter, Escape). */
+const AddMenu: React.FC<{ disabled: boolean; onFile: () => void; onFolder: () => void }> = ({ disabled, onFile, onFolder }) => {
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const items = () => Array.from(menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') || []);
+  useEffect(() => { if (open) items()[0]?.focus(); }, [open]);
+  const close = (focusButton = true) => { setOpen(false); if (focusButton) button.current?.focus(); };
+  const choose = (run: () => void) => { setOpen(false); run(); };
+  const onMenuKey = (event: React.KeyboardEvent) => {
+    const list = items();
+    const i = list.indexOf(document.activeElement as HTMLElement);
+    if (event.key === 'Escape') { event.preventDefault(); close(); }
+    else if (event.key === 'ArrowDown') { event.preventDefault(); list[(i + 1) % list.length]?.focus(); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); list[(i - 1 + list.length) % list.length]?.focus(); }
+    else if (event.key === 'Tab') close(false);
   };
   return (
-    <div className="boards-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div ref={ref} className="boards-dialog" role="dialog" aria-modal="true" aria-labelledby="boards-dialog-title" aria-describedby={describedBy} onKeyDown={onKeyDown}>
-        <h2 id="boards-dialog-title">{title}</h2>
-        {children}
-      </div>
+    <div className="boards-add" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false); }}>
+      <button ref={button} type="button" className="boards-add-button" aria-haspopup="menu" aria-expanded={open} disabled={disabled}
+        title={disabled ? 'This tab is full (150 items)' : undefined}
+        onClick={() => setOpen(o => !o)} onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); } }}>
+        <PlusIcon size={15} /> Add
+      </button>
+      {open && (
+        <div ref={menu} className="boards-add-menu" role="menu" aria-label="Add to this board" onKeyDown={onMenuKey}>
+          <button type="button" role="menuitem" onClick={() => choose(onFile)}>File</button>
+          <button type="button" role="menuitem" onClick={() => choose(onFolder)}>Folder</button>
+          <button type="button" role="menuitem" aria-disabled="true" className="is-coming">Sticky note <span>Coming next</span></button>
+          <button type="button" role="menuitem" aria-disabled="true" className="is-coming">Text area <span>Coming next</span></button>
+        </div>
+      )}
     </div>
   );
 };
@@ -107,7 +113,10 @@ const Boards: React.FC = () => {
   const [activeId, setActiveId] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [dialog, setDialog] = useState<null | { kind: 'create' } | { kind: 'rename' | 'delete'; tab: BoardTab }>(null);
+  const [dialog, setDialog] = useState<null | { kind: 'create' | 'addFile' | 'addFolder' } | { kind: 'rename' | 'delete'; tab: BoardTab }>(null);
+  const [notice, setNotice] = useState<BoardNotice | null>(null);
+  const [opened, setOpened] = useState<BoardBlock | null>(null);
+  const navigate = useNavigate();
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [announcement, setAnnouncement] = useState('');
@@ -220,6 +229,21 @@ const Boards: React.FC = () => {
   const active = tabs.find(t => t.id === activeId);
   const atLimit = Boolean(limits && tabs.length >= limits.tabs);
 
+  // The open tab's blocks: loaded when the tab opens, saved as they change (see useBoardTabBlocks).
+  const updateTabMeta = useCallback((tab: BoardTab) => setTabs(prev => prev.map(t => (t.id === tab.id ? { ...t, ...tab } : t))), []);
+  const showNotice = useCallback((n: BoardNotice | null) => { setNotice(n); if (n) setAnnouncement(n.text); }, []);
+  const board = useBoardTabBlocks({ tab: active, onTab: updateTabMeta, onNotice: showNotice });
+  useEffect(() => { setNotice(null); }, [activeId]);
+  const room = (limits?.blocksPerTab || 150) - board.blocks.length;
+
+  const openBlock = (block: BoardBlock) => {
+    if (!block.ref.available) return;
+    if (block.type === 'file') { setOpened(block); return; }
+    // A folder opens in My Files (or Team Spaces for a Team Space folder); nothing about it changes.
+    if (block.ref.source === 'team') navigate(pagePath('teams'));
+    else navigate(pagePath('files'), { state: { openFolderId: block.ref.folderId } });
+  };
+
   if (loading) return <section className="boards" aria-busy="true"><p className="boards-status">Loading your boards…</p></section>;
   if (loadError) {
     return (
@@ -268,33 +292,76 @@ const Boards: React.FC = () => {
         <div className="boards-panel" role="tabpanel" id={`board-panel-${active.id}`} aria-labelledby={`board-tab-${active.id}`} tabIndex={0}>
           <div className="boards-panel-head">
             <h2>{active.icon && <span aria-hidden="true">{active.icon} </span>}{active.name}</h2>
+            <AddMenu disabled={room <= 0 || board.loading} onFile={() => setDialog({ kind: 'addFile' })} onFolder={() => setDialog({ kind: 'addFolder' })} />
             <ItemActions className="boards-tab-menu" label={`Options for tab ${active.name}`}>
               <button type="button" onClick={() => setDialog({ kind: 'rename', tab: active })}>Rename…</button>
               <button type="button" className="is-danger" onClick={() => { setDeleteError(''); setDialog({ kind: 'delete', tab: active }); }}>Delete tab…</button>
             </ItemActions>
           </div>
 
-          {active.blockCount === 0 && (
+          {notice && (
+            <div className={`boards-notice ${notice.tone === 'error' ? 'is-error' : ''}`}>
+              <span>{notice.text}</span>
+              {notice.undo && <button type="button" className="boards-button-quiet" onClick={notice.undo}>Undo</button>}
+              <button type="button" className="boards-notice-close" aria-label="Dismiss" onClick={() => setNotice(null)}>×</button>
+            </div>
+          )}
+
+          {board.loading && <p className="boards-status">Loading this board…</p>}
+          {board.error && <div className="boards-empty" role="alert"><p className="boards-empty-title">{board.error}</p></div>}
+
+          {!board.loading && !board.error && board.blocks.length === 0 && (
             <div className="boards-empty">
               <span className="boards-empty-icon" aria-hidden="true"><BoardsIcon size={30} /></span>
               <p className="boards-empty-title">This tab is empty.</p>
               <p>Build this space your way.</p>
               <div className="boards-empty-actions">
-                {['Add file', 'Add folder', 'Add sticky note', 'Add text area'].map(label => (
+                <button type="button" className="boards-empty-action" onClick={() => setDialog({ kind: 'addFile' })}>Add file</button>
+                <button type="button" className="boards-empty-action" onClick={() => setDialog({ kind: 'addFolder' })}>Add folder</button>
+                {['Add sticky note', 'Add text area'].map(label => (
                   <button type="button" key={label} className="boards-coming" aria-disabled="true" aria-describedby="boards-coming-note"
-                    onClick={() => setAnnouncement(`${label}: coming in the next update.`)}>
+                    onClick={() => setAnnouncement(`${label}: coming next.`)}>
                     {label}
                   </button>
                 ))}
               </div>
-              <p id="boards-coming-note" className="boards-coming-note">Adding files, folders, notes and text comes in the next update.</p>
+              <p id="boards-coming-note" className="boards-coming-note">Sticky notes and text areas are coming next.</p>
             </div>
+          )}
+
+          {!board.loading && !board.error && board.blocks.length > 0 && (
+            <BoardGrid blocks={board.blocks} pending={board.pending} onChange={board.change}
+              onOpen={openBlock} onRemove={board.remove} onAnnounce={setAnnouncement} />
           )}
         </div>
       )}
 
       <p className="boards-visually-hidden" role="status" aria-live="polite">{announcement}</p>
 
+      {dialog?.kind === 'addFile' && (
+        <BoardAddFileDialog
+          onTab={new Set(board.blocks.flatMap(b => (b.type === 'file' && b.ref.available && b.ref.fileId ? [b.ref.fileId] : [])))}
+          remaining={room}
+          onClose={() => setDialog(null)}
+          onAdd={(files) => {
+            const added = board.addFiles(files);
+            setDialog(null);
+            showNotice({ text: `Added ${added} ${added === 1 ? 'file' : 'files'} to ${active?.name}. ${added === 1 ? 'It stays' : 'They stay'} where ${added === 1 ? 'it is' : 'they are'} in File Box.` });
+          }} />
+      )}
+      {dialog?.kind === 'addFolder' && (
+        <FolderPickerModal title="Add a folder to this board" confirmLabel="Add a folder"
+          onClose={() => setDialog(null)}
+          onSelect={(folderId) => {
+            if (!folderId) { showNotice({ tone: 'error', text: 'Choose a folder inside My Files.' }); return; }
+            if (room <= 0) { showNotice({ tone: 'error', text: 'This tab is full (150 items).' }); return; }
+            showNotice(board.addFolder(folderId) ? { text: `Added the folder to ${active?.name}. It stays where it is.` } : { tone: 'error', text: 'That folder is already on this tab.' });
+          }} />
+      )}
+      {opened && opened.ref.available && opened.ref.fileId && (
+        <FilePreview file={{ _id: opened.ref.fileId, originalName: opened.ref.name, mimeType: opened.ref.mimeType || '', size: opened.ref.size || 0, access: opened.ref.role } as unknown as FileItemType}
+          onClose={() => setOpened(null)} />
+      )}
       {dialog?.kind === 'create' && limits && (
         <TabNameDialog mode="create" initial="" max={limits.tabName} onSave={createTab} onClose={() => setDialog(null)} />
       )}
