@@ -285,3 +285,11 @@
   background: #e0e0e0;
 }
 
+
+/* Keyboard: every row can be reached with Tab and shows where focus is. */
+.folder-item:focus-visible, .close-btn:focus-visible, .nav-up-btn:focus-visible, .create-folder-btn:focus-visible, .cancel-btn:focus-visible {
+  outline: 2px solid var(--primary, #3f6543);
+  outline-offset: 2px;
+}
+.folder-item:focus-visible { background: #f8f9fa; border-color: #e0e0e0; }
+.folder-picker-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; margin: 0; }
