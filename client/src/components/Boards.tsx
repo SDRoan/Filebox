@@ -5,6 +5,7 @@ import { workspaceBoardsAPI, BoardTab, BoardLimits } from '../services/api';
 import ItemActions from './ItemActions';
 import BoardDialog from './BoardDialog';
 import BoardTabDialog, { TabLook } from './BoardTabDialog';
+import { LinkDialog } from './BoardLinkBlock';
 import PersonalBoard from './PersonalBoard';
 import BoardList from './BoardList';
 import BoardAddFileDialog from './BoardAddFileDialog';
@@ -41,12 +42,12 @@ const usePhone = () => {
   return phone;
 };
 
-type AddKind = 'file' | 'folder' | 'note' | 'text' | 'checklist' | 'deadline' | 'label';
+type AddKind = 'file' | 'folder' | 'note' | 'text' | 'checklist' | 'deadline' | 'label' | 'link';
 // The "+ Add" menu in groups (group names are read out, not chosen).
 const ADD_GROUPS: Array<{ name: string; items: Array<[AddKind, string]> }> = [
   { name: 'Files', items: [['file', 'File'], ['folder', 'Folder']] },
   { name: 'Notes & planning', items: [['note', 'Sticky note'], ['text', 'Text area'], ['checklist', 'Checklist'], ['deadline', 'Deadline']] },
-  { name: 'Other', items: [['label', 'Label']] },
+  { name: 'Other', items: [['label', 'Label'], ['link', 'Link']] },
 ];
 
 /** "+ Add": a grouped menu, usable with the keyboard (arrows move between items, Enter, Escape). */
@@ -57,7 +58,8 @@ const AddMenu: React.FC<{ disabled: boolean; onAdd: (kind: AddKind) => void }> =
   const items = () => Array.from(menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') || []);
   useEffect(() => { if (open) items()[0]?.focus(); }, [open]);
   const close = (focusButton = true) => { setOpen(false); if (focusButton) button.current?.focus(); };
-  const choose = (run: () => void) => { setOpen(false); run(); };
+  // Focus goes back to "+ Add" first, so a dialog opened from the menu returns there when it closes.
+  const choose = (run: () => void) => { close(); run(); };
   const onMenuKey = (event: React.KeyboardEvent) => {
     const list = items();
     const i = list.indexOf(document.activeElement as HTMLElement);
@@ -99,6 +101,7 @@ const Boards: React.FC = () => {
   const [dialog, setDialog] = useState<null | { kind: 'create' | 'addFile' | 'addFolder' } | { kind: 'edit' | 'delete'; tab: BoardTab }>(null);
   const [notice, setNotice] = useState<BoardNotice | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
+  const [linkOpen, setLinkOpen] = useState(false);
   const phone = usePhone();
   // The one text area being edited (only it has a live editor).
   const [editingId, setEditingId] = useState('');
@@ -324,6 +327,7 @@ const Boards: React.FC = () => {
     else if (kind === 'folder') setDialog({ kind: 'addFolder' });
     else if (kind === 'note') addNote();
     else if (kind === 'text') addText();
+    else if (kind === 'link') setLinkOpen(true);
     else addPlanning(kind);
   };
   const room = (limits?.blocksPerTab || 150) - board.blocks.length;
@@ -345,7 +349,7 @@ const Boards: React.FC = () => {
   const emptyBoard = (
     <div className="boards-empty-canvas">
       <p className="boards-empty-title">This board is empty.</p>
-      <p>Add files and folders you choose (they stay where they are in File Box), notes, text, checklists, deadlines or labels.</p>
+      <p>Add files and folders you choose (they stay where they are in File Box), notes, text, checklists, deadlines, labels or links.</p>
       <div className="boards-empty-actions">
         <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFile' })}>Add file</button>
         <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFolder' })}>Add folder</button>
@@ -465,6 +469,13 @@ const Boards: React.FC = () => {
             if (room <= 0) { showNotice({ tone: 'error', text: 'This tab is full (150 items).' }); return; }
             showNotice(board.addFolder(folderId) ? { text: `Added the folder to ${active?.name}. It stays where it is.` } : { tone: 'error', text: 'That folder is already on this tab.' });
           }} />
+      )}
+      {linkOpen && (
+        <LinkDialog onClose={() => setLinkOpen(false)} onSave={(link) => {
+          setLinkOpen(false);
+          const id = board.addBlock('link', { link });
+          setTimeout(() => document.querySelector<HTMLElement>(`[data-board-key="${id}"] .board-link-title, [data-list-id="${id}"] .board-link-title`)?.focus(), 120);
+        }} />
       )}
       {resetOpen && (
         <BoardDialog title="Reset this board?" describedBy="boards-reset-text" onClose={() => setResetOpen(false)}>

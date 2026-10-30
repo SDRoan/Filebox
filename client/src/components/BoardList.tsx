@@ -54,7 +54,7 @@ const BoardList: React.FC<BoardActions & { blocks: BoardBlock[]; zones: BoardZon
             onStartEdit={() => onEditingChange(block.id)} onEdit={(doc) => onEdit(block.id, { text: { doc } })} onFlush={onFlush} onExit={exit} onRemove={() => onRemove(block)} />
         </TextFrame>
       );
-    } else if (block.type === 'checklist' || block.type === 'label' || block.type === 'deadline') {
+    } else if (block.type === 'checklist' || block.type === 'label' || block.type === 'deadline' || block.type === 'link') {
       content = planningBlock(block, actions, { phone: true, first, last, onMove: (d) => move(block, d), onExit: exit });
     } else {
       content = refCard(block, (

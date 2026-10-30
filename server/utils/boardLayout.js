@@ -14,6 +14,7 @@ const SIZES = Object.freeze({
   // A label's height follows its heading size (34, 44 or 60); only its width is chosen.
   label: Object.freeze({ w: 280, h: 44, minW: 120, minH: 34, maxW: 1200, maxH: 60 }),
   deadline: Object.freeze({ w: 220, h: 150, minW: 180, minH: 120, maxW: 400, maxH: 300 }),
+  link: Object.freeze({ w: 260, h: 116, minW: 200, minH: 96, maxW: 480, maxH: 260 }),
 });
 
 const coordinate = (value, max = CANVAS) => (typeof value === 'number' && Number.isFinite(value) ? Math.round(Math.min(max, Math.max(0, value))) : null);

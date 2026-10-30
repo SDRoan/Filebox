@@ -5,6 +5,8 @@ import FileItem from './FileItem';
 import FolderItem from './FolderItem';
 import { StickyNoteBlock, RichTextBlock } from './BoardNoteBlocks';
 import { ChecklistBlock, DeadlineBlock, LabelBlock } from './BoardPlanningBlocks';
+import { LinkBlock } from './BoardLinkBlock';
+import { domainOf } from '../utils/boardLinks';
 import { DocumentIcon, FolderIcon } from './Icons';
 import { useAuth } from '../context/AuthContext';
 import { filesAPI, BoardBlock, BoardContent, BoardZone } from '../services/api';
@@ -52,6 +54,7 @@ export const blockName = (block: BoardBlock) => {
   if (block.type === 'checklist') return `Checklist${block.checklist.title ? `: ${block.checklist.title}` : ''}`;
   if (block.type === 'label') return `Label${block.label.text ? `: ${block.label.text}` : ''}`;
   if (block.type === 'deadline') return `Deadline${block.deadline.title ? `: ${block.deadline.title}` : ''}`;
+  if (block.type === 'link') return `Link: ${block.link.title || domainOf(block.link.url)}`;
   return block.ref.available ? block.ref.name : block.type === 'file' ? 'Unavailable file' : 'Unavailable folder';
 };
 
@@ -99,11 +102,12 @@ export const ownSize = (b: BoardBlock) => {
  * A checklist, label or deadline (shared by the canvas and the phone list). Changing a label's size also
  * keeps its height on the board in step, in the same save.
  */
-export const planningBlock = (block: Extract<BoardBlock, { type: 'checklist' | 'label' | 'deadline' }>, actions: Pick<BoardActions, 'onEdit' | 'onFlush' | 'onRemove' | 'onArrange'>,
+export const planningBlock = (block: Extract<BoardBlock, { type: 'checklist' | 'label' | 'deadline' | 'link' }>, actions: Pick<BoardActions, 'onEdit' | 'onFlush' | 'onRemove' | 'onArrange'>,
   common: { phone: boolean; first: boolean; last: boolean; onMove: (direction: -1 | 1) => void; onExit: () => void }) => {
   const shared = { ...common, onFlush: actions.onFlush, onRemove: () => actions.onRemove(block) };
   if (block.type === 'checklist') return <ChecklistBlock block={block} {...shared} onEdit={(checklist, now) => actions.onEdit(block.id, { checklist }, { now })} />;
   if (block.type === 'deadline') return <DeadlineBlock block={block} {...shared} onEdit={(deadline, now) => actions.onEdit(block.id, { deadline }, { now })} />;
+  if (block.type === 'link') return <LinkBlock block={block} {...shared} onEdit={(link) => actions.onEdit(block.id, { link }, { now: true })} />;
   return (
     <LabelBlock block={block} {...shared} onEdit={(label, now) => {
       actions.onEdit(block.id, { label }, { now });
@@ -218,10 +222,10 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
         ),
       };
     }
-    if (block.type === 'checklist' || block.type === 'label' || block.type === 'deadline') {
+    if (block.type === 'checklist' || block.type === 'label' || block.type === 'deadline' || block.type === 'link') {
       const size = ownSize(block);
       const limits = block.type === 'label' ? { ...BLOCK_SIZES.label, minH: size.h, maxH: size.h } : BLOCK_SIZES[block.type];
-      const firstField = block.type === 'checklist' ? '.board-checklist-title' : block.type === 'label' ? '.board-label-text' : '.board-deadline-title';
+      const firstField = { checklist: '.board-checklist-title', label: '.board-label-text', deadline: '.board-deadline-title', link: '.board-link-title' }[block.type];
       return {
         key: block.id, name, className: `is-${block.type}`, handleOnly: true, size, resize: limits,
         onHandleKey: (event) => {

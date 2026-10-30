@@ -619,8 +619,10 @@ export interface BoardLabel { text: string; size: LabelSize; align: 'left' | 'ce
 // A date-only deadline is due at the end of that calendar day wherever it is viewed; a timed one also keeps
 // the exact moment (UTC) its date and time meant where it was set.
 export interface BoardDeadline { title: string; note: string; due: { date: string; time: string | null; at: string | null } | null; completedAt: string | null }
+// A link: an http(s) address (as the URL parser writes it), an optional title and note. Never fetched.
+export interface BoardLink { url: string; title: string; note: string }
 // The content of a block that is not a file or folder, in a field named after its type.
-export interface BoardContent { note?: BoardNote; text?: BoardText; checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline }
+export interface BoardContent { note?: BoardNote; text?: BoardText; checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink }
 
 // A place on the free canvas in pixels; null x/y = not placed yet (the board puts it below everything).
 // Sticky notes and text areas also have a width and height.
@@ -631,14 +633,15 @@ export type BoardBlock =
   | (BoardPlace & { type: 'text'; text: BoardText })
   | (BoardPlace & { type: 'checklist'; checklist: BoardChecklist })
   | (BoardPlace & { type: 'label'; label: BoardLabel })
-  | (BoardPlace & { type: 'deadline'; deadline: BoardDeadline });
+  | (BoardPlace & { type: 'deadline'; deadline: BoardDeadline })
+  | (BoardPlace & { type: 'link'; link: BoardLink });
 
 // What a save sends: positions for every block; a file/folder id only for blocks added since the last save;
 // a note's or text area's words only when they changed (the server keeps the stored ones otherwise).
 export interface BoardBlockInput {
   id: string; type: BoardBlock['type']; x: number | null; y: number | null; w?: number; h?: number;
   fileId?: string; folderId?: string; note?: BoardNote; text?: BoardText;
-  checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline;
+  checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink;
 }
 
 export interface BoardLimits { tabs: number; blocksPerTab: number; tabName: number; noteTitle: number; noteBody: number; richTextChars: number; richTextBytes: number; tabBytes: number; totalBytes: number }

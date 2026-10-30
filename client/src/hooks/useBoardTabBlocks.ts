@@ -381,12 +381,15 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     return block.id;
   }, [change]);
 
-  /** A new checklist, label or deadline, placed below everything. Returns its id (so it can be focused). */
-  const addBlock = useCallback((type: 'checklist' | 'label' | 'deadline') => {
+  /**
+   * A new checklist, label, deadline or link, placed below everything. A link comes with its content (the
+   * address is checked first). Returns its id (so it can be focused).
+   */
+  const addBlock = useCallback((type: 'checklist' | 'label' | 'deadline' | 'link', given?: BoardContent) => {
     const { w, h } = BLOCK_SIZES[type];
-    const content = type === 'checklist' ? { checklist: { title: '', items: [] } }
+    const content = given || (type === 'checklist' ? { checklist: { title: '', items: [] } }
       : type === 'label' ? { label: { text: '', size: 'm' as const, align: 'left' as const, tone: 'default' as const } }
-        : { deadline: { title: '', note: '', due: null, completedAt: null } };
+        : { deadline: { title: '', note: '', due: null, completedAt: null } });
     const block = { id: newBlockId(), type, x: null, y: null, w, h, ...content } as BoardBlock;
     change([...blocksRef.current, block], { kind: 'add', blocks: [block] }, { debounce: true });
     return block.id;
@@ -403,7 +406,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     setBlocks(blocksRef.current.filter(b => b.id !== block.id));
     pending.current.actions.push({ kind: 'remove', id: block.id });
     schedule(UNDO_WINDOW);
-    const CONTENT_NAMES: Record<string, string> = { note: 'The note', text: 'The text area', checklist: 'The checklist', label: 'The label', deadline: 'The deadline' };
+    const CONTENT_NAMES: Record<string, string> = { note: 'The note', text: 'The text area', checklist: 'The checklist', label: 'The label', deadline: 'The deadline', link: 'The link' };
     const isRef = before.type === 'file' || before.type === 'folder';
     const name = !isRef ? CONTENT_NAMES[before.type] : before.ref.available ? `“${before.ref.name}”` : 'The unavailable item';
     const where = isRef ? ' It is still in File Box.' : '';

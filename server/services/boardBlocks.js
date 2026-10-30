@@ -1,5 +1,5 @@
 /**
- * Boards: the board-only block types (checklist, label, deadline). Every value the browser sends is
+ * Boards: the board-only block types (checklist, label, deadline, link). Every value the browser sends is
  * cleaned here before it is stored; anything that cannot be cleaned is refused with a clear message.
  * Lengths count characters as people see them (an emoji is one), like notes.
  */
@@ -12,6 +12,7 @@ const LIMITS = Object.freeze({
   checklistTitle: 100, checklistItems: 100, checklistItem: 500,
   label: 120,
   deadlineTitle: 120, deadlineNote: 500,
+  linkUrl: 2000, linkTitle: 200, linkNote: 500,
 });
 const LABEL_SIZES = ['s', 'm', 'l'];
 const LABEL_ALIGN = ['left', 'center', 'right'];
@@ -103,7 +104,40 @@ function cleanDeadline(raw) {
   return { title, note, due, completedAt };
 }
 
-// Which field holds each board-only type's content, and how it is cleaned.
-const CLEANERS = Object.freeze({ checklist: cleanChecklist, label: cleanLabel, deadline: cleanDeadline });
+/**
+ * A link's address: only http and https, as the standard URL parser writes it (lowercase host, default port
+ * removed, query and fragment kept). Nothing is ever fetched from it; it is opened only in the person's own
+ * browser. Refused: other schemes, no scheme at all (the board's dialog adds https:// only to domain names),
+ * spaces or control characters (they can hide "java script:"), a user name or password before the host
+ * (often used to disguise where a link goes), and anything the parser cannot read.
+ */
+const WEB = 'Use a web address starting with https:// or http://.';
+function linkUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) throw new BlockError('Add a web address.');
+  const text = value.trim();
+  if (/[\s\u0000-\u001f\u007f]/.test(text)) throw new BlockError('Web addresses cannot contain spaces or hidden characters.');
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(text)) throw new BlockError(WEB);
+  let url;
+  try { url = new URL(text); } catch { throw new BlockError("That web address isn't valid."); }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new BlockError(WEB);
+  if (!url.hostname) throw new BlockError("That web address isn't valid.");
+  // Anything before an "@" in the address's host part, even an empty one, is refused.
+  if (url.username || url.password || /^[a-z][a-z0-9+.-]*:[\\/]*[^\\/?#]*@/i.test(text)) throw new BlockError("Links can't include a user name or password.");
+  if (chars(url.href) > LIMITS.linkUrl) throw new BlockError(`Web addresses can be up to ${LIMITS.linkUrl.toLocaleString('en-US')} characters.`);
+  return url.href;
+}
 
-module.exports = { BlockError, LIMITS, LABEL_SIZES, LABEL_ALIGN, LABEL_TONES, CLEANERS, cleanChecklist, cleanLabel, cleanDeadline };
+/** A link: its address (required), an optional title and an optional note. */
+function cleanLink(raw) {
+  if (!isObject(raw)) throw new BlockError('Add a web address.');
+  return {
+    url: linkUrl(raw.url),
+    title: within(oneLine(raw.title), LIMITS.linkTitle, 'A link title'),
+    note: within(lines(raw.note), LIMITS.linkNote, 'A link note'),
+  };
+}
+
+// Which field holds each board-only type's content, and how it is cleaned.
+const CLEANERS = Object.freeze({ checklist: cleanChecklist, label: cleanLabel, deadline: cleanDeadline, link: cleanLink });
+
+module.exports = { BlockError, LIMITS, LABEL_SIZES, LABEL_ALIGN, LABEL_TONES, CLEANERS, cleanChecklist, cleanLabel, cleanDeadline, cleanLink, linkUrl };
