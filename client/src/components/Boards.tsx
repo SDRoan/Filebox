@@ -41,8 +41,16 @@ const usePhone = () => {
   return phone;
 };
 
-/** "+ Add": a small menu, usable with the keyboard (arrows, Enter, Escape). */
-const AddMenu: React.FC<{ disabled: boolean; onFile: () => void; onFolder: () => void; onNote: () => void; onText: () => void }> = ({ disabled, onFile, onFolder, onNote, onText }) => {
+type AddKind = 'file' | 'folder' | 'note' | 'text' | 'checklist' | 'deadline' | 'label';
+// The "+ Add" menu in groups (group names are read out, not chosen).
+const ADD_GROUPS: Array<{ name: string; items: Array<[AddKind, string]> }> = [
+  { name: 'Files', items: [['file', 'File'], ['folder', 'Folder']] },
+  { name: 'Notes & planning', items: [['note', 'Sticky note'], ['text', 'Text area'], ['checklist', 'Checklist'], ['deadline', 'Deadline']] },
+  { name: 'Other', items: [['label', 'Label']] },
+];
+
+/** "+ Add": a grouped menu, usable with the keyboard (arrows move between items, Enter, Escape). */
+const AddMenu: React.FC<{ disabled: boolean; onAdd: (kind: AddKind) => void }> = ({ disabled, onAdd }) => {
   const [open, setOpen] = useState(false);
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -67,10 +75,14 @@ const AddMenu: React.FC<{ disabled: boolean; onFile: () => void; onFolder: () =>
       </button>
       {open && (
         <div ref={menu} className="boards-add-menu" role="menu" aria-label="Add to this board" onKeyDown={onMenuKey}>
-          <button type="button" role="menuitem" onClick={() => choose(onFile)}>File</button>
-          <button type="button" role="menuitem" onClick={() => choose(onFolder)}>Folder</button>
-          <button type="button" role="menuitem" onClick={() => choose(onNote)}>Sticky note</button>
-          <button type="button" role="menuitem" onClick={() => choose(onText)}>Text area</button>
+          {ADD_GROUPS.map((group, g) => (
+            <div key={group.name} role="group" aria-labelledby={`boards-add-group-${g}`} className="boards-add-group">
+              <p id={`boards-add-group-${g}`} className="boards-add-group-name" role="presentation">{group.name}</p>
+              {group.items.map(([kind, label]) => (
+                <button key={kind} type="button" role="menuitem" onClick={() => choose(() => onAdd(kind))}>{label}</button>
+              ))}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -301,6 +313,19 @@ const Boards: React.FC = () => {
   };
   const addNote = () => focusNew(board.addNote(), 'note');
   const addText = () => focusNew(board.addText(), 'text');
+  // A new checklist, label or deadline: focus its first field so it can be typed into straight away.
+  const FIRST_FIELD = { checklist: '.board-checklist-title', label: '.board-label-text', deadline: '.board-deadline-title' };
+  const addPlanning = (type: 'checklist' | 'label' | 'deadline') => {
+    const id = board.addBlock(type);
+    setTimeout(() => document.querySelector<HTMLElement>(`[data-board-key="${id}"] ${FIRST_FIELD[type]}, [data-list-id="${id}"] ${FIRST_FIELD[type]}`)?.focus(), 80);
+  };
+  const onAdd = (kind: AddKind) => {
+    if (kind === 'file') setDialog({ kind: 'addFile' });
+    else if (kind === 'folder') setDialog({ kind: 'addFolder' });
+    else if (kind === 'note') addNote();
+    else if (kind === 'text') addText();
+    else addPlanning(kind);
+  };
   const room = (limits?.blocksPerTab || 150) - board.blocks.length;
   const unavailable = board.blocks.filter(b => (b.type === 'file' || b.type === 'folder') && !b.ref.available).length;
   const activeIndex = tabs.findIndex(t => t.id === activeId);
@@ -320,12 +345,14 @@ const Boards: React.FC = () => {
   const emptyBoard = (
     <div className="boards-empty-canvas">
       <p className="boards-empty-title">This board is empty.</p>
-      <p>Add files and folders you choose (they stay where they are in File Box), sticky notes or text areas.</p>
+      <p>Add files and folders you choose (they stay where they are in File Box), notes, text, checklists, deadlines or labels.</p>
       <div className="boards-empty-actions">
         <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFile' })}>Add file</button>
         <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFolder' })}>Add folder</button>
         <button type="button" className="file-action-button" onClick={addNote}>Add sticky note</button>
         <button type="button" className="file-action-button" onClick={addText}>Add text area</button>
+        <button type="button" className="file-action-button" aria-haspopup="menu"
+          onClick={() => document.querySelector<HTMLButtonElement>('.boards .boards-add-button')?.click()}>More…</button>
       </div>
     </div>
   );
@@ -403,14 +430,14 @@ const Boards: React.FC = () => {
             {!board.loading && !board.error && (phone ? (
               <>
                 <div className="file-board-toolbar boards-phone-toolbar">
-                  <AddMenu disabled={room <= 0} onFile={() => setDialog({ kind: 'addFile' })} onFolder={() => setDialog({ kind: 'addFolder' })} onNote={addNote} onText={addText} />
+                  <AddMenu disabled={room <= 0} onAdd={onAdd} />
                   <span className="file-board-hint">Zones and free arranging are on larger screens. Here you can edit and reorder.</span>
                 </div>
                 <BoardList blocks={board.blocks} zones={board.zones} saveState={board.saveState} editingId={editingId} empty={emptyBoard} {...actions} />
               </>
             ) : (
               <PersonalBoard tabId={active.id} blocks={board.blocks} zones={board.zones} saveState={board.saveState} editingId={editingId}
-                toolbarStart={<AddMenu disabled={room <= 0} onFile={() => setDialog({ kind: 'addFile' })} onFolder={() => setDialog({ kind: 'addFolder' })} onNote={addNote} onText={addText} />}
+                toolbarStart={<AddMenu disabled={room <= 0} onAdd={onAdd} />}
                 onReset={() => setResetOpen(true)} empty={emptyBoard} {...actions} />
             ))}
           </div>

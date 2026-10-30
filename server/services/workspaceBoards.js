@@ -10,6 +10,7 @@ const layout = require('../utils/boardLayout');
 const { effectiveClassification } = require('./fileClassifier');
 const { technicalType } = require('./advancedSearch');
 const { cleanDoc, RichTextError } = require('./richTextSchema');
+const { CLEANERS: BLOCK_CLEANERS, BlockError } = require('./boardBlocks');
 
 /**
  * Boards: a person's tabbed workspace. Every value that reaches the database is checked here; nothing
@@ -42,7 +43,7 @@ class BoardInputError extends Error {
   constructor(message, status = 400, extra = {}) { super(message); this.status = status; Object.assign(this, extra); }
 }
 const BLOCK_ID = /^[a-z0-9]{10}$/;
-const BLOCK_TYPES = ['file', 'folder', 'note', 'text'];
+const BLOCK_TYPES = ['file', 'folder', 'note', 'text', 'checklist', 'label', 'deadline'];
 const NOTE_COLORS = Object.freeze(['yellow', 'pink', 'blue', 'green', 'purple', 'orange']);
 const REF_TYPES = ['file', 'folder'];
 const NOTE_CONTROL = new RegExp('[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]', 'g');
@@ -56,6 +57,21 @@ function cleanNote(raw) {
   if (Array.from(title).length > LIMITS.noteTitle) throw new BoardInputError(`Note titles can be up to ${LIMITS.noteTitle} characters.`);
   if (Array.from(body).length > LIMITS.noteBody) throw new BoardInputError(`A note can hold up to ${LIMITS.noteBody.toLocaleString('en-US')} characters.`);
   return { title, body, color: NOTE_COLORS.includes(raw?.color) ? raw.color : 'yellow' };
+}
+
+/**
+ * The content of a block that is not a file or folder, cleaned for its type. Each type keeps its content
+ * in a field named after it (note, text, checklist, label, deadline).
+ */
+function cleanContent(type, raw) {
+  if (type === 'note') return cleanNote(raw);
+  if (type === 'text') return cleanTextBlock(raw);
+  try {
+    return BLOCK_CLEANERS[type](raw);
+  } catch (error) {
+    if (error instanceof BlockError) throw new BoardInputError(error.message, error.status);
+    throw error;
+  }
 }
 
 /** A text area's document, cleaned against the rich-text allowlist (services/richTextSchema.js). */
@@ -339,8 +355,7 @@ async function resolveBlocks(userId, blocks) {
     blocks.filter(b => b.type === 'folder').map(b => b.folderId));
   return blocks.map((b) => {
     const place = { id: b.id, type: b.type, x: b.x, y: b.y, w: b.w, h: b.h };
-    if (b.type === 'note') return { ...place, note: b.note };
-    if (b.type === 'text') return { ...place, text: b.text };
+    if (!REF_TYPES.includes(b.type)) return { ...place, [b.type]: b[b.type] };
     const ref = b.type === 'file' ? files.get(idOf(b.fileId)) : folders.get(idOf(b.folderId));
     return { ...place, ref: ref || { available: false } };
   });
@@ -385,8 +400,7 @@ async function saveBlocks(userId, tabId, body = {}) {
     if (!base) {
       const type = BLOCK_TYPES.includes(raw.type) ? raw.type : null;
       if (!type) throw new BoardInputError(UNAVAILABLE_TO_ADD);
-      if (type === 'note') base = { id, type, note: cleanNote(raw.note) };
-      else if (type === 'text') base = { id, type, text: cleanTextBlock(raw.text) };
+      if (!REF_TYPES.includes(type)) base = { id, type, [type]: cleanContent(type, raw[type]) };
       else {
         const refId = type === 'file' ? raw.fileId : raw.folderId;
         if (typeof refId !== 'string' || !mongoose.isValidObjectId(refId) || String(new mongoose.Types.ObjectId(refId)) !== refId) {
@@ -395,11 +409,9 @@ async function saveBlocks(userId, tabId, body = {}) {
         base = { id, type, ...(type === 'file' ? { fileId: refId } : { folderId: refId }) };
         added[type].push(refId);
       }
-    } else if (base.type === 'note' && raw.note !== undefined) {
-      // A note's or text area's words come from the browser only when they were edited; otherwise the stored ones stay.
-      base = { ...base, note: cleanNote(raw.note) };
-    } else if (base.type === 'text' && raw.text !== undefined) {
-      base = { ...base, text: cleanTextBlock(raw.text) };
+    } else if (!REF_TYPES.includes(base.type) && raw[base.type] !== undefined) {
+      // A block's content comes from the browser only when it was edited; otherwise the stored content stays.
+      base = { ...base, [base.type]: cleanContent(base.type, raw[base.type]) };
     }
     if (REF_TYPES.includes(base.type)) {
       const key = `${base.type}:${idOf(base.type === 'file' ? base.fileId : base.folderId)}`;
@@ -431,7 +443,7 @@ async function saveBlocks(userId, tabId, body = {}) {
 /** Blocks as they are stored: pixel place (and size for notes and text), with only the fields each type keeps. */
 const storedBlocks = (list) => list.map(b => ({
   id: b.id, type: b.type, ...layout.cleanPlace(b, b.type),
-  ...(b.type === 'file' ? { fileId: idOf(b.fileId) } : b.type === 'folder' ? { folderId: idOf(b.folderId) } : b.type === 'note' ? { note: b.note } : { text: b.text }),
+  ...(b.type === 'file' ? { fileId: idOf(b.fileId) } : b.type === 'folder' ? { folderId: idOf(b.folderId) } : { [b.type]: b[b.type] }),
 }));
 
 /** The tab's new size in bytes, if it fits within the tab and per-person limits. */

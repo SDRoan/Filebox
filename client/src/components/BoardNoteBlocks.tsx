@@ -15,7 +15,7 @@ const NOTE_COLORS: Array<[NoteColor, string]> = [['yellow', 'Yellow'], ['pink', 
 const TITLE_MAX = 80;
 const BODY_MAX = 4000;
 
-interface Common {
+export interface Common {
   phone: boolean;
   first: boolean;
   last: boolean;
@@ -25,7 +25,7 @@ interface Common {
   onExit: () => void;
 }
 
-const MoveItems: React.FC<Pick<Common, 'phone' | 'first' | 'last' | 'onMove'>> = ({ phone, first, last, onMove }) => (
+export const MoveItems: React.FC<Pick<Common, 'phone' | 'first' | 'last' | 'onMove'>> = ({ phone, first, last, onMove }) => (
   <>
     {phone && !first && <button type="button" onClick={() => onMove(-1)}>Move up</button>}
     {phone && !last && <button type="button" onClick={() => onMove(1)}>Move down</button>}

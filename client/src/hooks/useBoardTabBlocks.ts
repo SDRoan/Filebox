@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { workspaceBoardsAPI, AdvancedSearchResult, BoardBlock, BoardBlockInput, BoardNote, BoardTab, BoardText, BoardZone } from '../services/api';
-import { BLOCK_SIZES, Spot } from '../utils/boardLayout';
+import { workspaceBoardsAPI, AdvancedSearchResult, BoardBlock, BoardBlockInput, BoardContent, BoardTab, BoardText, BoardZone } from '../services/api';
+import { BLOCK_SIZES, CONTENT_TYPES, ContentType, Spot } from '../utils/boardLayout';
 
 /**
  * The blocks and zones of one Boards tab and how changes reach the account.
@@ -21,7 +21,8 @@ export type BoardChange =
   | { kind: 'remove'; id: string }
   // Places (and sizes) on the free canvas, and the tab's zones when they changed. null = not placed yet.
   | { kind: 'layout'; items: Record<string, Spot | null>; zones?: BoardZone[] }
-  | { kind: 'edit'; id: string; note?: BoardNote; text?: BoardText };
+  // A block's content changed (a note, text area, checklist, label or deadline): its field named after its type.
+  | ({ kind: 'edit'; id: string } & BoardContent);
 
 export interface BoardNotice { text: string; tone?: 'info' | 'error'; undo?: () => void; removedId?: string }
 
@@ -44,9 +45,8 @@ function apply(blocks: BoardBlock[], change: BoardChange): BoardBlock[] {
   if (change.kind === 'edit') {
     return blocks.map((b) => {
       if (b.id !== change.id) return b;
-      if (b.type === 'note' && change.note) return { ...b, note: change.note };
-      if (b.type === 'text' && change.text) return { ...b, text: change.text };
-      return b;
+      const value = (change as BoardContent)[b.type as ContentType];
+      return value ? ({ ...b, [b.type]: value } as BoardBlock) : b;
     });
   }
   if (change.kind === 'add') {
@@ -78,8 +78,7 @@ function payloadOf(snap: Snapshot): BoardBlockInput[] {
     const added = snap.newRefs.get(b.id);
     if (added) return { ...base, ...(added.type === 'file' ? { fileId: added.refId } : { folderId: added.refId }) };
     const sendWords = !snap.serverIds.has(b.id) || snap.dirty.has(b.id);
-    if (b.type === 'note' && sendWords) return { ...base, note: b.note };
-    if (b.type === 'text' && sendWords) return { ...base, text: b.text };
+    if ((CONTENT_TYPES as readonly string[]).includes(b.type) && sendWords) return { ...base, [b.type]: (b as unknown as Record<string, unknown>)[b.type] } as BoardBlockInput;
     return base;
   });
 }
@@ -311,8 +310,11 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     change(apply(blocksRef.current, action), action, options);
   }, [change]);
 
-  /** A note's or text area's words changed: shown at once, saved 1 second after typing pauses (at least every 4). */
-  const edit = useCallback((id: string, content: { note?: BoardNote; text?: BoardText }) => {
+  /**
+   * A block's content changed: shown at once. Typing is saved 1 second after it pauses (at least every 4);
+   * `now` (a tick, Complete, a reorder, a date picked) saves straight away.
+   */
+  const edit = useCallback((id: string, content: BoardContent, options: { now?: boolean } = {}) => {
     const action: BoardChange = { kind: 'edit', id, ...content };
     setBlocks(apply(blocksRef.current, action));
     const list = pending.current.actions;
@@ -321,7 +323,8 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     if (last && last.kind === 'edit' && last.id === id) list[list.length - 1] = action;
     else list.push(action);
     pending.current.dirty.add(id);
-    schedule(TYPING_DELAY, true);
+    if (options.now) schedule(0);
+    else schedule(TYPING_DELAY, true);
   }, [schedule]);
 
   /** Save now if anything is waiting (a note or text area lost focus). Resolves once every save so far is done. */
@@ -378,6 +381,17 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     return block.id;
   }, [change]);
 
+  /** A new checklist, label or deadline, placed below everything. Returns its id (so it can be focused). */
+  const addBlock = useCallback((type: 'checklist' | 'label' | 'deadline') => {
+    const { w, h } = BLOCK_SIZES[type];
+    const content = type === 'checklist' ? { checklist: { title: '', items: [] } }
+      : type === 'label' ? { label: { text: '', size: 'm' as const, align: 'left' as const, tone: 'default' as const } }
+        : { deadline: { title: '', note: '', due: null, completedAt: null } };
+    const block = { id: newBlockId(), type, x: null, y: null, w, h, ...content } as BoardBlock;
+    change([...blocksRef.current, block], { kind: 'add', blocks: [block] }, { debounce: true });
+    return block.id;
+  }, [change]);
+
   /** Take a block off the board (never touches a file or folder). Undo puts the block back. */
   const remove = useCallback((block: BoardBlock) => {
     const before = blocksRef.current.find(b => b.id === block.id);
@@ -389,8 +403,10 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     setBlocks(blocksRef.current.filter(b => b.id !== block.id));
     pending.current.actions.push({ kind: 'remove', id: block.id });
     schedule(UNDO_WINDOW);
-    const name = before.type === 'note' ? 'The note' : before.type === 'text' ? 'The text area' : before.ref.available ? `“${before.ref.name}”` : 'The unavailable item';
-    const where = before.type === 'note' || before.type === 'text' ? '' : ' It is still in File Box.';
+    const CONTENT_NAMES: Record<string, string> = { note: 'The note', text: 'The text area', checklist: 'The checklist', label: 'The label', deadline: 'The deadline' };
+    const isRef = before.type === 'file' || before.type === 'folder';
+    const name = !isRef ? CONTENT_NAMES[before.type] : before.ref.available ? `“${before.ref.name}”` : 'The unavailable item';
+    const where = isRef ? ' It is still in File Box.' : '';
     onNotice({
       text: `${name} was removed from this board.${where}`,
       removedId: block.id,
@@ -463,5 +479,5 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     } catch { /* the next load shows it */ }
   }, [onTab]);
 
-  return { blocks, zones, loading, error, pending: pendingRefs, saveState, change, arrange, edit, flush, addFiles, addFolder, addNote, addText, remove, removeUnavailable, reload };
+  return { blocks, zones, loading, error, pending: pendingRefs, saveState, change, arrange, edit, flush, addFiles, addFolder, addNote, addText, addBlock, remove, removeUnavailable, reload };
 }

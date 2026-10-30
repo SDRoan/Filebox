@@ -4,12 +4,13 @@ import BoardCanvas, { CanvasEntry, CanvasLayout } from './BoardCanvas';
 import FileItem from './FileItem';
 import FolderItem from './FolderItem';
 import { StickyNoteBlock, RichTextBlock } from './BoardNoteBlocks';
+import { ChecklistBlock, DeadlineBlock, LabelBlock } from './BoardPlanningBlocks';
 import { DocumentIcon, FolderIcon } from './Icons';
 import { useAuth } from '../context/AuthContext';
-import { filesAPI, BoardBlock, BoardNote, BoardText, BoardZone } from '../services/api';
+import { filesAPI, BoardBlock, BoardContent, BoardZone } from '../services/api';
 import { FileItem as FileItemType, Folder } from '../types';
 import { pagePath } from '../config/workspaceNavigation';
-import { BLOCK_SIZES, Spot } from '../utils/boardLayout';
+import { BLOCK_SIZES, CONTENT_TYPES, LABEL_HEIGHT, Spot } from '../utils/boardLayout';
 
 /**
  * One personal Boards tab on the free canvas shared with My Files > Board: the person's chosen files and
@@ -22,7 +23,7 @@ type Available = Extract<RefBlock['ref'], { available: true }>;
 
 export interface BoardActions {
   onArrange: (items: Record<string, Spot | null>, zones?: BoardZone[], options?: { debounce?: boolean }) => void;
-  onEdit: (id: string, content: { note?: BoardNote; text?: BoardText }) => void;
+  onEdit: (id: string, content: BoardContent, options?: { now?: boolean }) => void;
   onFlush: () => void;
   onRemove: (block: BoardBlock) => void;
   onReload: () => void;
@@ -48,6 +49,9 @@ export const folderCard = (ref: Available, userId?: string): Folder => ({
 export const blockName = (block: BoardBlock) => {
   if (block.type === 'note') return `Sticky note${block.note.title ? `: ${block.note.title}` : ''}`;
   if (block.type === 'text') return 'Text area';
+  if (block.type === 'checklist') return `Checklist${block.checklist.title ? `: ${block.checklist.title}` : ''}`;
+  if (block.type === 'label') return `Label${block.label.text ? `: ${block.label.text}` : ''}`;
+  if (block.type === 'deadline') return `Deadline${block.deadline.title ? `: ${block.deadline.title}` : ''}`;
   return block.ref.available ? block.ref.name : block.type === 'file' ? 'Unavailable file' : 'Unavailable folder';
 };
 
@@ -81,6 +85,32 @@ export const TextFrame: React.FC<{ id: string; editingRef: React.MutableRefObjec
 const RemoveIcon = (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3" /><path d="M8.5 12h7" /></svg>
 );
+
+/** Has its own size on the board (everything but file and folder cards). */
+export const hasOwnSize = (b: BoardBlock) => (CONTENT_TYPES as readonly string[]).includes(b.type);
+/** The size a block takes on the board (a label is as tall as its heading size). */
+export const ownSize = (b: BoardBlock) => {
+  if (b.type === 'label') return { w: b.w ?? BLOCK_SIZES.label.w, h: LABEL_HEIGHT[b.label.size] };
+  const size = BLOCK_SIZES[b.type as keyof typeof BLOCK_SIZES];
+  return { w: b.w ?? size.w, h: b.h ?? size.h };
+};
+
+/**
+ * A checklist, label or deadline (shared by the canvas and the phone list). Changing a label's size also
+ * keeps its height on the board in step, in the same save.
+ */
+export const planningBlock = (block: Extract<BoardBlock, { type: 'checklist' | 'label' | 'deadline' }>, actions: Pick<BoardActions, 'onEdit' | 'onFlush' | 'onRemove' | 'onArrange'>,
+  common: { phone: boolean; first: boolean; last: boolean; onMove: (direction: -1 | 1) => void; onExit: () => void }) => {
+  const shared = { ...common, onFlush: actions.onFlush, onRemove: () => actions.onRemove(block) };
+  if (block.type === 'checklist') return <ChecklistBlock block={block} {...shared} onEdit={(checklist, now) => actions.onEdit(block.id, { checklist }, { now })} />;
+  if (block.type === 'deadline') return <DeadlineBlock block={block} {...shared} onEdit={(deadline, now) => actions.onEdit(block.id, { deadline }, { now })} />;
+  return (
+    <LabelBlock block={block} {...shared} onEdit={(label, now) => {
+      actions.onEdit(block.id, { label }, { now });
+      if (label.size !== block.label.size && block.x !== null && block.y !== null) actions.onArrange({ [block.id]: { x: block.x, y: block.y, w: block.w ?? BLOCK_SIZES.label.w, h: LABEL_HEIGHT[label.size] } });
+    }} />
+  );
+};
 
 /** The card for a file or folder block (shared by the canvas and the phone list). */
 export const useRefCard = ({ onRemove, onReload }: Pick<BoardActions, 'onRemove' | 'onReload'>) => {
@@ -142,7 +172,7 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
   // The canvas layout from the saved blocks (a block without a place yet is left out: the canvas places it).
   const layout = useMemo<CanvasLayout>(() => ({
     items: Object.fromEntries(blocks.filter(b => b.x !== null && b.y !== null).map(b => [b.id, {
-      x: b.x as number, y: b.y as number, ...(b.type === 'note' || b.type === 'text' ? { w: b.w, h: b.h } : {}),
+      x: b.x as number, y: b.y as number, ...(hasOwnSize(b) ? ownSize(b) : {}),
     }])),
     zones,
   }), [blocks, zones]);
@@ -159,8 +189,9 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
     blocks.forEach((b) => {
       const spot = next.items[b.id];
       if (!spot) { if (b.x !== null && !(b.id in next.items)) items[b.id] = null; return; }
-      const own = b.type === 'note' || b.type === 'text';
-      const want: Spot = { x: Math.round(spot.x), y: Math.round(spot.y), ...(own ? { w: spot.w ?? b.w, h: spot.h ?? b.h } : {}) };
+      const own = hasOwnSize(b);
+      const size = own ? ownSize(b) : null;
+      const want: Spot = { x: Math.round(spot.x), y: Math.round(spot.y), ...(size ? { w: spot.w ?? size.w, h: b.type === 'label' ? size.h : spot.h ?? size.h } : {}) };
       if (!sameSpot(layout.items[b.id], want)) items[b.id] = want;
     });
     const zonesChanged = JSON.stringify(next.zones) !== JSON.stringify(zones);
@@ -185,6 +216,21 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
           <StickyNoteBlock block={block} phone={false} first={false} last={false} onMove={() => {}}
             onEdit={(note) => onEdit(block.id, { note })} onFlush={onFlush} onExit={() => stopEditing(block.id)} onRemove={() => onRemove(block)} />
         ),
+      };
+    }
+    if (block.type === 'checklist' || block.type === 'label' || block.type === 'deadline') {
+      const size = ownSize(block);
+      const limits = block.type === 'label' ? { ...BLOCK_SIZES.label, minH: size.h, maxH: size.h } : BLOCK_SIZES[block.type];
+      const firstField = block.type === 'checklist' ? '.board-checklist-title' : block.type === 'label' ? '.board-label-text' : '.board-deadline-title';
+      return {
+        key: block.id, name, className: `is-${block.type}`, handleOnly: true, size, resize: limits,
+        onHandleKey: (event) => {
+          if (event.key !== 'Enter') return false;
+          event.preventDefault();
+          document.querySelector<HTMLElement>(`[data-board-key="${block.id}"] ${firstField}`)?.focus();
+          return true;
+        },
+        render: () => planningBlock(block, actions, { phone: false, first: false, last: false, onMove: () => {}, onExit: () => stopEditing(block.id) }),
       };
     }
     if (block.type === 'text') {
@@ -214,7 +260,7 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
       hint="Drag items anywhere. Drop them in a zone to group them; moving a zone moves what’s in it."
       onAutoPlace={(items) => onArrange(Object.fromEntries(Object.entries(items).map(([id, spot]) => {
         const b = blocks.find(x => x.id === id);
-        return [id, { x: Math.round(spot.x), y: Math.round(spot.y), ...(b && (b.type === 'note' || b.type === 'text') ? { w: b.w, h: b.h } : {}) }];
+        return [id, { x: Math.round(spot.x), y: Math.round(spot.y), ...(b && hasOwnSize(b) ? ownSize(b) : {}) }];
       })), undefined, { debounce: true })} />
   );
 };

@@ -610,6 +610,17 @@ export interface BoardNote { title: string; body: string; color: NoteColor }
 // A text area's document: ProseMirror/TipTap JSON, cleaned by the server against an allowlist (never HTML).
 export interface RichTextNode { type: string; attrs?: Record<string, unknown>; content?: RichTextNode[]; text?: string; marks?: Array<{ type: string; attrs?: Record<string, unknown> }> }
 export interface BoardText { doc: RichTextNode }
+// Board-only blocks (server/services/boardBlocks.js).
+export interface BoardChecklistItem { id: string; text: string; checked: boolean }
+export interface BoardChecklist { title: string; items: BoardChecklistItem[] }
+export type LabelSize = 's' | 'm' | 'l';
+export type LabelTone = 'default' | 'sage' | 'sky' | 'rose' | 'amber' | 'slate';
+export interface BoardLabel { text: string; size: LabelSize; align: 'left' | 'center' | 'right'; tone: LabelTone }
+// A date-only deadline is due at the end of that calendar day wherever it is viewed; a timed one also keeps
+// the exact moment (UTC) its date and time meant where it was set.
+export interface BoardDeadline { title: string; note: string; due: { date: string; time: string | null; at: string | null } | null; completedAt: string | null }
+// The content of a block that is not a file or folder, in a field named after its type.
+export interface BoardContent { note?: BoardNote; text?: BoardText; checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline }
 
 // A place on the free canvas in pixels; null x/y = not placed yet (the board puts it below everything).
 // Sticky notes and text areas also have a width and height.
@@ -617,13 +628,17 @@ interface BoardPlace { id: string; x: number | null; y: number | null; w?: numbe
 export type BoardBlock =
   | (BoardPlace & { type: 'file' | 'folder'; ref: BoardRef })
   | (BoardPlace & { type: 'note'; note: BoardNote })
-  | (BoardPlace & { type: 'text'; text: BoardText });
+  | (BoardPlace & { type: 'text'; text: BoardText })
+  | (BoardPlace & { type: 'checklist'; checklist: BoardChecklist })
+  | (BoardPlace & { type: 'label'; label: BoardLabel })
+  | (BoardPlace & { type: 'deadline'; deadline: BoardDeadline });
 
 // What a save sends: positions for every block; a file/folder id only for blocks added since the last save;
 // a note's or text area's words only when they changed (the server keeps the stored ones otherwise).
 export interface BoardBlockInput {
   id: string; type: BoardBlock['type']; x: number | null; y: number | null; w?: number; h?: number;
   fileId?: string; folderId?: string; note?: BoardNote; text?: BoardText;
+  checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline;
 }
 
 export interface BoardLimits { tabs: number; blocksPerTab: number; tabName: number; noteTitle: number; noteBody: number; richTextChars: number; richTextBytes: number; tabBytes: number; totalBytes: number }

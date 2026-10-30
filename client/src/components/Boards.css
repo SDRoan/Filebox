@@ -269,6 +269,77 @@ html.fb-has-backdrop .boards-top { padding: 8px 12px 0; }
 .board-list-row.type-note > *, .board-list-row.type-text > * { height: 100%; }
 .board-list-empty { position: relative; min-height: 300px; }
 
+/* "+ Add" in the board toolbar: grouped, opening to the right of the button. */
+.file-board-toolbar .boards-add-menu { left: 0; right: auto; top: 42px; min-width: 210px; }
+.boards-add-group + .boards-add-group { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border-light); }
+.boards-add-group { display: flex; flex-direction: column; }
+.boards-add-group-name { margin: 4px 12px 2px; font-size: 0.7rem; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-secondary); }
+
+/* Checklist, label and deadline on the canvas: the grip is always shown (only it moves them). */
+.board-item.is-checklist .board-item-handle, .board-item.is-deadline .board-item-handle { opacity: 1; }
+.board-item:is(.is-checklist, .is-deadline, .is-label) > :not(.board-item-handle):not(.board-item-resize) { height: 100%; }
+.board-checklist-card, .board-deadline-card {
+  display: flex; flex-direction: column; gap: 4px; width: 100%; height: 100%; padding: 8px 10px 10px; overflow: hidden;
+  background: var(--fb-surface, #ffffff); border: 1px solid var(--fb-g-e8ecdf, #e8ecdf); border-radius: calc(6px * var(--fb-radius-scale, 1)); box-shadow: var(--shadow-sm);
+}
+.board-checklist-count { flex: none; font-size: 0.72rem; font-weight: 600; color: var(--text-secondary); }
+.board-checklist-title, .board-checklist-text, .board-deadline-title, .board-deadline-note, .board-label-text {
+  min-width: 0; padding: 3px 6px; font: inherit; color: var(--text-primary); background: transparent; border: 1px solid transparent; border-radius: 5px; user-select: text;
+}
+.board-checklist-title, .board-deadline-title { flex: none; font-weight: 650; font-size: 0.92rem; }
+.board-checklist-title:focus, .board-checklist-text:focus, .board-deadline-title:focus, .board-deadline-note:focus, .board-label-text:focus { outline: none; border-color: var(--fb-g-cfd6c6, #cfd6c6); background: var(--fb-g-fbfcf8, #fbfcf8); }
+.board-checklist-items { flex: 1 1 auto; min-height: 0; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.board-checklist-items li { display: flex; align-items: center; gap: 4px; }
+.board-checklist-check { flex: none; width: 16px; height: 16px; margin: 0 2px 0 4px; accent-color: var(--primary); }
+.board-checklist-text { flex: 1; font-size: 0.86rem; }
+.board-checklist-items li.is-checked .board-checklist-text { color: var(--text-secondary); text-decoration: line-through; }
+.board-checklist-delete { flex: none; width: 24px; height: 24px; padding: 0; font: inherit; font-size: 1rem; color: var(--text-secondary); background: transparent; border: 0; border-radius: 5px; cursor: pointer; opacity: 0; }
+.board-checklist-items li:hover .board-checklist-delete, .board-checklist-delete:focus-visible { opacity: 1; }
+.board-checklist-delete:hover { background: var(--bg-secondary); }
+.board-checklist-add { flex: none; align-self: flex-start; min-height: 28px; padding: 0 8px; font: inherit; font-size: 0.82rem; color: var(--primary-dark); background: transparent; border: 0; border-radius: 5px; cursor: pointer; }
+.board-checklist-add:hover:not(:disabled) { background: var(--bg-secondary); }
+.board-checklist-add:disabled { color: var(--text-secondary); cursor: default; }
+.board-checklist-check:focus-visible, .board-checklist-add:focus-visible, .board-deadline-done:focus-visible, .board-deadline-card input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* A label: a heading for an area of the board, with no card around it. */
+.board-label { position: relative; display: flex; align-items: center; width: 100%; height: 100%; padding-left: 26px; }
+.board-label-text { width: 100%; height: 100%; padding: 0 6px; font-weight: 700; letter-spacing: -0.01em; background: transparent; }
+.board-label.size-s .board-label-text { font-size: 0.9rem; }
+.board-label.size-m .board-label-text { font-size: 1.15rem; }
+.board-label.size-l .board-label-text { font-size: 1.6rem; }
+.board-label.align-center .board-label-text { text-align: center; }
+.board-label.align-right .board-label-text { text-align: right; }
+.board-label.tone-default .board-label-text { color: var(--text-primary); }
+.board-label.tone-sage .board-label-text, .board-label-tone.tone-sage { color: #3f6b3a; }
+.board-label.tone-sky .board-label-text, .board-label-tone.tone-sky { color: #235f94; }
+.board-label.tone-rose .board-label-text, .board-label-tone.tone-rose { color: #9c3354; }
+.board-label.tone-amber .board-label-text, .board-label-tone.tone-amber { color: #855a06; }
+.board-label.tone-slate .board-label-text, .board-label-tone.tone-slate { color: #47566a; }
+.board-label-text::placeholder { color: var(--text-secondary); font-weight: 600; }
+.personal-board .board-label .board-label-menu { flex: none; opacity: 0; }
+.personal-board .board-item:hover .board-label-menu, .personal-board .board-label-menu[open], .personal-board .board-label-menu:focus-within { opacity: 1; }
+.board-label-options, .board-label-tones { display: flex; gap: 4px; padding: 4px 6px; }
+.board-block-menu .item-actions-popover .board-label-options button { flex: 1; min-height: 30px; padding: 0 6px; text-align: center; border: 1px solid var(--border-light); }
+.board-block-menu .item-actions-popover .board-label-options button[aria-pressed="true"], .board-block-menu .item-actions-popover .board-label-tone[aria-pressed="true"] { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.board-block-menu .item-actions-popover .board-label-tone { width: 30px; min-height: 30px; height: 30px; padding: 0; font-weight: 700; text-align: center; border: 1px solid var(--border-light); }
+.board-label-tone.tone-default { color: var(--text-primary); }
+
+/* Deadline: the status is always words and a sign, never colour alone. */
+.board-deadline-when { display: flex; flex-wrap: wrap; gap: 4px; }
+.board-deadline-when input { min-height: 28px; max-width: 100%; padding: 0 4px; font: inherit; font-size: 0.82rem; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 5px; }
+.board-deadline-row { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.board-deadline-status { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0; padding: 2px 6px; font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); }
+.board-deadline-icon { display: inline-grid; place-items: center; width: 16px; height: 16px; font-size: 0.7rem; border-radius: 50%; border: 1.5px solid currentColor; }
+.board-deadline-card.status-overdue .board-deadline-status { color: #9b2c2c; }
+.board-deadline-card.status-overdue { border-left: 3px solid #9b2c2c; }
+.board-deadline-card.status-today .board-deadline-status { color: #855a06; }
+.board-deadline-card.status-today { border-left: 3px solid #b7791f; }
+.board-deadline-card.status-completed .board-deadline-status { color: #3f6b3a; }
+.board-deadline-card.status-completed .board-deadline-title { color: var(--text-secondary); text-decoration: line-through; }
+.board-deadline-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
+.board-deadline-note { flex: 1 0 44px; font-size: 0.82rem; resize: none; }
+.board-deadline-done { flex: none; min-height: 26px; padding: 0 8px; font: inherit; font-size: 0.8rem; font-weight: 600; color: var(--primary-dark); background: var(--bg-primary); border: 1px solid var(--border-medium); border-radius: 6px; cursor: pointer; }
+
 @media (prefers-reduced-motion: reduce) {
   .boards .board-item-handle { transition: none; }
 }
@@ -297,5 +368,9 @@ html.fb-has-backdrop .boards-top { padding: 8px 12px 0; }
   .board-color { width: 44px; height: 44px; }
   .board-block-menu .item-actions-popover .board-note-swatch { width: 44px; min-height: 44px; height: 44px; }
   .boards-menu-note { min-height: 44px; }
+  .board-checklist-check { width: 22px; height: 22px; }
+  .board-checklist-delete { width: 44px; height: 44px; opacity: 1; }
+  .board-checklist-add, .board-deadline-done, .board-deadline-when input { min-height: 44px; }
+  .personal-board .board-label .board-label-menu { opacity: 1; }
   html.fb-has-backdrop .boards-top { padding: 14px 12px 0; }
 }

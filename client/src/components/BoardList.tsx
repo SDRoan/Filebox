@@ -1,8 +1,8 @@
 import React, { useRef } from 'react';
 import { BoardBlock, BoardZone } from '../services/api';
 import { StickyNoteBlock, RichTextBlock } from './BoardNoteBlocks';
-import { BoardActions, TextFrame, blockName, useRefCard } from './PersonalBoard';
-import { BLOCK_SIZES, CARD_WIDTH, Spot, zoneMembers } from '../utils/boardLayout';
+import { BoardActions, TextFrame, blockName, hasOwnSize, ownSize, planningBlock, useRefCard } from './PersonalBoard';
+import { CARD_WIDTH, Spot, zoneMembers } from '../utils/boardLayout';
 
 /**
  * A personal board on a phone: the same items as the canvas, top to bottom, grouped under the zones they
@@ -10,7 +10,7 @@ import { BLOCK_SIZES, CARD_WIDTH, Spot, zoneMembers } from '../utils/boardLayout
  */
 
 const placeOf = (b: BoardBlock): Spot => ({ x: b.x ?? 0, y: b.y ?? Number.MAX_SAFE_INTEGER });
-const sizeOf = (b?: BoardBlock) => (b && (b.type === 'note' || b.type === 'text') ? { w: b.w ?? BLOCK_SIZES[b.type].w, h: b.h ?? BLOCK_SIZES[b.type].h } : { w: CARD_WIDTH, h: 200 });
+const sizeOf = (b?: BoardBlock) => (b && hasOwnSize(b) ? ownSize(b) : { w: CARD_WIDTH, h: 200 });
 
 const BoardList: React.FC<BoardActions & { blocks: BoardBlock[]; zones: BoardZone[]; saveState: string; editingId: string; empty: React.ReactNode }> = ({ blocks, zones, saveState, editingId, empty, ...actions }) => {
   const { onArrange, onEdit, onFlush, onRemove, onEditingChange } = actions;
@@ -54,6 +54,8 @@ const BoardList: React.FC<BoardActions & { blocks: BoardBlock[]; zones: BoardZon
             onStartEdit={() => onEditingChange(block.id)} onEdit={(doc) => onEdit(block.id, { text: { doc } })} onFlush={onFlush} onExit={exit} onRemove={() => onRemove(block)} />
         </TextFrame>
       );
+    } else if (block.type === 'checklist' || block.type === 'label' || block.type === 'deadline') {
+      content = planningBlock(block, actions, { phone: true, first, last, onMove: (d) => move(block, d), onExit: exit });
     } else {
       content = refCard(block, (
         <>
