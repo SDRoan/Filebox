@@ -74,6 +74,10 @@
 .adv-browse-note { margin: 10px 0 0; font-size: 0.8rem; color: var(--text-tertiary); }
 
 /* ---- Summary and results */
+.adv-summary-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 22px; }
+.adv-summary-row .adv-summary { margin-top: 0; }
+.adv-save-board { min-height: 36px; }
+.adv-saved-note { margin: 8px 0 0; font-size: 0.88rem; color: var(--text-primary); }
 .adv-summary { margin: 22px 0 0; font-weight: 600; font-size: 0.92rem; color: var(--text-secondary); }
 .adv-announcement { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .adv-results { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 0; padding: 0; list-style: none; }

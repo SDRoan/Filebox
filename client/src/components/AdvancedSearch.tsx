@@ -2,6 +2,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import AdvancedSearchResult from './AdvancedSearchResult';
 import FilePreview from './FilePreview';
+import SaveSearchToBoardDialog from './SaveSearchToBoardDialog';
+import { fromApplied } from '../utils/savedSearch';
+import { writeOpenTab } from '../utils/boardTabs';
+import { useAuth } from '../context/AuthContext';
 import { advancedSearchAPI, filesAPI, teamFoldersAPI, AdvancedSearchParams, AdvancedSearchResponse, AdvancedSearchResult as Result } from '../services/api';
 import { pagePath } from '../config/workspaceNavigation';
 import { FileItemType } from '../types';
@@ -45,6 +49,8 @@ interface Filters {
   dateField: 'modified' | 'uploaded';
   location: string;
   folder: string;
+  // One Team Space (location 'team' only); empty = all of the person's Team Spaces.
+  team: string;
   sort: string;
   topic: string;
   // Search the words exactly as typed (no filters read from them).
@@ -63,6 +69,7 @@ function readFilters(params: URLSearchParams, typesFor: (category: string) => st
   const folder = OBJECT_ID.test(params.get('folder') || '') ? params.get('folder') || '' : '';
   let location = valueIn(params.get('location'), LOCATIONS, 'everywhere');
   if (location === 'folder' && !folder) location = 'everywhere';
+  const team = location === 'team' && OBJECT_ID.test(params.get('team') || '') ? params.get('team') || '' : '';
   const date = valueIn(params.get('date'), DATES, 'any');
   const sortDefault = q.trim() ? 'best' : 'modified';
   let sort = valueIn(params.get('sort'), SORTS, sortDefault);
@@ -78,6 +85,7 @@ function readFilters(params: URLSearchParams, typesFor: (category: string) => st
     dateField: params.get('dateField') === 'uploaded' ? 'uploaded' : 'modified',
     location,
     folder,
+    team,
     sort,
     topic: (params.get('topic') || '').slice(0, 60),
     exact: params.get('exact') === '1',
@@ -117,7 +125,12 @@ const AdvancedSearch: React.FC = () => {
   const [error, setError] = useState<'' | 'folder' | 'failed'>('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [announcement, setAnnouncement] = useState('');
-  const [hasTeams, setHasTeams] = useState(false);
+  // Team Spaces this person is in now: the only names ever shown for a Team Space.
+  const [teams, setTeams] = useState<Array<{ id: string; name: string }>>([]);
+  const hasTeams = teams.length > 0;
+  const { user } = useAuth();
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [saved, setSaved] = useState<{ tabId: string; name: string } | null>(null);
   const [folderName, setFolderName] = useState('');
   const [sheetOpen, setSheetOpen] = useState(false);
   const latest = useRef(0);
@@ -131,7 +144,10 @@ const AdvancedSearch: React.FC = () => {
 
   useEffect(() => {
     advancedSearchAPI.taxonomy().then(t => setTaxonomy(t.categories)).catch(() => setTaxonomy(CATEGORIES.map(name => ({ name, documentTypes: [] }))));
-    teamFoldersAPI.getTeamFolders().then((teams: unknown) => setHasTeams(Array.isArray(teams) ? teams.length > 0 : Boolean((teams as any)?.teamFolders?.length))).catch(() => setHasTeams(false));
+    teamFoldersAPI.getTeamFolders().then((list: unknown) => {
+      const raw: any[] = Array.isArray(list) ? list : ((list as any)?.teamFolders || []);
+      setTeams(raw.map(t => ({ id: String(t._id), name: String(t.name || 'Team Space') })));
+    }).catch(() => setTeams([]));
   }, []);
 
   useEffect(() => {
@@ -146,6 +162,7 @@ const AdvancedSearch: React.FC = () => {
     // Defaults stay out of the URL.
     [['format', 'all'], ['date', 'any'], ['dateField', 'modified'], ['location', 'everywhere']].forEach(([key, value]) => { if (next.get(key) === value) next.delete(key); });
     if (next.get('date') !== 'custom') { next.delete('from'); next.delete('to'); }
+    if (next.get('location') !== 'team') next.delete('team');
     const sortDefault = (next.get('q') || '').trim() ? 'best' : 'modified';
     if (next.get('sort') === sortDefault) next.delete('sort');
     setParams(next, { replace: !push });
@@ -180,6 +197,7 @@ const AdvancedSearch: React.FC = () => {
     dateField: filters.dateField,
     location: filters.location,
     folderId: filters.location === 'folder' ? filters.folder : undefined,
+    teamId: filters.location === 'team' && filters.team ? filters.team : undefined,
     currentFolderId: filters.folder || undefined,
     sort: filters.sort,
     tz: new Date().getTimezoneOffset(),
@@ -260,7 +278,8 @@ const AdvancedSearch: React.FC = () => {
   const typeChips = (data?.groups.documentTypes || []).filter(g => g.count > 0);
 
   const activeFilters = [filters.category, filters.type, filters.topic, filters.format !== 'all', filters.date !== 'any', filters.location !== 'everywhere'].filter(Boolean).length;
-  const clearFilters = () => update({ category: null, type: null, topic: null, format: null, date: null, from: null, to: null, dateField: null, location: null, sort: null, understand: null });
+  const clearFilters = () => update({ category: null, type: null, topic: null, format: null, date: null, from: null, to: null, dateField: null, location: null, team: null, sort: null, understand: null });
+  const teamName = filters.team ? teams.find(t => t.id === filters.team)?.name || '' : '';
 
   const summary = (() => {
     if (loading && !data) return 'Searching…';
@@ -271,7 +290,7 @@ const AdvancedSearch: React.FC = () => {
       filters.topic && `Topic: ${filters.topic}`,
       filters.format !== 'all' && FORMATS.find(f => f[0] === filters.format)?.[1],
       dateWords(filters) && `${filters.dateField === 'uploaded' ? 'Uploaded' : 'Modified'} ${dateWords(filters)}`,
-      filters.location === 'folder' ? `In ${folderName || 'this folder'}` : filters.location === 'my-files' ? 'My Files' : filters.location === 'shared' ? 'Shared with me' : filters.location === 'team' ? 'Team Spaces' : '',
+      filters.location === 'folder' ? `In ${folderName || 'this folder'}` : filters.location === 'my-files' ? 'My Files' : filters.location === 'shared' ? 'Shared with me' : filters.location === 'team' ? (filters.team ? (teamName ? `Team Space · ${teamName}` : 'One Team Space') : 'Team Spaces') : '',
     ].filter(Boolean);
     return `${total} ${total === 1 ? 'file' : 'files'}${bits.length ? ` · ${bits.join(' · ')}` : ''}`;
   })();
@@ -418,12 +437,18 @@ const AdvancedSearch: React.FC = () => {
       )}
       <label className="adv-field">
         <span>Location</span>
-        <select value={filters.location} onChange={event => update({ location: event.target.value })}>
+        <select value={filters.team ? `team:${filters.team}` : filters.location} onChange={(event) => {
+          const value = event.target.value;
+          if (value.startsWith('team:')) update({ location: 'team', team: value.slice(5) });
+          else update({ location: value, team: null });
+        }}>
           <option value="everywhere">Everywhere</option>
           {filters.folder && <option value="folder">{folderName ? `This folder (${folderName})` : 'Current folder'}</option>}
           <option value="my-files">My Files</option>
           <option value="shared">Shared with me</option>
           {hasTeams && <option value="team">Team Spaces</option>}
+          {teams.map(t => <option key={t.id} value={`team:${t.id}`}>Team Space · {t.name}</option>)}
+          {filters.team && !teamName && <option value={`team:${filters.team}`}>One Team Space</option>}
         </select>
       </label>
       <label className="adv-field">
@@ -519,14 +544,28 @@ const AdvancedSearch: React.FC = () => {
         <p className="adv-browse-note">Grouped by what each file is. Files stay in their folders.</p>
       </nav>
 
-      <p className="adv-summary" aria-live="polite">{summary}</p>
+      <div className="adv-summary-row">
+        <p className="adv-summary" aria-live="polite">{summary}</p>
+        {data && !error && <button type="button" className="adv-button-secondary adv-save-board" onClick={() => setSaveOpen(true)}>Save to board…</button>}
+      </div>
+      {saved && (
+        <p className="adv-saved-note" role="status">
+          Saved “{saved.name}” to your board.{' '}
+          <button type="button" className="adv-button-quiet" onClick={() => { writeOpenTab(user?.id, saved.tabId); navigate(pagePath('boards')); }}>Open board</button>
+        </p>
+      )}
+      {saveOpen && data && (
+        <SaveSearchToBoardDialog search={fromApplied(data.applied)} meaning={filters.meaning}
+          onClose={() => setSaveOpen(false)}
+          onSaved={(tab) => { setSaveOpen(false); setSaved({ tabId: tab.id, name: tab.name }); setAnnouncement(`Saved to ${tab.name}.`); }} />
+      )}
       <p className="adv-announcement" role="status" aria-live="polite">{announcement}</p>
 
       {error === 'folder' && (
         <div className="adv-empty" role="status">
-          <p className="adv-empty-title">This folder isn't available.</p>
+          <p className="adv-empty-title">{filters.location === 'team' ? "This Team Space isn't available." : "This folder isn't available."}</p>
           <p>It may have been moved, deleted, or you no longer have access to it.</p>
-          <div className="adv-empty-actions"><button type="button" onClick={() => update({ location: null, folder: null })}>Search everywhere</button></div>
+          <div className="adv-empty-actions"><button type="button" onClick={() => update({ location: null, folder: null, team: null })}>Search everywhere</button></div>
         </div>
       )}
       {error === 'failed' && (

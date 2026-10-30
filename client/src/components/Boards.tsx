@@ -6,6 +6,8 @@ import ItemActions from './ItemActions';
 import BoardDialog from './BoardDialog';
 import BoardTabDialog, { TabLook } from './BoardTabDialog';
 import { LinkDialog } from './BoardLinkBlock';
+import { SavedSearchDialog } from './BoardSavedSearchBlock';
+import { useSavedSearchRuns } from '../hooks/useSavedSearchRuns';
 import PersonalBoard from './PersonalBoard';
 import BoardList from './BoardList';
 import BoardAddFileDialog from './BoardAddFileDialog';
@@ -42,10 +44,10 @@ const usePhone = () => {
   return phone;
 };
 
-type AddKind = 'file' | 'folder' | 'filelist' | 'note' | 'text' | 'checklist' | 'deadline' | 'label' | 'link';
+type AddKind = 'file' | 'folder' | 'filelist' | 'search' | 'note' | 'text' | 'checklist' | 'deadline' | 'label' | 'link';
 // The "+ Add" menu in groups (group names are read out, not chosen).
 const ADD_GROUPS: Array<{ name: string; items: Array<[AddKind, string]> }> = [
-  { name: 'Files', items: [['file', 'File'], ['folder', 'Folder'], ['filelist', 'File list']] },
+  { name: 'Files', items: [['file', 'File'], ['folder', 'Folder'], ['filelist', 'File list'], ['search', 'Saved search']] },
   { name: 'Notes & planning', items: [['note', 'Sticky note'], ['text', 'Text area'], ['checklist', 'Checklist'], ['deadline', 'Deadline']] },
   { name: 'Other', items: [['label', 'Label'], ['link', 'Link']] },
 ];
@@ -102,6 +104,7 @@ const Boards: React.FC = () => {
   const [notice, setNotice] = useState<BoardNotice | null>(null);
   const [resetOpen, setResetOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const phone = usePhone();
   // The one text area being edited (only it has a live editor).
   const [editingId, setEditingId] = useState('');
@@ -328,9 +331,14 @@ const Boards: React.FC = () => {
     else if (kind === 'note') addNote();
     else if (kind === 'text') addText();
     else if (kind === 'link') setLinkOpen(true);
+    else if (kind === 'search') {
+      if (board.blocks.filter(b => b.type === 'search').length >= (limits?.searchesPerTab || 10)) showNotice({ tone: 'error', text: `A tab can hold up to ${limits?.searchesPerTab || 10} saved searches.` });
+      else setSearchOpen(true);
+    }
     else addPlanning(kind);
   };
   const room = (limits?.blocksPerTab || 150) - board.blocks.length;
+  const searchRuns = useSavedSearchRuns({ tabId: active?.id, blocks: board.blocks, storedKey: board.storedSearchKey, editing: Boolean(editingId) });
   // Stored file references on this tab: file cards and every file-list row (limit 1,000).
   const refRoom = (limits?.fileRefsPerTab || 1000) - board.blocks.reduce((n, b) => n + (b.type === 'file' ? 1 : b.type === 'filelist' ? b.filelist.items.length : 0), 0);
   const unavailable = board.blocks.filter(b => (b.type === 'file' || b.type === 'folder') && !b.ref.available).length;
@@ -347,7 +355,7 @@ const Boards: React.FC = () => {
   };
   const actions = {
     onArrange: board.arrange, onEdit: board.edit, onFlush: board.flush, onRemove: board.remove, onReload: board.reload, onEditingChange: setEditingId,
-    onRemoveRow: board.removeListRow, refRoom,
+    onRemoveRow: board.removeListRow, refRoom, searchRuns,
   };
   const emptyBoard = (
     <div className="boards-empty-canvas">
@@ -479,6 +487,13 @@ const Boards: React.FC = () => {
           setLinkOpen(false);
           const id = board.addBlock('link', { link });
           setTimeout(() => document.querySelector<HTMLElement>(`[data-board-key="${id}"] .board-link-title, [data-list-id="${id}"] .board-link-title`)?.focus(), 120);
+        }} />
+      )}
+      {searchOpen && (
+        <SavedSearchDialog onClose={() => setSearchOpen(false)} onSave={(search) => {
+          setSearchOpen(false);
+          const id = board.addBlock('search', { search });
+          setTimeout(() => document.querySelector<HTMLElement>(`[data-board-key="${id}"] .board-item-handle, [data-list-id="${id}"]`)?.focus(), 120);
         }} />
       )}
       {resetOpen && (

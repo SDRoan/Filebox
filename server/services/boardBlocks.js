@@ -1,8 +1,10 @@
 /**
- * Boards: the board-only block types (checklist, label, deadline, link, file list). Every value the browser sends is
+ * Boards: the board-only block types (checklist, label, deadline, link, file list, saved search). Every value the browser sends is
  * cleaned here before it is stored; anything that cannot be cleaned is refused with a clear message.
  * Lengths count characters as people see them (an emoji is one), like notes.
  */
+
+const { TAXONOMY, CATEGORIES } = require('./fileClassifier');
 
 class BlockError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -14,6 +16,7 @@ const LIMITS = Object.freeze({
   deadlineTitle: 120, deadlineNote: 500,
   linkUrl: 2000, linkTitle: 200, linkNote: 500,
   fileListTitle: 100, fileListRows: 50,
+  searchTitle: 100, searchText: 300, searchTopic: 60,
 });
 const LABEL_SIZES = ['s', 'm', 'l'];
 const LABEL_ALIGN = ['left', 'center', 'right'];
@@ -163,6 +166,72 @@ function cleanFileList(raw) {
   return { title, items };
 }
 
-const CLEANERS = Object.freeze({ checklist: cleanChecklist, label: cleanLabel, deadline: cleanDeadline, link: cleanLink, filelist: cleanFileList });
+/**
+ * A saved search: only the structured filters Advanced Search runs with (services/advancedSearch.js), and
+ * how many results the block shows. Never results, counts, snippets or file ids. Relative dates (today,
+ * this week, this month, this year) are kept as words, so they always mean the current one.
+ */
+const SEARCH = Object.freeze({
+  formats: ['all', 'pdf', 'image', 'document', 'text', 'code', 'other'],
+  dates: ['any', 'today', 'week', 'month', 'year', 'custom'],
+  dateFields: ['modified', 'uploaded'],
+  locations: ['everywhere', 'my-files', 'shared', 'team', 'folder'],
+  sorts: ['best', 'content', 'modified', 'newest', 'oldest', 'name'],
+  show: [3, 5, 10],
+});
+const SCOPE_ID = /^[0-9a-f]{24}$/;
+function cleanSavedSearch(raw) {
+  if (!isObject(raw)) throw new BlockError('Choose what this saved search should find.');
+  const bad = (what) => { throw new BlockError(`This saved search could not be saved: ${what}.`); };
+  const one = (value, allowed, fallback, what) => {
+    if (value === undefined || value === null || value === '') return fallback;
+    if (!allowed.includes(value)) bad(what);
+    return value;
+  };
+  const text = within(oneLine(raw.text), LIMITS.searchText, 'Search words');
+  const category = one(raw.category, ['all', ...CATEGORIES], 'all', 'unknown category');
+  const allTypes = [...new Set(Object.values(TAXONOMY).flat())];
+  const documentType = one(raw.documentType, ['all', ...allTypes], 'all', 'unknown document type');
+  if (category !== 'all' && documentType !== 'all' && !TAXONOMY[category].includes(documentType)) bad(`${documentType} is not a ${category} document type`);
+  const date = one(raw.date, SEARCH.dates, 'any', 'unknown date');
+  let from = null;
+  let to = null;
+  if (date === 'custom') {
+    const day = (value) => (value === undefined || value === null || value === '' ? null : calendarDate(value) || bad('a date is not a real day between 2000 and 2100'));
+    from = day(raw.from);
+    to = day(raw.to);
+    if (!from && !to) bad('a custom range needs a start or an end');
+    if (from && to && from > to) bad('the start is after the end');
+  }
+  const location = one(raw.location, SEARCH.locations, 'everywhere', 'unknown location');
+  const id = (value) => (typeof value === 'string' && SCOPE_ID.test(value) ? value : null);
+  const folderId = location === 'folder' ? id(raw.folderId) : null;
+  if (location === 'folder' && !folderId) bad('choose a folder');
+  const teamId = location === 'team' && raw.teamId !== undefined && raw.teamId !== null && raw.teamId !== '' ? id(raw.teamId) || bad('unknown Team Space') : null;
+  let sort = one(raw.sort, SEARCH.sorts, text ? 'best' : 'modified', 'unknown sort');
+  // Best match and most relevant content need words; without them the newest changes come first (as on the search page).
+  if (!text && (sort === 'best' || sort === 'content')) sort = 'modified';
+  const show = raw.show === undefined ? 5 : Number(raw.show);
+  if (!SEARCH.show.includes(show)) bad('show 3, 5 or 10 results');
+  return {
+    title: within(oneLine(raw.title), LIMITS.searchTitle, 'A saved search title'),
+    text,
+    category,
+    documentType,
+    topic: within(oneLine(raw.topic), LIMITS.searchTopic, 'A topic'),
+    format: one(raw.format, SEARCH.formats, 'all', 'unknown format'),
+    date,
+    from,
+    to,
+    dateField: one(raw.dateField, SEARCH.dateFields, 'modified', 'unknown date field'),
+    location,
+    folderId,
+    teamId,
+    sort,
+    show,
+  };
+}
 
-module.exports = { BlockError, LIMITS, LABEL_SIZES, LABEL_ALIGN, LABEL_TONES, CLEANERS, cleanChecklist, cleanLabel, cleanDeadline, cleanLink, linkUrl, cleanFileList };
+const CLEANERS = Object.freeze({ checklist: cleanChecklist, label: cleanLabel, deadline: cleanDeadline, link: cleanLink, filelist: cleanFileList, search: cleanSavedSearch });
+
+module.exports = { BlockError, LIMITS, LABEL_SIZES, LABEL_ALIGN, LABEL_TONES, CLEANERS, cleanChecklist, cleanLabel, cleanDeadline, cleanLink, linkUrl, cleanFileList, cleanSavedSearch, SEARCH };

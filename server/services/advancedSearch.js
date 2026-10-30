@@ -172,7 +172,14 @@ async function locationFilter(userId, { location, folderId, teamId }) {
   if (location === 'shared') {
     return { owner: { $ne: userId }, sharedWith: { $elemMatch: { user: userId, $or: [{ expiresAt: null }, { expiresAt: { $gt: new Date() } }] } } };
   }
-  if (location === 'team') return { parentFolder: { $in: await teamFolderIds(userId, teamId) } };
+  if (location === 'team') {
+    // One Team Space: like a folder, one this person cannot open (or that does not exist) is "not found".
+    if (teamId) {
+      const ids = mongoose.isValidObjectId(teamId) ? await teamFolderIds(userId, teamId) : [];
+      return ids.length ? { parentFolder: { $in: ids } } : null;
+    }
+    return { parentFolder: { $in: await teamFolderIds(userId) } };
+  }
   if (location === 'folder') {
     const ids = await folderTree(folderId, userId);
     return ids ? { parentFolder: { $in: ids } } : null;

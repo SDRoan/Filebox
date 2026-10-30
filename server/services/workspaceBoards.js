@@ -11,6 +11,7 @@ const { effectiveClassification } = require('./fileClassifier');
 const { technicalType } = require('./advancedSearch');
 const { cleanDoc, RichTextError } = require('./richTextSchema');
 const { CLEANERS: BLOCK_CLEANERS, BlockError } = require('./boardBlocks');
+const savedSearch = require('./savedSearch');
 
 /**
  * Boards: a person's tabbed workspace. Every value that reaches the database is checked here; nothing
@@ -27,6 +28,7 @@ const LIMITS = Object.freeze({
   blocksPerTab: 150,
   // Stored file references on one tab: file cards plus every row of every file list (the same file twice counts twice).
   fileRefsPerTab: 1000,
+  searchesPerTab: 10,
   tabName: 40,
   noteTitle: 80,
   noteBody: 4000,
@@ -45,7 +47,7 @@ class BoardInputError extends Error {
   constructor(message, status = 400, extra = {}) { super(message); this.status = status; Object.assign(this, extra); }
 }
 const BLOCK_ID = /^[a-z0-9]{10}$/;
-const BLOCK_TYPES = ['file', 'folder', 'note', 'text', 'checklist', 'label', 'deadline', 'link', 'filelist'];
+const BLOCK_TYPES = ['file', 'folder', 'note', 'text', 'checklist', 'label', 'deadline', 'link', 'filelist', 'search'];
 const NOTE_COLORS = Object.freeze(['yellow', 'pink', 'blue', 'green', 'purple', 'orange']);
 const REF_TYPES = ['file', 'folder'];
 const NOTE_CONTROL = new RegExp('[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]', 'g');
@@ -88,6 +90,12 @@ function cleanTextBlock(raw) {
   }
 }
 const UNAVAILABLE_TO_ADD = "Something you tried to add isn't available.";
+const TOO_MANY_SEARCHES = `A tab can hold up to ${LIMITS.searchesPerTab} saved searches.`;
+const SCOPE_GONE = "That folder or Team Space isn't available.";
+const searchCount = (blocks) => blocks.filter(b => b.type === 'search').length;
+// A saved search limited to one folder or Team Space: which one (null for everywhere, My Files, shared, all Team Spaces).
+const scopeKey = (s) => (s && (s.location === 'folder' || (s.location === 'team' && s.teamId)) ? `${s.location}:${s.folderId || s.teamId}` : null);
+
 const TOO_MANY_REFS = `A tab can hold up to ${LIMITS.fileRefsPerTab.toLocaleString('en-US')} file references (file cards and file-list rows). Remove some to add more.`;
 
 /** The file ids a file list's rows point at, in order. */
@@ -172,6 +180,7 @@ const publicTab = (tab) => ({
   rev: tab.rev,
   blocks: [],
   blockCount: (tab.blocks || []).length,
+  searchCount: (tab.blocks || []).filter(b => b.type === 'search').length,
   updatedAt: tab.updatedAt,
 });
 
@@ -427,6 +436,8 @@ async function saveBlocks(userId, tabId, body = {}) {
   const seenIds = new Set();
   const refs = new Set();
   const added = { file: [], folder: [], list: [] };
+  // Saved searches whose folder or Team Space is new or changed: checked against current access below.
+  const scopes = [];
   const next = body.blocks.map((raw) => {
     const id = typeof raw?.id === 'string' ? raw.id : '';
     if (!BLOCK_ID.test(id) || seenIds.has(id)) throw new BoardInputError('Some blocks could not be saved. Reload and try again.');
@@ -454,8 +465,11 @@ async function saveBlocks(userId, tabId, body = {}) {
       added.list.push(...fresh);
     } else if (!REF_TYPES.includes(base.type) && raw[base.type] !== undefined) {
       // A block's content comes from the browser only when it was edited; otherwise the stored content stays.
+      const before = base;
       base = { ...base, [base.type]: cleanContent(base.type, raw[base.type]) };
+      if (base.type === 'search' && scopeKey(base.search) && scopeKey(base.search) !== scopeKey(before.search)) scopes.push(base.search);
     }
+    if (!stored.has(id) && base.type === 'search' && scopeKey(base.search)) scopes.push(base.search);
     if (REF_TYPES.includes(base.type)) {
       const key = `${base.type}:${idOf(base.type === 'file' ? base.fileId : base.folderId)}`;
       if (refs.has(key)) throw new BoardInputError(`That ${base.type} is already on this tab.`);
@@ -465,6 +479,12 @@ async function saveBlocks(userId, tabId, body = {}) {
     return { ...content, ...layout.cleanPlace(raw, base.type) };
   });
   const zones = body.zones === undefined ? canvas.zones : layout.cleanZones(body.zones);
+
+  const searches = searchCount(next);
+  if (searches > LIMITS.searchesPerTab && searches > searchCount(canvas.blocks)) throw new BoardInputError(TOO_MANY_SEARCHES);
+  for (const s of scopes) {
+    if (!(await savedSearch.scopeOf(userId, s))) throw new BoardInputError(SCOPE_GONE);
+  }
 
   const refCount = fileRefCount(next);
   if (refCount > LIMITS.fileRefsPerTab && refCount > fileRefCount(canvas.blocks)) throw new BoardInputError(TOO_MANY_REFS);
@@ -626,6 +646,52 @@ async function addRef(userId, tabId, body = {}) {
   throw new BoardInputError('This board is being changed right now. Try again.', 409);
 }
 
+/**
+ * Run saved searches of a tab with their stored filters (the browser only names which blocks, at most 10).
+ * Each runs through Advanced Search with current access; nothing it finds is stored.
+ */
+async function runTabSearches(userId, tabId, body = {}) {
+  if (!TAB_ID.test(tabId || '')) throw new BoardInputError('Tab not found.', 404);
+  const ids = Array.isArray(body.blockIds) ? body.blockIds.filter(id => typeof id === 'string' && BLOCK_ID.test(id)) : [];
+  if (!ids.length || ids.length > savedSearch.MAX_RUN || ids.length !== body.blockIds.length) throw new BoardInputError(`Choose 1 to ${savedSearch.MAX_RUN} saved searches.`);
+  const tz = Number(body.tz);
+  const current = await WorkspaceTab.findOne({ user: userId, tabId }).select('blocks').lean();
+  if (!current) throw new BoardInputError('Tab not found.', 404);
+  const byId = new Map((current.blocks || []).filter(b => b.type === 'search').map(b => [b.id, b]));
+  const wanted = [...new Set(ids)].map(id => byId.get(id)).filter(Boolean);
+  return { searches: await savedSearch.runSearches(userId, wanted, Number.isFinite(tz) && Math.abs(tz) <= 840 ? tz : 0) };
+}
+
+/**
+ * "Save to board…" from Advanced Search: a saved-search block (the same type as Add → Saved search), added
+ * without a place (the board puts it below everything). Only the filters are stored, never the results.
+ */
+async function addSearch(userId, tabId, body = {}) {
+  if (!TAB_ID.test(tabId || '')) throw new BoardInputError('Tab not found.', 404);
+  const search = cleanContent('search', body.search);
+  if (scopeKey(search) && !(await savedSearch.scopeOf(userId, search))) throw new BoardInputError(SCOPE_GONE);
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    if (attempt) await new Promise(resolve => setTimeout(resolve, 10 * attempt + Math.random() * 30));
+    const current = await WorkspaceTab.findOne({ user: userId, tabId }).lean();
+    if (!current) throw new BoardInputError('Tab not found.', 404);
+    const canvas = canvasOf(current);
+    const list = canvas.blocks;
+    if (list.length >= LIMITS.blocksPerTab) throw new BoardInputError(`This board is full (${LIMITS.blocksPerTab} items).`, 409);
+    if (searchCount(list) >= LIMITS.searchesPerTab) throw new BoardInputError(TOO_MANY_SEARCHES, 409);
+    let id;
+    do { id = newTabId(); } while (list.some(b => b.id === id));
+    const blocks = storedBlocks([...list, { id, type: 'search', x: null, y: null, search }]);
+    const bytes = await checkSize(userId, current, blocks, canvas.zones);
+    const updated = await WorkspaceTab.findOneAndUpdate(
+      { user: userId, tabId, rev: current.rev },
+      { $set: { blocks, zones: canvas.zones, bytes, layoutVersion: LAYOUT_VERSION }, $inc: { rev: 1 } },
+      { new: true }
+    ).lean();
+    if (updated) return { tab: publicTab(updated), blockId: id };
+  }
+  throw new BoardInputError('This board is being changed right now. Try again.', 409);
+}
+
 async function conflict(userId, tabId) {
   const latest = await WorkspaceTab.findOne({ user: userId, tabId }).lean();
   if (!latest) return new BoardInputError('Tab not found.', 404);
@@ -635,5 +701,5 @@ async function conflict(userId, tabId) {
 
 module.exports = {
   LIMITS, COLORS, NOTE_COLORS, SIZES: layout.SIZES, LAYOUT_VERSION, canvasOf, BoardInputError, cleanName, cleanIcon, cleanColor, listTabs, createTab, updateTab, deleteTab,
-  getTab, saveBlocks, resolveBlocks, duplicateTab, reorderTabs, setDefaultTab, placements, addRef, DEFAULT_TAB_NAME,
+  getTab, saveBlocks, resolveBlocks, duplicateTab, reorderTabs, setDefaultTab, placements, addRef, runTabSearches, addSearch, DEFAULT_TAB_NAME,
 };

@@ -399,7 +399,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
    * A new checklist, label, deadline, link or file list, placed below everything. A link comes with its content (the
    * address is checked first). Returns its id (so it can be focused).
    */
-  const addBlock = useCallback((type: 'checklist' | 'label' | 'deadline' | 'link' | 'filelist', given?: BoardContent) => {
+  const addBlock = useCallback((type: 'checklist' | 'label' | 'deadline' | 'link' | 'filelist' | 'search', given?: BoardContent) => {
     const { w, h } = BLOCK_SIZES[type];
     const content = given || (type === 'checklist' ? { checklist: { title: '', items: [] } }
       : type === 'filelist' ? { filelist: { title: '', items: [] } }
@@ -421,7 +421,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     setBlocks(blocksRef.current.filter(b => b.id !== block.id));
     pending.current.actions.push({ kind: 'remove', id: block.id });
     schedule(UNDO_WINDOW);
-    const CONTENT_NAMES: Record<string, string> = { note: 'The note', text: 'The text area', checklist: 'The checklist', label: 'The label', deadline: 'The deadline', link: 'The link', filelist: 'The file list' };
+    const CONTENT_NAMES: Record<string, string> = { note: 'The note', text: 'The text area', checklist: 'The checklist', label: 'The label', deadline: 'The deadline', link: 'The link', filelist: 'The file list', search: 'The saved search' };
     const isRef = before.type === 'file' || before.type === 'folder';
     const name = !isRef ? CONTENT_NAMES[before.type] : before.ref.available ? `“${before.ref.name}”` : 'The unavailable item';
     const where = isRef ? ' It is still in File Box.' : '';
@@ -530,5 +530,11 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     });
   }, [edit, onNotice]);
 
-  return { blocks, zones, loading, error, pending: pendingRefs, saveState, change, arrange, edit, flush, addFiles, addFolder, addNote, addText, addBlock, remove, removeUnavailable, removeListRow, reload };
+  /** A saved search's filters as the server has them (null until it is saved): saved searches run with those. */
+  const storedSearchKey = useCallback((id: string) => {
+    const b = serverBlocks.current.find(x => x.id === id);
+    return b && b.type === 'search' ? JSON.stringify(b.search) : null;
+  }, []);
+
+  return { blocks, zones, loading, error, pending: pendingRefs, saveState, change, arrange, edit, flush, addFiles, addFolder, addNote, addText, addBlock, remove, removeUnavailable, removeListRow, storedSearchKey, reload };
 }

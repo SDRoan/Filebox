@@ -575,6 +575,7 @@ export interface BoardTab {
   rev: number;
   blocks: unknown[];
   blockCount: number;
+  searchCount?: number;
   updatedAt?: string;
 }
 
@@ -626,8 +627,24 @@ export interface BoardLink { url: string; title: string; note: string }
 // `fileId` is only on a row added here since the last save (the server checks it); saved rows never carry one.
 export interface BoardFileListRow { id: string; ref: BoardRef; fileId?: string }
 export interface BoardFileList { title: string; items: BoardFileListRow[] }
+// A saved search: only the structured filters Advanced Search runs with, and how many results to show.
+// Results are never stored; they are worked out with current access each time (see runSearches).
+export interface BoardSavedSearch {
+  title: string; text: string; category: string; documentType: string; topic: string;
+  format: 'all' | 'pdf' | 'image' | 'document' | 'text' | 'code' | 'other';
+  date: 'any' | 'today' | 'week' | 'month' | 'year' | 'custom'; from: string | null; to: string | null;
+  dateField: 'modified' | 'uploaded';
+  location: 'everywhere' | 'my-files' | 'shared' | 'team' | 'folder'; folderId: string | null; teamId: string | null;
+  sort: 'best' | 'content' | 'modified' | 'newest' | 'oldest' | 'name';
+  show: 3 | 5 | 10;
+}
+// One result row of a saved search (what the block shows and the preview needs; no snippet).
+export type SavedSearchRow = Pick<AdvancedSearchResult, '_id' | 'originalName' | 'mimeType' | 'size' | 'technicalType' | 'createdAt' | 'updatedAt' | 'parentFolder' | 'folderName' | 'isStarred' | 'ownerName' | 'access'>;
+export type SavedSearchRun =
+  | { id: string; state: 'ok'; total: number; results: SavedSearchRow[]; scopeName?: string; tookMs?: number }
+  | { id: string; state: 'unavailable' | 'error' };
 // The content of a block that is not a file or folder, in a field named after its type.
-export interface BoardContent { note?: BoardNote; text?: BoardText; checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink; filelist?: BoardFileList }
+export interface BoardContent { note?: BoardNote; text?: BoardText; checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink; filelist?: BoardFileList; search?: BoardSavedSearch }
 
 // A place on the free canvas in pixels; null x/y = not placed yet (the board puts it below everything).
 // Sticky notes and text areas also have a width and height.
@@ -640,7 +657,8 @@ export type BoardBlock =
   | (BoardPlace & { type: 'label'; label: BoardLabel })
   | (BoardPlace & { type: 'deadline'; deadline: BoardDeadline })
   | (BoardPlace & { type: 'link'; link: BoardLink })
-  | (BoardPlace & { type: 'filelist'; filelist: BoardFileList });
+  | (BoardPlace & { type: 'filelist'; filelist: BoardFileList })
+  | (BoardPlace & { type: 'search'; search: BoardSavedSearch });
 
 // What a save sends: positions for every block; a file/folder id only for blocks added since the last save;
 // a note's or text area's words only when they changed (the server keeps the stored ones otherwise).
@@ -650,9 +668,10 @@ export interface BoardBlockInput {
   checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink;
   // A file list's rows: { id } for a row the server has (it keeps that row's file), { id, fileId } for a new one.
   filelist?: { title: string; items: Array<{ id: string; fileId?: string }> };
+  search?: BoardSavedSearch;
 }
 
-export interface BoardLimits { tabs: number; blocksPerTab: number; fileRefsPerTab: number; tabName: number; noteTitle: number; noteBody: number; richTextChars: number; richTextBytes: number; tabBytes: number; totalBytes: number }
+export interface BoardLimits { tabs: number; blocksPerTab: number; fileRefsPerTab: number; searchesPerTab: number; tabName: number; noteTitle: number; noteBody: number; richTextChars: number; richTextBytes: number; tabBytes: number; totalBytes: number }
 
 export const workspaceBoardsAPI = {
   list: async (): Promise<{ tabs: BoardTab[]; limits: BoardLimits; colors: string[] }> => {
@@ -693,6 +712,16 @@ export const workspaceBoardsAPI = {
   /** Add a file or folder to a tab (checked by the server); the board places it below everything. */
   addRef: async (tabId: string, type: 'file' | 'folder', id: string): Promise<{ tab: BoardTab; added: boolean }> => {
     const response = await api.post(`/workspace-boards/tabs/${tabId}/refs`, { type, id });
+    return response.data;
+  },
+  /** Run saved searches (their stored filters) with current access; at most 10 blocks. Nothing is stored. */
+  runSearches: async (tabId: string, blockIds: string[], signal?: AbortSignal): Promise<{ searches: SavedSearchRun[] }> => {
+    const response = await api.post(`/workspace-boards/tabs/${tabId}/searches/run`, { blockIds, tz: new Date().getTimezoneOffset() }, { signal });
+    return response.data;
+  },
+  /** "Save to board…" from Advanced Search: a saved-search block with these filters (placed below everything). */
+  addSearch: async (tabId: string, search: BoardSavedSearch): Promise<{ tab: BoardTab; blockId: string }> => {
+    const response = await api.post(`/workspace-boards/tabs/${tabId}/searches`, { search });
     return response.data;
   },
   getTab: async (tabId: string): Promise<{ tab: BoardTab; blocks: BoardBlock[]; zones: BoardZone[] }> => {
@@ -778,6 +807,8 @@ export interface AdvancedSearchParams {
   dateField?: string;
   location?: string;
   folderId?: string;
+  // One Team Space (location 'team' only); without it, all of the person's Team Spaces.
+  teamId?: string;
   currentFolderId?: string;
   sort?: string;
   limit?: number;

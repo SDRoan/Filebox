@@ -58,6 +58,20 @@ router.post('/tabs/:tabId/refs', auth, async (req, res) => {
   } catch (error) { fail(res, error); }
 });
 
+// Saved searches: run the named blocks' stored filters through Advanced Search (current access, nothing stored).
+router.post('/tabs/:tabId/searches/run', auth, async (req, res) => {
+  try {
+    res.json(await boards.runTabSearches(req.user._id, req.params.tabId, req.body));
+  } catch (error) { fail(res, error); }
+});
+
+// "Save to board…" from Advanced Search: a saved-search block with the filters that ran.
+router.post('/tabs/:tabId/searches', auth, async (req, res) => {
+  try {
+    res.status(201).json(await boards.addSearch(req.user._id, req.params.tabId, req.body));
+  } catch (error) { fail(res, error); }
+});
+
 // One tab with its blocks, each file or folder resolved against what the person can open now.
 router.get('/tabs/:tabId', auth, async (req, res) => {
   try {
