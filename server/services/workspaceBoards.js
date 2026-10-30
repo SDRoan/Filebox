@@ -25,6 +25,8 @@ const { CLEANERS: BLOCK_CLEANERS, BlockError } = require('./boardBlocks');
 const LIMITS = Object.freeze({
   tabs: 30,
   blocksPerTab: 150,
+  // Stored file references on one tab: file cards plus every row of every file list (the same file twice counts twice).
+  fileRefsPerTab: 1000,
   tabName: 40,
   noteTitle: 80,
   noteBody: 4000,
@@ -43,7 +45,7 @@ class BoardInputError extends Error {
   constructor(message, status = 400, extra = {}) { super(message); this.status = status; Object.assign(this, extra); }
 }
 const BLOCK_ID = /^[a-z0-9]{10}$/;
-const BLOCK_TYPES = ['file', 'folder', 'note', 'text', 'checklist', 'label', 'deadline', 'link'];
+const BLOCK_TYPES = ['file', 'folder', 'note', 'text', 'checklist', 'label', 'deadline', 'link', 'filelist'];
 const NOTE_COLORS = Object.freeze(['yellow', 'pink', 'blue', 'green', 'purple', 'orange']);
 const REF_TYPES = ['file', 'folder'];
 const NOTE_CONTROL = new RegExp('[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]', 'g');
@@ -86,6 +88,34 @@ function cleanTextBlock(raw) {
   }
 }
 const UNAVAILABLE_TO_ADD = "Something you tried to add isn't available.";
+const TOO_MANY_REFS = `A tab can hold up to ${LIMITS.fileRefsPerTab.toLocaleString('en-US')} file references (file cards and file-list rows). Remove some to add more.`;
+
+/** The file ids a file list's rows point at, in order. */
+const listFileIds = (b) => (b.type === 'filelist' ? (b.filelist?.items || []).map(r => idOf(r.fileId)) : []);
+/** Stored file references on a tab: one per file card, one per file-list row. */
+const fileRefCount = (blocks) => blocks.reduce((n, b) => n + (b.type === 'file' ? 1 : listFileIds(b).length), 0);
+
+/**
+ * A file list's rows after an edit. A row the server already has keeps the file stored for it (a file id
+ * the browser sends with it is ignored, so a row can never be pointed at another file); a new row names
+ * its file, which is checked later with every other new reference in one batch. A row id the server does
+ * not know and that names no file was removed elsewhere and stays removed. Returns the new file ids too.
+ */
+function mergeFileList(cleaned, stored) {
+  const known = new Map((stored?.items || []).map(r => [r.id, idOf(r.fileId)]));
+  const items = [];
+  const fresh = [];
+  const files = new Set();
+  for (const row of cleaned.items) {
+    const fileId = known.has(row.id) ? known.get(row.id) : row.fileId;
+    if (!fileId) continue;
+    if (files.has(fileId)) throw new BoardInputError('That file is already in this list.');
+    files.add(fileId);
+    items.push({ id: row.id, fileId });
+    if (!known.has(row.id)) fresh.push(fileId);
+  }
+  return { list: { title: cleaned.title, items }, fresh };
+}
 
 const newTabId = () => {
   let id = '';
@@ -350,11 +380,16 @@ async function resolveRefs(userId, fileIds, folderIds, { withDetails = true } = 
  * { available: false } and nothing more: no id, name, owner, folder, size or category.
  */
 async function resolveBlocks(userId, blocks) {
+  // File cards and file-list rows share one lookup (ids are de-duplicated inside it).
   const { files, folders } = await resolveRefs(userId,
-    blocks.filter(b => b.type === 'file').map(b => b.fileId),
+    [...blocks.filter(b => b.type === 'file').map(b => b.fileId), ...blocks.flatMap(listFileIds)],
     blocks.filter(b => b.type === 'folder').map(b => b.folderId));
   return blocks.map((b) => {
     const place = { id: b.id, type: b.type, x: b.x, y: b.y, w: b.w, h: b.h };
+    // A row keeps its place whether or not its file can be opened; an unavailable one carries only its row id.
+    if (b.type === 'filelist') {
+      return { ...place, filelist: { title: b.filelist.title, items: b.filelist.items.map(r => ({ id: r.id, ref: files.get(idOf(r.fileId)) || { available: false } })) } };
+    }
     if (!REF_TYPES.includes(b.type)) return { ...place, [b.type]: b[b.type] };
     const ref = b.type === 'file' ? files.get(idOf(b.fileId)) : folders.get(idOf(b.folderId));
     return { ...place, ref: ref || { available: false } };
@@ -391,7 +426,7 @@ async function saveBlocks(userId, tabId, body = {}) {
   const stored = new Map(canvas.blocks.map(b => [b.id, b]));
   const seenIds = new Set();
   const refs = new Set();
-  const added = { file: [], folder: [] };
+  const added = { file: [], folder: [], list: [] };
   const next = body.blocks.map((raw) => {
     const id = typeof raw?.id === 'string' ? raw.id : '';
     if (!BLOCK_ID.test(id) || seenIds.has(id)) throw new BoardInputError('Some blocks could not be saved. Reload and try again.');
@@ -400,7 +435,11 @@ async function saveBlocks(userId, tabId, body = {}) {
     if (!base) {
       const type = BLOCK_TYPES.includes(raw.type) ? raw.type : null;
       if (!type) throw new BoardInputError(UNAVAILABLE_TO_ADD);
-      if (!REF_TYPES.includes(type)) base = { id, type, [type]: cleanContent(type, raw[type]) };
+      if (type === 'filelist') {
+        const { list, fresh } = mergeFileList(cleanContent(type, raw.filelist), null);
+        base = { id, type, filelist: list };
+        added.list.push(...fresh);
+      } else if (!REF_TYPES.includes(type)) base = { id, type, [type]: cleanContent(type, raw[type]) };
       else {
         const refId = type === 'file' ? raw.fileId : raw.folderId;
         if (typeof refId !== 'string' || !mongoose.isValidObjectId(refId) || String(new mongoose.Types.ObjectId(refId)) !== refId) {
@@ -409,6 +448,10 @@ async function saveBlocks(userId, tabId, body = {}) {
         base = { id, type, ...(type === 'file' ? { fileId: refId } : { folderId: refId }) };
         added[type].push(refId);
       }
+    } else if (base.type === 'filelist' && raw.filelist !== undefined) {
+      const { list, fresh } = mergeFileList(cleanContent('filelist', raw.filelist), base.filelist);
+      base = { ...base, filelist: list };
+      added.list.push(...fresh);
     } else if (!REF_TYPES.includes(base.type) && raw[base.type] !== undefined) {
       // A block's content comes from the browser only when it was edited; otherwise the stored content stays.
       base = { ...base, [base.type]: cleanContent(base.type, raw[base.type]) };
@@ -423,9 +466,14 @@ async function saveBlocks(userId, tabId, body = {}) {
   });
   const zones = body.zones === undefined ? canvas.zones : layout.cleanZones(body.zones);
 
-  if (added.file.length || added.folder.length) {
-    const { files, folders } = await resolveRefs(userId, added.file, added.folder, { withDetails: false });
-    if (added.file.some(id => !files.has(id)) || added.folder.some(id => !folders.has(id))) throw new BoardInputError(UNAVAILABLE_TO_ADD);
+  const refCount = fileRefCount(next);
+  if (refCount > LIMITS.fileRefsPerTab && refCount > fileRefCount(canvas.blocks)) throw new BoardInputError(TOO_MANY_REFS);
+
+  // Every new reference (file cards, file-list rows, folders) is checked against current access in one batch.
+  const newFiles = [...added.file, ...added.list];
+  if (newFiles.length || added.folder.length) {
+    const { files, folders } = await resolveRefs(userId, newFiles, added.folder, { withDetails: false });
+    if (newFiles.some(id => !files.has(id)) || added.folder.some(id => !folders.has(id))) throw new BoardInputError(UNAVAILABLE_TO_ADD);
   }
 
   const blocks = storedBlocks(next);
@@ -490,17 +538,25 @@ async function duplicateTab(userId, tabId) {
   if (existing.length >= LIMITS.tabs) throw new BoardInputError(`You can have up to ${LIMITS.tabs} tabs.`, 409);
   const { blocks: srcBlocks, zones } = canvasOf(source);
   const { files, folders } = await resolveRefs(userId,
-    srcBlocks.filter(b => b.type === 'file').map(b => idOf(b.fileId)),
+    [...srcBlocks.filter(b => b.type === 'file').map(b => idOf(b.fileId)), ...srcBlocks.flatMap(listFileIds)],
     srcBlocks.filter(b => b.type === 'folder').map(b => idOf(b.folderId)), { withDetails: false });
   const ids = new Set();
   const freshId = () => { let id; do { id = newTabId(); } while (ids.has(id)); ids.add(id); return id; };
   const kept = srcBlocks.filter(b => (b.type === 'file' ? files.has(idOf(b.fileId)) : b.type === 'folder' ? folders.has(idOf(b.folderId)) : true));
-  const blocks = storedBlocks(kept.map(b => ({ ...b, id: freshId() })));
+  // A file list is copied with only the rows that can be opened now; the original keeps all of its rows.
+  let skippedRows = 0;
+  const copied = kept.map((b) => {
+    if (b.type !== 'filelist') return b;
+    const items = b.filelist.items.filter(r => files.has(idOf(r.fileId)));
+    skippedRows += b.filelist.items.length - items.length;
+    return { ...b, filelist: { title: b.filelist.title, items: items.map(r => ({ id: r.id, fileId: idOf(r.fileId) })) } };
+  });
+  const blocks = storedBlocks(copied.map(b => ({ ...b, id: freshId() })));
   const record = await createTabRecord(userId, { name: copyName(source.name, new Set(existing.map(t => t.name))), icon: source.icon || '', color: source.color || '', blocks, zones }, existing);
   const order = existing.map(t => t.tabId);
   order.splice(order.indexOf(tabId) + 1, 0, record.tabId);
   await writeOrder(userId, order, [...existing, record]);
-  return { tab: publicTab({ ...record, order: order.indexOf(record.tabId) }), tabs: await listTabs(userId), skipped: srcBlocks.length - kept.length };
+  return { tab: publicTab({ ...record, order: order.indexOf(record.tabId) }), tabs: await listTabs(userId), skipped: srcBlocks.length - kept.length + skippedRows };
 }
 
 /** Put the tabs in this order. The list must name every one of the person's tabs exactly once. */
@@ -555,6 +611,7 @@ async function addRef(userId, tabId, body = {}) {
     const list = canvas.blocks;
     if (list.some(b => b.type === type && idOf(b[field]) === refId)) return { tab: publicTab(current), added: false };
     if (list.length >= LIMITS.blocksPerTab) throw new BoardInputError(`This board is full (${LIMITS.blocksPerTab} items).`, 409);
+    if (type === 'file' && fileRefCount(list) >= LIMITS.fileRefsPerTab) throw new BoardInputError(TOO_MANY_REFS, 409);
     let id;
     do { id = newTabId(); } while (list.some(b => b.id === id));
     const blocks = storedBlocks([...list, { id, type, x: null, y: null, [field]: refId }]);

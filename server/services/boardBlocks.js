@@ -1,5 +1,5 @@
 /**
- * Boards: the board-only block types (checklist, label, deadline, link). Every value the browser sends is
+ * Boards: the board-only block types (checklist, label, deadline, link, file list). Every value the browser sends is
  * cleaned here before it is stored; anything that cannot be cleaned is refused with a clear message.
  * Lengths count characters as people see them (an emoji is one), like notes.
  */
@@ -13,6 +13,7 @@ const LIMITS = Object.freeze({
   label: 120,
   deadlineTitle: 120, deadlineNote: 500,
   linkUrl: 2000, linkTitle: 200, linkNote: 500,
+  fileListTitle: 100, fileListRows: 50,
 });
 const LABEL_SIZES = ['s', 'm', 'l'];
 const LABEL_ALIGN = ['left', 'center', 'right'];
@@ -138,6 +139,30 @@ function cleanLink(raw) {
 }
 
 // Which field holds each board-only type's content, and how it is cleaned.
-const CLEANERS = Object.freeze({ checklist: cleanChecklist, label: cleanLabel, deadline: cleanDeadline, link: cleanLink });
+/**
+ * A file list as the browser sends it: a title and rows in order, each with its own row id. A row the
+ * server already has is sent as { id } (the server keeps the file it points at); a new row also names the
+ * file: { id, fileId }. Merging with the stored rows and checking access happen in workspaceBoards.js.
+ */
+const FILE_ID = /^[0-9a-f]{24}$/;
+function cleanFileList(raw) {
+  if (raw === undefined) return { title: '', items: [] };
+  if (!isObject(raw)) throw new BlockError('This file list could not be saved.');
+  const title = within(oneLine(raw.title), LIMITS.fileListTitle, 'A file list title');
+  const list = raw.items === undefined ? [] : raw.items;
+  if (!Array.isArray(list)) throw new BlockError('This file list could not be saved.');
+  if (list.length > LIMITS.fileListRows) throw new BlockError(`A file list can hold up to ${LIMITS.fileListRows} files.`);
+  const seen = new Set();
+  const items = list.map((row) => {
+    if (!isObject(row) || typeof row.id !== 'string' || !ITEM_ID.test(row.id) || seen.has(row.id)) throw new BlockError('This file list could not be saved. Reload and try again.');
+    seen.add(row.id);
+    if (row.fileId === undefined) return { id: row.id };
+    if (typeof row.fileId !== 'string' || !FILE_ID.test(row.fileId)) throw new BlockError("Something you tried to add isn't available.");
+    return { id: row.id, fileId: row.fileId };
+  });
+  return { title, items };
+}
 
-module.exports = { BlockError, LIMITS, LABEL_SIZES, LABEL_ALIGN, LABEL_TONES, CLEANERS, cleanChecklist, cleanLabel, cleanDeadline, cleanLink, linkUrl };
+const CLEANERS = Object.freeze({ checklist: cleanChecklist, label: cleanLabel, deadline: cleanDeadline, link: cleanLink, filelist: cleanFileList });
+
+module.exports = { BlockError, LIMITS, LABEL_SIZES, LABEL_ALIGN, LABEL_TONES, CLEANERS, cleanChecklist, cleanLabel, cleanDeadline, cleanLink, linkUrl, cleanFileList };

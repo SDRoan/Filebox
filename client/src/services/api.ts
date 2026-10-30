@@ -621,8 +621,13 @@ export interface BoardLabel { text: string; size: LabelSize; align: 'left' | 'ce
 export interface BoardDeadline { title: string; note: string; due: { date: string; time: string | null; at: string | null } | null; completedAt: string | null }
 // A link: an http(s) address (as the URL parser writes it), an optional title and note. Never fetched.
 export interface BoardLink { url: string; title: string; note: string }
+// A file list: a title and rows in order, each with its own row id, pointing at files (resolved live, like file
+// cards). A row whose file cannot be opened now is { id, ref: { available: false } } and keeps its place.
+// `fileId` is only on a row added here since the last save (the server checks it); saved rows never carry one.
+export interface BoardFileListRow { id: string; ref: BoardRef; fileId?: string }
+export interface BoardFileList { title: string; items: BoardFileListRow[] }
 // The content of a block that is not a file or folder, in a field named after its type.
-export interface BoardContent { note?: BoardNote; text?: BoardText; checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink }
+export interface BoardContent { note?: BoardNote; text?: BoardText; checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink; filelist?: BoardFileList }
 
 // A place on the free canvas in pixels; null x/y = not placed yet (the board puts it below everything).
 // Sticky notes and text areas also have a width and height.
@@ -634,7 +639,8 @@ export type BoardBlock =
   | (BoardPlace & { type: 'checklist'; checklist: BoardChecklist })
   | (BoardPlace & { type: 'label'; label: BoardLabel })
   | (BoardPlace & { type: 'deadline'; deadline: BoardDeadline })
-  | (BoardPlace & { type: 'link'; link: BoardLink });
+  | (BoardPlace & { type: 'link'; link: BoardLink })
+  | (BoardPlace & { type: 'filelist'; filelist: BoardFileList });
 
 // What a save sends: positions for every block; a file/folder id only for blocks added since the last save;
 // a note's or text area's words only when they changed (the server keeps the stored ones otherwise).
@@ -642,9 +648,11 @@ export interface BoardBlockInput {
   id: string; type: BoardBlock['type']; x: number | null; y: number | null; w?: number; h?: number;
   fileId?: string; folderId?: string; note?: BoardNote; text?: BoardText;
   checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink;
+  // A file list's rows: { id } for a row the server has (it keeps that row's file), { id, fileId } for a new one.
+  filelist?: { title: string; items: Array<{ id: string; fileId?: string }> };
 }
 
-export interface BoardLimits { tabs: number; blocksPerTab: number; tabName: number; noteTitle: number; noteBody: number; richTextChars: number; richTextBytes: number; tabBytes: number; totalBytes: number }
+export interface BoardLimits { tabs: number; blocksPerTab: number; fileRefsPerTab: number; tabName: number; noteTitle: number; noteBody: number; richTextChars: number; richTextBytes: number; tabBytes: number; totalBytes: number }
 
 export const workspaceBoardsAPI = {
   list: async (): Promise<{ tabs: BoardTab[]; limits: BoardLimits; colors: string[] }> => {

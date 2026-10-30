@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { workspaceBoardsAPI, AdvancedSearchResult, BoardBlock, BoardBlockInput, BoardContent, BoardTab, BoardText, BoardZone } from '../services/api';
+import { workspaceBoardsAPI, AdvancedSearchResult, BoardBlock, BoardBlockInput, BoardContent, BoardFileList, BoardRef, BoardTab, BoardText, BoardZone } from '../services/api';
 import { BLOCK_SIZES, CONTENT_TYPES, ContentType, Spot } from '../utils/boardLayout';
 
 /**
@@ -37,6 +37,13 @@ const newBlockId = () => {
   while (id.length < 10) id += Math.random().toString(36).slice(2);
   return id.slice(0, 10);
 };
+/** What a file found in the picker shows until the server's own view of it arrives (after the save). */
+export const searchRef = (f: AdvancedSearchResult): BoardRef => ({
+  available: true, fileId: f._id, name: f.originalName, mimeType: f.mimeType, size: f.size, technicalType: f.technicalType, updatedAt: f.updatedAt, createdAt: f.updatedAt,
+  source: f.access.source, role: f.access.role, category: f.classification?.primaryCategory, documentType: f.classification?.documentType, ownerName: f.ownerName, teamName: f.access.teamName,
+});
+/** A file list as a save sends it: saved rows by their id only, new rows with the file they point at. */
+const listPayload = (list: BoardFileList) => ({ title: list.title, items: list.items.map(r => (r.fileId ? { id: r.id, fileId: r.fileId } : { id: r.id })) });
 const refIdOf = (b: BoardBlock) => (b.type === 'file' || b.type === 'folder' ? (b.ref.available ? (b.type === 'file' ? b.ref.fileId : b.ref.folderId) : undefined) : undefined);
 
 /** One action applied to a layout (used both live and when replaying onto a newer version). */
@@ -78,6 +85,7 @@ function payloadOf(snap: Snapshot): BoardBlockInput[] {
     const added = snap.newRefs.get(b.id);
     if (added) return { ...base, ...(added.type === 'file' ? { fileId: added.refId } : { folderId: added.refId }) };
     const sendWords = !snap.serverIds.has(b.id) || snap.dirty.has(b.id);
+    if (b.type === 'filelist' && sendWords) return { ...base, filelist: listPayload(b.filelist) };
     if ((CONTENT_TYPES as readonly string[]).includes(b.type) && sendWords) return { ...base, [b.type]: (b as unknown as Record<string, unknown>)[b.type] } as BoardBlockInput;
     return base;
   });
@@ -140,6 +148,11 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
           const fresh = new Map(result.blocks.map(b => [b.id, b]));
           setBlocks(blocksRef.current.map((b) => {
             const f = fresh.get(b.id);
+            // A file list's saved rows take the server's view of their file (and are no longer new).
+            if (f && b.type === 'filelist' && f.type === 'filelist') {
+              const rows = new Map(f.filelist.items.map(r => [r.id, r]));
+              return { ...b, filelist: { ...b.filelist, items: b.filelist.items.map(r => rows.get(r.id) || r) } };
+            }
             return f && (b.type === 'file' || b.type === 'folder') && (f.type === 'file' || f.type === 'folder') ? { ...b, ref: f.ref } : b;
           }));
         }
@@ -314,7 +327,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
    * A block's content changed: shown at once. Typing is saved 1 second after it pauses (at least every 4);
    * `now` (a tick, Complete, a reorder, a date picked) saves straight away.
    */
-  const edit = useCallback((id: string, content: BoardContent, options: { now?: boolean } = {}) => {
+  const edit = useCallback((id: string, content: BoardContent, options: { now?: boolean; later?: boolean } = {}) => {
     const action: BoardChange = { kind: 'edit', id, ...content };
     setBlocks(apply(blocksRef.current, action));
     const list = pending.current.actions;
@@ -324,6 +337,8 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     else list.push(action);
     pending.current.dirty.add(id);
     if (options.now) schedule(0);
+    // A removal waits for its Undo window, as taking a block off the board does.
+    else if (options.later) schedule(UNDO_WINDOW);
     else schedule(TYPING_DELAY, true);
   }, [schedule]);
 
@@ -340,8 +355,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
       // Not placed yet: the board puts it below everything (as My Files > Board does) and keeps that spot.
       const block: BoardBlock & { refId?: string } = {
         id: newBlockId(), type: 'file', x: null, y: null, refId: f._id,
-        ref: { available: true, fileId: f._id, name: f.originalName, mimeType: f.mimeType, size: f.size, technicalType: f.technicalType, updatedAt: f.updatedAt, createdAt: f.updatedAt,
-          source: f.access.source, role: f.access.role, category: f.classification?.primaryCategory, documentType: f.classification?.documentType, ownerName: f.ownerName, teamName: f.access.teamName },
+        ref: searchRef(f),
       };
       pending.current.newRefs.set(block.id, { type: 'file', refId: f._id });
       added.push(block);
@@ -382,12 +396,13 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
   }, [change]);
 
   /**
-   * A new checklist, label, deadline or link, placed below everything. A link comes with its content (the
+   * A new checklist, label, deadline, link or file list, placed below everything. A link comes with its content (the
    * address is checked first). Returns its id (so it can be focused).
    */
-  const addBlock = useCallback((type: 'checklist' | 'label' | 'deadline' | 'link', given?: BoardContent) => {
+  const addBlock = useCallback((type: 'checklist' | 'label' | 'deadline' | 'link' | 'filelist', given?: BoardContent) => {
     const { w, h } = BLOCK_SIZES[type];
     const content = given || (type === 'checklist' ? { checklist: { title: '', items: [] } }
+      : type === 'filelist' ? { filelist: { title: '', items: [] } }
       : type === 'label' ? { label: { text: '', size: 'm' as const, align: 'left' as const, tone: 'default' as const } }
         : { deadline: { title: '', note: '', due: null, completedAt: null } });
     const block = { id: newBlockId(), type, x: null, y: null, w, h, ...content } as BoardBlock;
@@ -406,7 +421,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     setBlocks(blocksRef.current.filter(b => b.id !== block.id));
     pending.current.actions.push({ kind: 'remove', id: block.id });
     schedule(UNDO_WINDOW);
-    const CONTENT_NAMES: Record<string, string> = { note: 'The note', text: 'The text area', checklist: 'The checklist', label: 'The label', deadline: 'The deadline', link: 'The link' };
+    const CONTENT_NAMES: Record<string, string> = { note: 'The note', text: 'The text area', checklist: 'The checklist', label: 'The label', deadline: 'The deadline', link: 'The link', filelist: 'The file list' };
     const isRef = before.type === 'file' || before.type === 'folder';
     const name = !isRef ? CONTENT_NAMES[before.type] : before.ref.available ? `“${before.ref.name}”` : 'The unavailable item';
     const where = isRef ? ' It is still in File Box.' : '';
@@ -482,5 +497,38 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     } catch { /* the next load shows it */ }
   }, [onTab]);
 
-  return { blocks, zones, loading, error, pending: pendingRefs, saveState, change, arrange, edit, flush, addFiles, addFolder, addNote, addText, addBlock, remove, removeUnavailable, reload };
+  /**
+   * Take one row out of a file list (the file itself is never touched). Saved after the Undo window; Undo
+   * puts the row back exactly where it was. A readable row is put back with its file (the server keeps the
+   * stored row if the removal was not sent yet, or adds it again, checked, if it was). An unavailable row can
+   * only come back while its removal is certainly unsent (nothing is saving), since its file is not known here.
+   */
+  const removeListRow = useCallback((blockId: string, rowId: string) => {
+    const block = blocksRef.current.find(b => b.id === blockId);
+    if (!block || block.type !== 'filelist') return;
+    const index = block.filelist.items.findIndex(r => r.id === rowId);
+    if (index < 0) return;
+    const row = block.filelist.items[index];
+    edit(blockId, { filelist: { ...block.filelist, items: block.filelist.items.filter(r => r.id !== rowId) } }, { later: true });
+    const name = row.ref.available ? `“${row.ref.name}”` : 'The unavailable file';
+    onNotice({
+      text: `${name} was removed from this list.${row.ref.available ? ' It is still in File Box.' : ''}`,
+      undo: () => {
+        const now = blocksRef.current.find(b => b.id === blockId);
+        if (!now || now.type !== 'filelist' || now.filelist.items.some(r => r.id === rowId)) return;
+        const unsent = inFlight.current === 0 && serverBlocks.current.some(b => b.id === blockId && b.type === 'filelist' && b.filelist.items.some(r => r.id === rowId));
+        if (!row.ref.available && !unsent) {
+          onNotice({ tone: 'error', text: 'That file can no longer be put back: it is not available to you.' });
+          return;
+        }
+        const back = row.ref.available ? { ...row, fileId: row.ref.fileId } : row;
+        const items = [...now.filelist.items];
+        items.splice(Math.min(index, items.length), 0, back);
+        edit(blockId, { filelist: { ...now.filelist, items } }, { now: true });
+        onNotice({ text: `${name} is back in this list.` });
+      },
+    });
+  }, [edit, onNotice]);
+
+  return { blocks, zones, loading, error, pending: pendingRefs, saveState, change, arrange, edit, flush, addFiles, addFolder, addNote, addText, addBlock, remove, removeUnavailable, removeListRow, reload };
 }

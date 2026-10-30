@@ -7,6 +7,7 @@ import { formatRelativeTime } from '../utils/fileDisplay';
  * Add files to a board, found with File Box's Advanced Search (the same permission-checked search as the
  * Advanced Search page: recently modified files at first, then names and words inside files). Several can be
  * chosen at once; files already on this tab are shown as such. Nothing about the files changes.
+ * A file list uses the same picker with its own wording (files already in that list, its own limit).
  */
 
 const PAGE = 30;
@@ -17,11 +18,15 @@ interface Props {
   remaining: number;
   onAdd: (files: AdvancedSearchResult[]) => void;
   onClose: () => void;
+  title?: string;
+  where?: string;
+  alreadyLabel?: string;
+  fullText?: string;
 }
 
 const where = (r: AdvancedSearchResult) => (r.access.source === 'shared' ? `Shared by ${r.ownerName || 'someone'}` : r.access.source === 'team' ? `Team Space${r.access.teamName ? ` · ${r.access.teamName}` : ''}` : r.folderName || 'My Files');
 
-const BoardAddFileDialog: React.FC<Props> = ({ onTab, remaining, onAdd, onClose }) => {
+const BoardAddFileDialog: React.FC<Props> = ({ onTab, remaining, onAdd, onClose, title = 'Add files', where: place = 'this board', alreadyLabel = 'On this tab', fullText = 'This tab is full (150 items).' }) => {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<AdvancedSearchResult[]>([]);
   const [total, setTotal] = useState(0);
@@ -59,13 +64,13 @@ const BoardAddFileDialog: React.FC<Props> = ({ onTab, remaining, onAdd, onClose 
   });
 
   return (
-    <BoardDialog title="Add files" describedBy="board-add-file-help" wide onClose={onClose}>
+    <BoardDialog title={title} describedBy="board-add-file-help" wide onClose={onClose}>
       <label className="boards-field">
         <span>Find files</span>
         <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="A name, or words inside the file…" autoComplete="off" />
       </label>
       <p id="board-add-file-help" className="boards-field-help is-left">
-        {query.trim() ? `${total} ${total === 1 ? 'file' : 'files'}` : 'Recently modified'} · Adding a file only places it on this board; it stays where it is.
+        {query.trim() ? `${total} ${total === 1 ? 'file' : 'files'}` : 'Recently modified'} · Adding a file only places it on {place}; it stays where it is.
       </p>
       <div className="board-picker-list" aria-busy={loading} aria-label="Files">
         {error && <p className="boards-dialog-error" role="alert">{error}</p>}
@@ -84,13 +89,13 @@ const BoardAddFileDialog: React.FC<Props> = ({ onTab, remaining, onAdd, onClose 
                   {where(r)} · Modified {formatRelativeTime(r.updatedAt)}
                 </span>
               </span>
-              {already && <span className="board-picker-tag">On this tab</span>}
+              {already && <span className="board-picker-tag">{alreadyLabel}</span>}
             </label>
           );
         })}
         {!loading && results.length < total && <button type="button" className="boards-button-secondary board-picker-more" onClick={more}>Show more</button>}
       </div>
-      {remaining <= 0 && <p className="boards-dialog-error">This tab is full (150 items).</p>}
+      {remaining <= 0 && <p className="boards-dialog-error">{fullText}</p>}
       <div className="boards-dialog-actions">
         <button type="button" className="boards-button-secondary" onClick={onClose}>Cancel</button>
         <button type="button" className="boards-button-primary" disabled={!chosen.size} onClick={() => onAdd(Array.from(chosen.values()))}>

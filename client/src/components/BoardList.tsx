@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { BoardBlock, BoardZone } from '../services/api';
 import { StickyNoteBlock, RichTextBlock } from './BoardNoteBlocks';
-import { BoardActions, TextFrame, blockName, hasOwnSize, ownSize, planningBlock, useRefCard } from './PersonalBoard';
+import { BoardActions, TextFrame, blockName, hasOwnSize, isPlanning, ownSize, planningBlock, useRefCard } from './PersonalBoard';
 import { CARD_WIDTH, Spot, zoneMembers } from '../utils/boardLayout';
 
 /**
@@ -54,7 +54,7 @@ const BoardList: React.FC<BoardActions & { blocks: BoardBlock[]; zones: BoardZon
             onStartEdit={() => onEditingChange(block.id)} onEdit={(doc) => onEdit(block.id, { text: { doc } })} onFlush={onFlush} onExit={exit} onRemove={() => onRemove(block)} />
         </TextFrame>
       );
-    } else if (block.type === 'checklist' || block.type === 'label' || block.type === 'deadline' || block.type === 'link') {
+    } else if (isPlanning(block)) {
       content = planningBlock(block, actions, { phone: true, first, last, onMove: (d) => move(block, d), onExit: exit });
     } else {
       content = refCard(block, (

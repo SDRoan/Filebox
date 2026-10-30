@@ -42,10 +42,10 @@ const usePhone = () => {
   return phone;
 };
 
-type AddKind = 'file' | 'folder' | 'note' | 'text' | 'checklist' | 'deadline' | 'label' | 'link';
+type AddKind = 'file' | 'folder' | 'filelist' | 'note' | 'text' | 'checklist' | 'deadline' | 'label' | 'link';
 // The "+ Add" menu in groups (group names are read out, not chosen).
 const ADD_GROUPS: Array<{ name: string; items: Array<[AddKind, string]> }> = [
-  { name: 'Files', items: [['file', 'File'], ['folder', 'Folder']] },
+  { name: 'Files', items: [['file', 'File'], ['folder', 'Folder'], ['filelist', 'File list']] },
   { name: 'Notes & planning', items: [['note', 'Sticky note'], ['text', 'Text area'], ['checklist', 'Checklist'], ['deadline', 'Deadline']] },
   { name: 'Other', items: [['label', 'Label'], ['link', 'Link']] },
 ];
@@ -317,8 +317,8 @@ const Boards: React.FC = () => {
   const addNote = () => focusNew(board.addNote(), 'note');
   const addText = () => focusNew(board.addText(), 'text');
   // A new checklist, label or deadline: focus its first field so it can be typed into straight away.
-  const FIRST_FIELD = { checklist: '.board-checklist-title', label: '.board-label-text', deadline: '.board-deadline-title' };
-  const addPlanning = (type: 'checklist' | 'label' | 'deadline') => {
+  const FIRST_FIELD = { checklist: '.board-checklist-title', label: '.board-label-text', deadline: '.board-deadline-title', filelist: '.board-filelist-title' };
+  const addPlanning = (type: 'checklist' | 'label' | 'deadline' | 'filelist') => {
     const id = board.addBlock(type);
     setTimeout(() => document.querySelector<HTMLElement>(`[data-board-key="${id}"] ${FIRST_FIELD[type]}, [data-list-id="${id}"] ${FIRST_FIELD[type]}`)?.focus(), 80);
   };
@@ -331,6 +331,8 @@ const Boards: React.FC = () => {
     else addPlanning(kind);
   };
   const room = (limits?.blocksPerTab || 150) - board.blocks.length;
+  // Stored file references on this tab: file cards and every file-list row (limit 1,000).
+  const refRoom = (limits?.fileRefsPerTab || 1000) - board.blocks.reduce((n, b) => n + (b.type === 'file' ? 1 : b.type === 'filelist' ? b.filelist.items.length : 0), 0);
   const unavailable = board.blocks.filter(b => (b.type === 'file' || b.type === 'folder') && !b.ref.available).length;
   const activeIndex = tabs.findIndex(t => t.id === activeId);
 
@@ -345,11 +347,12 @@ const Boards: React.FC = () => {
   };
   const actions = {
     onArrange: board.arrange, onEdit: board.edit, onFlush: board.flush, onRemove: board.remove, onReload: board.reload, onEditingChange: setEditingId,
+    onRemoveRow: board.removeListRow, refRoom,
   };
   const emptyBoard = (
     <div className="boards-empty-canvas">
       <p className="boards-empty-title">This board is empty.</p>
-      <p>Add files and folders you choose (they stay where they are in File Box), notes, text, checklists, deadlines, labels or links.</p>
+      <p>Add files and folders you choose (they stay where they are in File Box), notes, text, checklists, deadlines, labels, links or file lists.</p>
       <div className="boards-empty-actions">
         <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFile' })}>Add file</button>
         <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFolder' })}>Add folder</button>
@@ -453,7 +456,8 @@ const Boards: React.FC = () => {
       {dialog?.kind === 'addFile' && (
         <BoardAddFileDialog
           onTab={new Set(board.blocks.flatMap(b => (b.type === 'file' && b.ref.available && b.ref.fileId ? [b.ref.fileId] : [])))}
-          remaining={room}
+          remaining={Math.min(room, refRoom)}
+          fullText={refRoom < room ? 'This tab has as many files as it can hold (1,000 file references).' : undefined}
           onClose={() => setDialog(null)}
           onAdd={(files) => {
             const added = board.addFiles(files);
