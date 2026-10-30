@@ -599,6 +599,10 @@ export type BoardRef =
     category?: string;
     documentType?: string;
     itemCount?: number;
+    // What the board's file and folder cards show (the same cards as in My Files).
+    createdAt?: string;
+    dataClassification?: 'Public' | 'Internal' | 'Confidential' | 'Top Secret';
+    aiCaption?: { text?: string; hashtags?: string[]; status?: '' | 'writing' | 'done' | 'failed'; error?: string };
   };
 
 export type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'purple' | 'orange';
@@ -607,7 +611,9 @@ export interface BoardNote { title: string; body: string; color: NoteColor }
 export interface RichTextNode { type: string; attrs?: Record<string, unknown>; content?: RichTextNode[]; text?: string; marks?: Array<{ type: string; attrs?: Record<string, unknown> }> }
 export interface BoardText { doc: RichTextNode }
 
-interface BoardPlace { id: string; x: number; y: number; w: number; h: number }
+// A place on the free canvas in pixels; null x/y = not placed yet (the board puts it below everything).
+// Sticky notes and text areas also have a width and height.
+interface BoardPlace { id: string; x: number | null; y: number | null; w?: number; h?: number }
 export type BoardBlock =
   | (BoardPlace & { type: 'file' | 'folder'; ref: BoardRef })
   | (BoardPlace & { type: 'note'; note: BoardNote })
@@ -616,7 +622,7 @@ export type BoardBlock =
 // What a save sends: positions for every block; a file/folder id only for blocks added since the last save;
 // a note's or text area's words only when they changed (the server keeps the stored ones otherwise).
 export interface BoardBlockInput {
-  id: string; type: BoardBlock['type']; x: number; y: number; w: number; h: number;
+  id: string; type: BoardBlock['type']; x: number | null; y: number | null; w?: number; h?: number;
   fileId?: string; folderId?: string; note?: BoardNote; text?: BoardText;
 }
 
@@ -658,27 +664,27 @@ export const workspaceBoardsAPI = {
     const response = await api.get('/workspace-boards/placements', { params: ref });
     return response.data;
   },
-  /** Add a file or folder to a tab at the first free spot (checked and placed by the server). */
+  /** Add a file or folder to a tab (checked by the server); the board places it below everything. */
   addRef: async (tabId: string, type: 'file' | 'folder', id: string): Promise<{ tab: BoardTab; added: boolean }> => {
     const response = await api.post(`/workspace-boards/tabs/${tabId}/refs`, { type, id });
     return response.data;
   },
-  getTab: async (tabId: string): Promise<{ tab: BoardTab; blocks: BoardBlock[] }> => {
+  getTab: async (tabId: string): Promise<{ tab: BoardTab; blocks: BoardBlock[]; zones: BoardZone[] }> => {
     const response = await api.get(`/workspace-boards/tabs/${tabId}`);
     return response.data;
   },
-  // A 409 carries the latest { tab, blocks } (changed on another device).
-  saveBlocks: async (tabId: string, rev: number, blocks: BoardBlockInput[]): Promise<{ tab: BoardTab; blocks: BoardBlock[] }> => {
-    const response = await api.put(`/workspace-boards/tabs/${tabId}/blocks`, { rev, blocks });
+  // A 409 carries the latest { tab, blocks, zones } (changed on another device).
+  saveBlocks: async (tabId: string, rev: number, blocks: BoardBlockInput[], zones: BoardZone[]): Promise<{ tab: BoardTab; blocks: BoardBlock[]; zones: BoardZone[] }> => {
+    const response = await api.put(`/workspace-boards/tabs/${tabId}/blocks`, { rev, blocks, zones });
     return response.data;
   },
   /**
    * Best-effort save while the page is being hidden or closed (fetch keepalive, which browsers limit to about
    * 64 KB). Not guaranteed to finish; returns false when it could not even be sent.
    */
-  saveBlocksOnLeave: (tabId: string, rev: number, blocks: BoardBlockInput[]): boolean => {
+  saveBlocksOnLeave: (tabId: string, rev: number, blocks: BoardBlockInput[], zones: BoardZone[]): boolean => {
     const token = LOCAL_PREVIEW_ENABLED ? sessionStorage.getItem('filebox-local-token') : localStorage.getItem('token');
-    const body = JSON.stringify({ rev, blocks });
+    const body = JSON.stringify({ rev, blocks, zones });
     if (!token || body.length > 60000) return false;
     try {
       fetch(`${API_URL}/workspace-boards/tabs/${tabId}/blocks`, { method: 'PUT', keepalive: true, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body }).catch(() => {});

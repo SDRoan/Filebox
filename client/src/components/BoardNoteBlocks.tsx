@@ -4,7 +4,7 @@ import { BoardBlock, BoardNote, NoteColor, RichTextNode } from '../services/api'
 import { RichTextView, isEmptyDoc } from '../utils/richTextRender';
 
 /**
- * Sticky notes (plain text) and text areas (rich text) on a board. Only the grip in the top strip moves
+ * Sticky notes (plain text) and text areas (rich text) on a board's free canvas. Only the canvas grip moves
  * them; typing, selecting text or clicking inside never does. The text editor is loaded the first time it
  * is needed, and only the text area being edited has one; the others are drawn from their saved JSON.
  */
@@ -14,12 +14,6 @@ const RichTextEditor = lazy(() => import('./RichTextEditor'));
 const NOTE_COLORS: Array<[NoteColor, string]> = [['yellow', 'Yellow'], ['pink', 'Pink'], ['blue', 'Blue'], ['green', 'Green'], ['purple', 'Purple'], ['orange', 'Orange']];
 const TITLE_MAX = 80;
 const BODY_MAX = 4000;
-
-const Grip: React.FC<{ label: string }> = ({ label }) => (
-  <span className="board-drag-grip" title={`Drag to move ${label}`} aria-hidden="true">
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><circle cx="4" cy="3" r="1.2" /><circle cx="10" cy="3" r="1.2" /><circle cx="4" cy="7" r="1.2" /><circle cx="10" cy="7" r="1.2" /><circle cx="4" cy="11" r="1.2" /><circle cx="10" cy="11" r="1.2" /></svg>
-  </span>
-);
 
 interface Common {
   phone: boolean;
@@ -73,7 +67,6 @@ export const StickyNoteBlock: React.FC<Common & { block: Extract<BoardBlock, { t
     <div ref={card} className={`board-note-card note-${block.note.color}`}
       onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) onFlush(); }}>
       <div className="board-note-top">
-        {!phone && <Grip label="this note" />}
         <span className="board-note-kind">Note</span>
         <ItemActions className="board-block-menu" label="Options for this note">
           <div className="board-note-colors" role="group" aria-label="Note color">
@@ -110,7 +103,6 @@ export const RichTextBlock: React.FC<Common & {
   return (
     <div className={`board-text-card ${editing ? 'is-editing' : ''}`}>
       <div className="board-note-top">
-        {!phone && <Grip label="this text area" />}
         <span className="board-note-kind">Text</span>
         {editing && <span className="board-text-status" aria-live="polite">{saveState === 'saving' ? 'Saving…' : saveState === 'waiting' ? 'Editing' : saveState === 'saved' ? 'Saved' : saveState === 'failed' ? 'Not saved' : ''}</span>}
         <ItemActions className="board-block-menu" label="Options for this text area">

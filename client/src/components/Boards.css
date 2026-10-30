@@ -1,17 +1,15 @@
 /* Boards (/boards). Colors, corners and fonts come from the theme, so Customize and dark mode apply. */
 
-.boards { flex: 1 1 auto; width: 100%; max-width: 1180px; min-width: 0; margin: 0 auto; padding: 32px 32px 48px; color: var(--text-primary); }
+.boards { flex: 1 1 auto; width: 100%; max-width: 1640px; min-width: 0; margin: 0 auto; padding: 30px 42px 38px; color: var(--text-primary); }
 .boards *, .boards *::before, .boards *::after, .boards-dialog-backdrop *, .boards-dialog-backdrop *::before, .boards-dialog-backdrop *::after { box-sizing: border-box; }
-.boards-head h1 { margin: 0; font-size: 1.6rem; font-weight: 650; letter-spacing: -0.01em; }
-.boards-head p { margin: 6px 0 0; color: var(--text-secondary); }
 .boards-status { color: var(--text-secondary); }
 .boards-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---- Tabs: only the tab row scrolls sideways when there are many */
-.boards-tabbar { display: flex; align-items: flex-end; gap: 6px; margin-top: 22px; border-bottom: 1px solid var(--border-light); min-width: 0; }
+.boards-tabbar { display: flex; align-items: flex-end; gap: 6px; margin-top: 0; border-bottom: 0; min-width: 0; }
 .boards-tabs { display: flex; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: thin; padding: 2px 2px 0; }
 .boards-tab {
-  flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 220px; min-height: 42px; padding: 0 16px;
+  flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 220px; min-height: 36px; padding: 0 13px;
   font: inherit; font-size: 0.92rem; font-weight: 600; color: var(--text-secondary); background: transparent;
   border: 1px solid transparent; border-bottom: none; border-radius: var(--radius-md, 8px) var(--radius-md, 8px) 0 0; cursor: pointer;
 }
@@ -22,18 +20,14 @@
   outline: 2px solid var(--primary); outline-offset: 2px;
 }
 .boards-add-tab {
-  flex: none; display: grid; place-items: center; width: 40px; height: 40px; margin-bottom: 2px; color: var(--primary);
+  flex: none; display: grid; place-items: center; width: 34px; height: 34px; margin-bottom: 1px; color: var(--primary);
   background: transparent; border: 1px dashed var(--border-medium); border-radius: var(--radius-md, 8px); cursor: pointer;
 }
 .boards-add-tab:hover:not(:disabled) { background: var(--bg-secondary); }
 .boards-add-tab:disabled { opacity: 0.45; cursor: default; }
 
-/* ---- The open tab */
-.boards-panel { margin-top: 18px; border-radius: var(--radius-md, 8px); }
-.boards-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.boards-panel-head h2 { margin: 0; font-size: 1.15rem; font-weight: 650; overflow-wrap: anywhere; }
 .boards-tab-menu { position: relative; }
-.boards-tab-menu summary { display: grid; place-items: center; width: 40px; height: 40px; color: var(--text-tertiary); border-radius: var(--radius-md, 8px); cursor: pointer; list-style: none; }
+.boards-tab-menu summary { display: grid; place-items: center; width: 34px; height: 34px; color: var(--text-tertiary); border-radius: var(--radius-md, 8px); cursor: pointer; list-style: none; }
 .boards-tab-menu summary::-webkit-details-marker { display: none; }
 .boards-tab-menu summary:hover { background: var(--bg-secondary); color: var(--text-primary); }
 .boards-tab-menu summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
@@ -45,14 +39,10 @@
 .boards-tab-menu .item-actions-popover button:hover, .boards-tab-menu .item-actions-popover button:focus-visible { background: var(--bg-secondary); }
 .boards-tab-menu .item-actions-popover button.is-danger { color: #9b2c2c; }
 
-.boards-empty { margin-top: 16px; padding: 44px 22px; text-align: center; background: var(--bg-secondary); border: 1px dashed var(--border-medium); border-radius: var(--radius-lg, 12px); }
-.boards-empty-icon { display: inline-grid; place-items: center; width: 56px; height: 56px; color: var(--primary); background: var(--bg-tertiary); border-radius: 50%; }
 .boards-empty-title { margin: 14px 0 0; font-weight: 650; font-size: 1.05rem; }
-.boards-empty p { color: var(--text-secondary); }
 .boards-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 18px; }
 
 /* ---- "+ Add" menu and notices */
-.boards-panel-head h2 { flex: 1; min-width: 0; }
 .boards-add { position: relative; }
 .boards-add-button {
   display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 14px; font: inherit; font-size: 0.9rem; font-weight: 600;
@@ -70,34 +60,6 @@
 .boards-notice.is-error { border-color: #e7b9b9; background: #fbeeee; color: #7c2222; }
 .boards-notice-close { min-width: 32px; min-height: 32px; font-size: 1.1rem; color: inherit; background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
 .boards-button-quiet { min-height: 34px; padding: 0 10px; font: inherit; font-size: 0.86rem; font-weight: 600; color: var(--primary); background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
-.boards-empty-action { min-height: 44px; padding: 0 16px; font: inherit; font-size: 0.9rem; font-weight: 600; color: var(--primary-dark); background: var(--bg-primary); border: 1px solid var(--border-medium); border-radius: var(--radius-md, 8px); cursor: pointer; }
-.boards-empty-action:hover { border-color: var(--primary-light); }
-
-/* ---- The grid (desktop): blocks are placed in cells by BoardGrid */
-.board-grid { position: relative; margin-top: 16px; touch-action: none; user-select: none; }
-.board-block { position: absolute; border-radius: var(--radius-lg, 12px); transition: left 140ms ease, top 140ms ease, width 140ms ease, height 140ms ease; cursor: grab; }
-.board-grid.is-dragging .board-block { transition: left 90ms ease, top 90ms ease, width 90ms ease, height 90ms ease; }
-.board-block:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.board-block-card {
-  display: flex; flex-direction: column; gap: 6px; width: 100%; height: 100%; padding: 10px 10px 10px 12px; overflow: hidden;
-  background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: inherit; box-shadow: var(--shadow-sm);
-}
-.board-block:hover .board-block-card { border-color: var(--border-medium); }
-.board-block-card.is-pending { opacity: 0.75; }
-.board-block-card.is-unavailable { background: var(--bg-secondary); border-style: dashed; }
-.board-block-top { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
-.board-block-icon { flex: none; display: grid; place-items: center; width: 30px; height: 30px; color: var(--primary); background: var(--bg-tertiary); border-radius: var(--radius-md, 8px); }
-.board-block-icon.is-folder { color: var(--primary-dark); }
-.board-block-name {
-  flex: 1; min-width: 0; margin: 4px 0 0; font-size: 0.9rem; font-weight: 650; line-height: 1.3; color: var(--text-primary); overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-.is-unavailable .board-block-name { color: var(--text-secondary); font-weight: 600; }
-.board-block-star { flex: none; margin-top: 6px; color: #b7791f; }
-.board-block-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; min-width: 0; }
-.board-chip { padding: 1px 7px; font-size: 0.72rem; font-weight: 600; color: var(--text-secondary); background: var(--bg-secondary); border: 1px solid var(--border-light); border-radius: 999px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.board-block-meta { margin: auto 0 0; font-size: 0.74rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.board-block-remove { align-self: flex-start; margin-top: auto; min-height: 32px; padding: 0 10px; font: inherit; font-size: 0.8rem; font-weight: 600; color: var(--primary-dark); background: var(--bg-primary); border: 1px solid var(--border-medium); border-radius: 6px; cursor: pointer; }
 .board-block-menu { position: relative; flex: none; }
 .board-block-menu summary { display: grid; place-items: center; width: 32px; height: 32px; color: var(--text-tertiary); border-radius: 6px; cursor: pointer; list-style: none; }
 .board-block-menu summary::-webkit-details-marker { display: none; }
@@ -109,14 +71,6 @@
 }
 .board-block-menu .item-actions-popover button { min-height: 36px; padding: 0 12px; font: inherit; font-size: 0.86rem; text-align: left; color: var(--text-primary); background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
 .board-block-menu .item-actions-popover button:hover, .board-block-menu .item-actions-popover button:focus-visible { background: var(--bg-secondary); }
-.board-block-resize { position: absolute; right: 2px; bottom: 2px; width: 16px; height: 16px; cursor: nwse-resize; border-right: 2px solid var(--border-medium); border-bottom: 2px solid var(--border-medium); border-radius: 0 0 6px 0; opacity: 0; transition: opacity 120ms; }
-.board-block:hover .board-block-resize, .board-block:focus-within .board-block-resize { opacity: 1; }
-
-/* ---- The grid on a phone: one column, Move up / Move down in each item's menu */
-.board-list { display: flex; flex-direction: column; gap: 10px; margin: 16px 0 0; padding: 0; list-style: none; }
-.board-list-item { min-height: 96px; border-radius: var(--radius-lg, 12px); }
-.board-list-item:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
-.board-list-item .board-block-card { min-height: 96px; }
 
 /* ---- Add File picker */
 .boards-dialog.is-wide { width: min(620px, 100%); }
@@ -155,10 +109,6 @@
 .boards-button-primary:disabled, .boards-button-secondary:disabled, .boards-button-danger:disabled { opacity: 0.5; cursor: default; }
 
 /* Sticky notes and text areas. Only the grip moves them; the content is for typing. */
-.board-block.type-note, .board-block.type-text { cursor: default; }
-.board-drag-grip { flex: none; display: grid; place-items: center; width: 24px; height: 28px; color: var(--text-tertiary); border-radius: 6px; cursor: grab; touch-action: none; }
-.board-drag-grip:hover { color: var(--text-primary); background: #0000000d; }
-.board-grid.is-dragging .board-drag-grip { cursor: grabbing; }
 .board-note-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .board-note-kind { flex: 1; min-width: 0; font-size: 0.72rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-secondary); }
 .board-note-card, .board-text-card {
@@ -243,11 +193,10 @@ body.rt-phone-editing .companion-launcher { display: none; }
 /* Over a Customize background: the blurred page colour File Box uses for its top bar, kept at least 88% opaque
    here so the heading, description and tab names stay readable however far the background fade is set. */
 .boards-top { border-radius: var(--radius-lg, 12px); }
-html.fb-has-backdrop .boards-top, html.fb-has-backdrop .boards-panel-head {
+html.fb-has-backdrop .boards-top {
   background: color-mix(in srgb, var(--fb-header-bg, var(--fb-page-bg, #fdfdfb)) max(var(--fb-bg-header), 88%), transparent); backdrop-filter: blur(12px);
 }
-html.fb-has-backdrop .boards-top { padding: 16px 18px 0; }
-html.fb-has-backdrop .boards-panel-head { padding: 6px 10px; border-radius: var(--radius-md, 8px); }
+html.fb-has-backdrop .boards-top { padding: 8px 12px 0; }
 
 /* Edit tab */
 .board-tab-preview { display: flex; align-items: flex-end; min-height: 56px; margin: 0 0 14px; padding: 10px 12px 0; background: var(--bg-secondary); border-bottom: 1px solid var(--border-light); border-radius: var(--radius-md, 8px) var(--radius-md, 8px) 0 0; }
@@ -280,31 +229,66 @@ html.fb-has-backdrop .boards-panel-head { padding: 6px 10px; border-radius: var(
 /* Unavailable items: a reason, with nothing about the item itself. */
 .board-block-why { margin: 0; font-size: 0.74rem; line-height: 1.35; color: var(--text-secondary); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
+/* ---- The board: the same white panel and free canvas as My Files > Board (BoardCanvas, FileBoard.css) */
+.boards .personal-board { flex: none; }
+.boards-tabbar .boards-tab-menu { margin-left: auto; align-self: center; }
+.boards-empty-canvas { position: absolute; left: 50%; top: 110px; width: min(470px, calc(100% - 32px)); transform: translateX(-50%); text-align: center; font-size: 13px; color: var(--fb-g-75816b, #75816b); }
+.boards-empty-canvas .boards-empty-title { margin: 0 0 6px; font-size: 17px; font-weight: 500; color: var(--fb-g-414d3a, #414d3a); }
+.boards-empty-canvas .boards-empty-actions { margin-top: 14px; }
+.personal-board .boards-status { padding: 24px; }
+
+/* Sticky notes and text areas on the canvas: the grip is always shown (only it moves them). */
+.board-item.is-note .board-item-handle, .board-item.is-text .board-item-handle { opacity: 1; }
+.board-item.is-note > .board-note-card, .board-item.is-text > .board-text-frame, .board-text-frame > .board-text-card { height: 100%; }
+.board-item .board-note-top { padding-left: 24px; }
+.board-item.is-text.is-editing { z-index: 3; }
+/* A text area's top strip: a light header with the grip, so it reads as the place to move it from. */
+.board-item.is-text .board-note-top { margin: -8px -10px 4px; padding: 5px 10px 5px 34px; min-height: 34px; background: var(--fb-g-f6f8f2, #f6f8f2); border-bottom: 1px solid var(--fb-g-e8ecdf, #e8ecdf); border-radius: inherit; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.board-item.is-text .board-item-handle { top: 6px; box-shadow: 0 0 0 1px var(--fb-g-dfe4d8, #dfe4d8); }
+/* A zone at the top edge: its tools sit just under it instead of being cut off above the board. */
+.personal-board .board-zone.tools-below .board-zone-tools { top: calc(100% + 8px); }
+.board-item-resize { position: absolute; right: 5px; bottom: 5px; z-index: 2; width: 16px; height: 16px; cursor: nwse-resize; touch-action: none; opacity: 0; transition: opacity 120ms;
+  background: linear-gradient(135deg, transparent 50%, #00000033 50%, #00000033 60%, transparent 60%, transparent 70%, #00000033 70%, #00000033 80%, transparent 80%); }
+.board-item:hover .board-item-resize, .board-item:focus-within .board-item-resize { opacity: 1; }
+
+/* A file or folder that is no longer available: the card's shape, nothing about the item. */
+.board-unavailable-card { display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 165px; padding: 18px 14px 14px; text-align: center;
+  border: 1px dashed var(--fb-g-cfd6c6, #cfd6c6); border-radius: calc(6px * var(--fb-radius-scale, 1)); background: var(--fb-g-f7f9f3, #f7f9f3); }
+.board-unavailable-icon { color: var(--fb-g-8f9a84, #8f9a84); }
+.board-unavailable-name { margin: 0; font-size: 12px; font-weight: 500; color: var(--fb-g-48563f, #48563f); }
+
+/* Phone: the board as a list, grouped under its zones */
+.board-list-phone { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
+.board-list-zone { padding: 8px; border: 2px solid; border-radius: calc(14px * var(--fb-radius-scale, 1)); }
+.board-list-zone.is-loose { padding: 0; border: 0; }
+.board-list-zone-name { margin: 4px 6px 8px; font-size: 14px; font-weight: 600; color: #26301f; }
+.board-list { margin: 0; padding: 0; list-style: none; }
+.board-list-row { margin-bottom: 8px; border-radius: calc(6px * var(--fb-radius-scale, 1)); }
+.board-list-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.board-list-row.type-note, .board-list-row.type-text { height: 240px; }
+.board-list-row.type-note > *, .board-list-row.type-text > * { height: 100%; }
+.board-list-empty { position: relative; min-height: 300px; }
+
 @media (prefers-reduced-motion: reduce) {
-  .board-block, .board-grid.is-dragging .board-block, .board-block-resize { transition: none; }
+  .boards .board-item-handle { transition: none; }
 }
 
 @media (max-width: 600px) {
   .boards { padding: 22px 16px 32px; }
-  .boards-head h1 { font-size: 1.35rem; }
   .boards-tab { min-height: 44px; padding: 0 14px; max-width: 160px; }
   .boards-add-tab { width: 44px; height: 44px; }
-  .boards-empty { padding: 32px 16px; }
   .boards-empty-actions { flex-direction: column; align-items: stretch; }
   .boards-dialog-actions > button { flex: 1 1 auto; min-height: 46px; }
   .boards-tab-menu summary { width: 44px; height: 44px; }
-  .boards-panel-head { flex-wrap: wrap; }
-  .boards-add-button { min-height: 44px; }
+  .boards .boards-add-button { min-height: 44px; }
   .boards-add-menu button { min-height: 44px; }
   .board-block-menu summary { width: 44px; height: 44px; }
   .board-block-menu .item-actions-popover button { min-height: 44px; }
-  .board-block-remove { min-height: 44px; }
   .boards-notice-close { min-width: 44px; min-height: 44px; }
   .boards-button-quiet { min-height: 44px; }
   .board-picker-row { min-height: 56px; }
   .boards-tab-menu .item-actions-popover button { min-height: 44px; }
   .board-note-title, .board-note-body { font-size: 1rem; }
-  .board-list-item.type-note, .board-list-item.type-text { height: 220px; }
   /* Dialogs become sheets along the bottom of the screen. */
   .boards-dialog-backdrop { align-items: end; padding: 0; }
   .boards-dialog, .boards-dialog.is-wide { width: 100%; max-height: 92dvh; overflow-y: auto; border-radius: 16px 16px 0 0; padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }

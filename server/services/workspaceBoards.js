@@ -6,7 +6,7 @@ const Folder = require('../models/Folder');
 const TeamFolder = require('../models/TeamFolder');
 const FileContent = require('../models/FileContent');
 const User = require('../models/User');
-const grid = require('../utils/boardGrid');
+const layout = require('../utils/boardLayout');
 const { effectiveClassification } = require('./fileClassifier');
 const { technicalType } = require('./advancedSearch');
 const { cleanDoc, RichTextError } = require('./richTextSchema');
@@ -104,7 +104,16 @@ function cleanColor(value) {
   return value;
 }
 
-const tabBytes = (tab) => Buffer.byteLength(JSON.stringify({ name: tab.name, icon: tab.icon, color: tab.color, blocks: tab.blocks || [] }), 'utf8');
+const tabBytes = (tab) => Buffer.byteLength(JSON.stringify({ name: tab.name, icon: tab.icon, color: tab.color, blocks: tab.blocks || [], zones: tab.zones || [] }), 'utf8');
+
+/**
+ * A tab's layout on the free canvas (pixel positions and zones). Tabs saved before the canvas used a
+ * 12-column grid; those are converted the same deterministic way the migration does, without writing.
+ */
+const LAYOUT_VERSION = 2;
+const canvasOf = (tab) => (tab.layoutVersion === LAYOUT_VERSION
+  ? { blocks: tab.blocks || [], zones: tab.zones || [] }
+  : { blocks: layout.fromGrid(tab.blocks || []), zones: [] });
 
 /** What the browser is sent about a tab. */
 const publicTab = (tab) => ({
@@ -131,9 +140,9 @@ async function settleDefault(userId, tabs) {
   return tabs.map(t => ({ ...t, isDefault: t.tabId === keep.tabId }));
 }
 
-async function createTabRecord(userId, { name, icon = '', color = '', isDefault = false, blocks = [] }, existing) {
+async function createTabRecord(userId, { name, icon = '', color = '', isDefault = false, blocks = [], zones = [] }, existing) {
   const order = existing.length ? Math.max(...existing.map(t => t.order)) + 1 : 0;
-  const record = { user: userId, tabId: newTabId(), name, icon, color, order, isDefault, rev: 0, blocks };
+  const record = { user: userId, tabId: newTabId(), name, icon, color, order, isDefault, rev: 0, blocks, zones, layoutVersion: LAYOUT_VERSION };
   record.bytes = tabBytes(record);
   const total = existing.reduce((sum, t) => sum + (t.bytes || 0), 0);
   if (total + record.bytes > LIMITS.totalBytes) throw new BoardInputError('Your Boards are full. Remove something to add more.', 413);
@@ -241,7 +250,7 @@ async function resolveRefs(userId, fileIds, folderIds, { withDetails = true } = 
 
   if (fIds.length) {
     const found = await File.find({ _id: { $in: fIds } })
-      .select('originalName mimeType size owner parentFolder isTrashed isStarred sharedWith updatedAt').lean();
+      .select('originalName mimeType size owner parentFolder isTrashed isStarred sharedWith updatedAt createdAt aiCaption dataClassification').lean();
     const readable = found.map((file) => {
       if (file.isTrashed) return null;
       if (idOf(file.owner) === user) return { file, source: 'owned', role: 'owner' };
@@ -272,6 +281,10 @@ async function resolveRefs(userId, fileIds, folderIds, { withDetails = true } = 
         size: file.size,
         technicalType: technicalType(file),
         updatedAt: file.updatedAt,
+        // What the board's file card shows (the same card as in My Files).
+        createdAt: file.createdAt,
+        ...(file.dataClassification ? { dataClassification: file.dataClassification } : {}),
+        ...(String(file.mimeType || '').startsWith('image/') && file.aiCaption ? { aiCaption: { text: file.aiCaption.text || '', hashtags: file.aiCaption.hashtags || [], status: file.aiCaption.status || '', error: file.aiCaption.error || '' } } : {}),
         source,
         role,
         ...(source === 'owned' ? { isStarred: Boolean(file.isStarred), parentFolder: file.parentFolder ? idOf(file.parentFolder) : null } : {}),
@@ -283,7 +296,7 @@ async function resolveRefs(userId, fileIds, folderIds, { withDetails = true } = 
   }
 
   if (dIds.length) {
-    const found = await Folder.find({ _id: { $in: dIds } }).select('name owner parentFolder isTrashed').lean();
+    const found = await Folder.find({ _id: { $in: dIds } }).select('name owner parentFolder isTrashed isStarred createdAt dataClassification').lean();
     const readable = found.filter(f => !f.isTrashed && (idOf(f.owner) === user || spaceOf.has(idOf(f._id))));
     let counts = new Map();
     if (withDetails && readable.length) {
@@ -305,6 +318,9 @@ async function resolveRefs(userId, fileIds, folderIds, { withDetails = true } = 
         folderId: idOf(folder._id),
         name: folder.name,
         source: owned ? 'owned' : 'team',
+        createdAt: folder.createdAt,
+        ...(folder.dataClassification ? { dataClassification: folder.dataClassification } : {}),
+        ...(owned ? { isStarred: Boolean(folder.isStarred) } : {}),
         ...(!owned && space ? { teamName: space.name } : {}),
         ...(withDetails ? { itemCount: counts.get(idOf(folder._id)) || 0 } : {}),
       });
@@ -334,15 +350,17 @@ async function getTab(userId, tabId) {
   if (!TAB_ID.test(tabId || '')) throw new BoardInputError('Tab not found.', 404);
   const tab = await WorkspaceTab.findOne({ user: userId, tabId }).lean();
   if (!tab) throw new BoardInputError('Tab not found.', 404);
-  return { tab: publicTab(tab), blocks: await resolveBlocks(userId, tab.blocks || []) };
+  const { blocks, zones } = canvasOf(tab);
+  return { tab: publicTab(tab), blocks: await resolveBlocks(userId, blocks), zones };
 }
 
 /**
- * Save a tab's blocks (positions, sizes, adds and removals). The browser's list is only a request:
+ * Save a tab's board (positions, sizes, zones, adds and removals). The browser's list is only a request:
  *  - an existing block keeps the type and reference stored on the server (ids the browser sends for it are ignored)
  *  - a new block must point at a file or folder the person can open right now
  *  - the same file or folder may not appear twice on one tab
- *  - every position and size is clamped and the layout made overlap-free here
+ *  - positions are pixels on the free canvas (or null: not placed yet), clamped like My Files > Board;
+ *    zones are checked exactly like My Files > Board's (utils/boardLayout.js); left out, the stored ones stay
  *  - `rev` must match, so another device's save is never silently overwritten (409 with the latest tab)
  */
 async function saveBlocks(userId, tabId, body = {}) {
@@ -354,7 +372,8 @@ async function saveBlocks(userId, tabId, body = {}) {
   if (!current) throw new BoardInputError('Tab not found.', 404);
   if (current.rev !== body.rev) throw await conflict(userId, tabId);
 
-  const stored = new Map((current.blocks || []).map(b => [b.id, b]));
+  const canvas = canvasOf(current);
+  const stored = new Map(canvas.blocks.map(b => [b.id, b]));
   const seenIds = new Set();
   const refs = new Set();
   const added = { file: [], folder: [] };
@@ -387,8 +406,10 @@ async function saveBlocks(userId, tabId, body = {}) {
       if (refs.has(key)) throw new BoardInputError(`That ${base.type} is already on this tab.`);
       refs.add(key);
     }
-    return { ...base, x: raw.x, y: raw.y, w: raw.w, h: raw.h };
+    const { x, y, w, h, ...content } = base;
+    return { ...content, ...layout.cleanPlace(raw, base.type) };
   });
+  const zones = body.zones === undefined ? canvas.zones : layout.cleanZones(body.zones);
 
   if (added.file.length || added.folder.length) {
     const { files, folders } = await resolveRefs(userId, added.file, added.folder, { withDetails: false });
@@ -396,26 +417,26 @@ async function saveBlocks(userId, tabId, body = {}) {
   }
 
   const blocks = storedBlocks(next);
-  const bytes = await checkSize(userId, current, blocks);
+  const bytes = await checkSize(userId, current, blocks, zones);
 
   const updated = await WorkspaceTab.findOneAndUpdate(
     { user: userId, tabId, rev: body.rev },
-    { $set: { blocks, bytes }, $inc: { rev: 1 } },
+    { $set: { blocks, zones, bytes, layoutVersion: LAYOUT_VERSION }, $inc: { rev: 1 } },
     { new: true }
   ).lean();
   if (!updated) throw await conflict(userId, tabId);
-  return { tab: publicTab(updated), blocks: await resolveBlocks(userId, updated.blocks) };
+  return { tab: publicTab(updated), blocks: await resolveBlocks(userId, updated.blocks), zones: updated.zones };
 }
 
-/** Blocks as they are stored: laid out without overlaps, with only the fields each type keeps. */
-const storedBlocks = (list) => grid.normalize(list).map(b => ({
-  id: b.id, type: b.type, x: b.x, y: b.y, w: b.w, h: b.h,
+/** Blocks as they are stored: pixel place (and size for notes and text), with only the fields each type keeps. */
+const storedBlocks = (list) => list.map(b => ({
+  id: b.id, type: b.type, ...layout.cleanPlace(b, b.type),
   ...(b.type === 'file' ? { fileId: idOf(b.fileId) } : b.type === 'folder' ? { folderId: idOf(b.folderId) } : b.type === 'note' ? { note: b.note } : { text: b.text }),
 }));
 
 /** The tab's new size in bytes, if it fits within the tab and per-person limits. */
-async function checkSize(userId, current, blocks) {
-  const bytes = tabBytes({ ...current, blocks });
+async function checkSize(userId, current, blocks, zones = current.zones || []) {
+  const bytes = tabBytes({ ...current, blocks, zones });
   if (bytes > LIMITS.tabBytes) throw new BoardInputError('This tab is too large to save.', 413);
   const others = await WorkspaceTab.aggregate([
     { $match: { user: new mongoose.Types.ObjectId(idOf(userId)), tabId: { $ne: current.tabId } } },
@@ -455,7 +476,7 @@ async function duplicateTab(userId, tabId) {
   if (!source) throw new BoardInputError('Tab not found.', 404);
   const existing = await WorkspaceTab.find({ user: userId }).select('tabId name order bytes').sort({ order: 1, createdAt: 1 }).lean();
   if (existing.length >= LIMITS.tabs) throw new BoardInputError(`You can have up to ${LIMITS.tabs} tabs.`, 409);
-  const srcBlocks = source.blocks || [];
+  const { blocks: srcBlocks, zones } = canvasOf(source);
   const { files, folders } = await resolveRefs(userId,
     srcBlocks.filter(b => b.type === 'file').map(b => idOf(b.fileId)),
     srcBlocks.filter(b => b.type === 'folder').map(b => idOf(b.folderId)), { withDetails: false });
@@ -463,7 +484,7 @@ async function duplicateTab(userId, tabId) {
   const freshId = () => { let id; do { id = newTabId(); } while (ids.has(id)); ids.add(id); return id; };
   const kept = srcBlocks.filter(b => (b.type === 'file' ? files.has(idOf(b.fileId)) : b.type === 'folder' ? folders.has(idOf(b.folderId)) : true));
   const blocks = storedBlocks(kept.map(b => ({ ...b, id: freshId() })));
-  const record = await createTabRecord(userId, { name: copyName(source.name, new Set(existing.map(t => t.name))), icon: source.icon || '', color: source.color || '', blocks }, existing);
+  const record = await createTabRecord(userId, { name: copyName(source.name, new Set(existing.map(t => t.name))), icon: source.icon || '', color: source.color || '', blocks, zones }, existing);
   const order = existing.map(t => t.tabId);
   order.splice(order.indexOf(tabId) + 1, 0, record.tabId);
   await writeOrder(userId, order, [...existing, record]);
@@ -501,8 +522,9 @@ async function placements(userId, query = {}) {
 }
 
 /**
- * "Add to board" from a file or folder menu: the server checks the person can open it now and places it
- * at the first free spot. Retries a few times if the tab is being saved at the same moment.
+ * "Add to board" from a file or folder menu: the server checks the person can open it now and adds it
+ * without a place; the board puts it below everything (as My Files > Board does) and keeps that spot.
+ * Retries a few times if the tab is being saved at the same moment.
  */
 async function addRef(userId, tabId, body = {}) {
   if (!TAB_ID.test(tabId || '')) throw new BoardInputError('Tab not found.', 404);
@@ -517,18 +539,17 @@ async function addRef(userId, tabId, body = {}) {
     if (attempt) await new Promise(resolve => setTimeout(resolve, 10 * attempt + Math.random() * 30));
     const current = await WorkspaceTab.findOne({ user: userId, tabId }).lean();
     if (!current) throw new BoardInputError('Tab not found.', 404);
-    const list = current.blocks || [];
+    const canvas = canvasOf(current);
+    const list = canvas.blocks;
     if (list.some(b => b.type === type && idOf(b[field]) === refId)) return { tab: publicTab(current), added: false };
     if (list.length >= LIMITS.blocksPerTab) throw new BoardInputError(`This board is full (${LIMITS.blocksPerTab} items).`, 409);
     let id;
     do { id = newTabId(); } while (list.some(b => b.id === id));
-    const { w, h } = grid.SIZES[type];
-    const spot = grid.firstFit(list, w, h);
-    const blocks = storedBlocks([...list, { id, type, x: spot.x, y: spot.y, w, h, [field]: refId }]);
-    const bytes = await checkSize(userId, current, blocks);
+    const blocks = storedBlocks([...list, { id, type, x: null, y: null, [field]: refId }]);
+    const bytes = await checkSize(userId, current, blocks, canvas.zones);
     const updated = await WorkspaceTab.findOneAndUpdate(
       { user: userId, tabId, rev: current.rev },
-      { $set: { blocks, bytes }, $inc: { rev: 1 } },
+      { $set: { blocks, zones: canvas.zones, bytes, layoutVersion: LAYOUT_VERSION }, $inc: { rev: 1 } },
       { new: true }
     ).lean();
     if (updated) return { tab: publicTab(updated), added: true, blockId: id };
@@ -539,10 +560,11 @@ async function addRef(userId, tabId, body = {}) {
 async function conflict(userId, tabId) {
   const latest = await WorkspaceTab.findOne({ user: userId, tabId }).lean();
   if (!latest) return new BoardInputError('Tab not found.', 404);
-  return new BoardInputError('This board was changed somewhere else.', 409, { tab: publicTab(latest), blocks: await resolveBlocks(userId, latest.blocks || []) });
+  const { blocks, zones } = canvasOf(latest);
+  return new BoardInputError('This board was changed somewhere else.', 409, { tab: publicTab(latest), blocks: await resolveBlocks(userId, blocks), zones });
 }
 
 module.exports = {
-  LIMITS, COLORS, NOTE_COLORS, SIZES: grid.SIZES, BoardInputError, cleanName, cleanIcon, cleanColor, listTabs, createTab, updateTab, deleteTab,
+  LIMITS, COLORS, NOTE_COLORS, SIZES: layout.SIZES, LAYOUT_VERSION, canvasOf, BoardInputError, cleanName, cleanIcon, cleanColor, listTabs, createTab, updateTab, deleteTab,
   getTab, saveBlocks, resolveBlocks, duplicateTab, reorderTabs, setDefaultTab, placements, addRef, DEFAULT_TAB_NAME,
 };

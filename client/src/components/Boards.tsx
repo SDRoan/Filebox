@@ -1,25 +1,26 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { workspaceBoardsAPI, BoardTab, BoardLimits, BoardBlock } from '../services/api';
+import { workspaceBoardsAPI, BoardTab, BoardLimits } from '../services/api';
 import ItemActions from './ItemActions';
 import BoardDialog from './BoardDialog';
 import BoardTabDialog, { TabLook } from './BoardTabDialog';
-import BoardGrid from './BoardGrid';
+import PersonalBoard from './PersonalBoard';
+import BoardList from './BoardList';
 import BoardAddFileDialog from './BoardAddFileDialog';
 import FolderPickerModal from './FolderPickerModal';
-import FilePreview from './FilePreview';
-import { BoardsIcon, PlusIcon } from './Icons';
+import { PlusIcon } from './Icons';
 import { useBoardTabBlocks, BoardNotice } from '../hooks/useBoardTabBlocks';
-import { pagePath } from '../config/workspaceNavigation';
-import { FileItemType } from '../types';
 import { readOpenTab, writeOpenTab, tabAccent } from '../utils/boardTabs';
+import './FileBrowser.css';
+import './FileBoard.css';
 import './Boards.css';
 
 /**
- * Boards (/boards): a person's own tabbed workspace. Each tab is a board of File Box files and folders,
- * placed by reference: adding one never moves or copies it, and removing one never deletes it, plus
- * sticky notes (plain text) and text areas (rich text, edited with TipTap, loaded when first needed).
+ * Boards (/boards): a person's own tabbed workspace. Each tab is its own board on the same free canvas as
+ * My Files > Board (BoardCanvas): chosen files and folders, placed by reference (adding one never moves or
+ * copies it, removing one never deletes it), zones, sticky notes (plain text) and text areas (rich text,
+ * edited with TipTap, loaded when first needed). On a phone the board is a list.
  *
  * Tabs are saved with the account, with their order and which one is the default. Opening Boards fresh
  * shows the default tab; within one browser session a reload or coming back returns to the tab that was
@@ -27,6 +28,18 @@ import './Boards.css';
  */
 
 const errorMessage = (error: any, fallback: string) => error?.response?.data?.message || fallback;
+
+const usePhone = () => {
+  const query = '(max-width: 600px)';
+  const [phone, setPhone] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+  useEffect(() => {
+    const list = window.matchMedia(query);
+    const update = () => setPhone(list.matches);
+    list.addEventListener('change', update);
+    return () => list.removeEventListener('change', update);
+  }, []);
+  return phone;
+};
 
 /** "+ Add": a small menu, usable with the keyboard (arrows, Enter, Escape). */
 const AddMenu: React.FC<{ disabled: boolean; onFile: () => void; onFolder: () => void; onNote: () => void; onText: () => void }> = ({ disabled, onFile, onFolder, onNote, onText }) => {
@@ -47,10 +60,10 @@ const AddMenu: React.FC<{ disabled: boolean; onFile: () => void; onFolder: () =>
   };
   return (
     <div className="boards-add" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false); }}>
-      <button ref={button} type="button" className="boards-add-button" aria-haspopup="menu" aria-expanded={open} disabled={disabled}
+      <button ref={button} type="button" className="file-action-button boards-add-button" aria-haspopup="menu" aria-expanded={open} disabled={disabled}
         title={disabled ? 'This tab is full (150 items)' : undefined}
         onClick={() => setOpen(o => !o)} onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); } }}>
-        <PlusIcon size={15} /> Add
+        <PlusIcon size={15} />Add
       </button>
       {open && (
         <div ref={menu} className="boards-add-menu" role="menu" aria-label="Add to this board" onKeyDown={onMenuKey}>
@@ -73,10 +86,10 @@ const Boards: React.FC = () => {
   const [loadError, setLoadError] = useState('');
   const [dialog, setDialog] = useState<null | { kind: 'create' | 'addFile' | 'addFolder' } | { kind: 'edit' | 'delete'; tab: BoardTab }>(null);
   const [notice, setNotice] = useState<BoardNotice | null>(null);
-  const [opened, setOpened] = useState<BoardBlock | null>(null);
+  const [resetOpen, setResetOpen] = useState(false);
+  const phone = usePhone();
   // The one text area being edited (only it has a live editor).
   const [editingId, setEditingId] = useState('');
-  const navigate = useNavigate();
   const location = useLocation();
   // "Open board" after Add to board… from a file menu asks for that tab.
   const requestedTab = (location.state as { openTabId?: string } | null)?.openTabId;
@@ -284,7 +297,7 @@ const Boards: React.FC = () => {
   // A new note or text area opens for typing straight away.
   const focusNew = (id: string, type: 'note' | 'text') => {
     if (type === 'text') { setEditingId(id); return; }
-    setTimeout(() => document.querySelector<HTMLElement>(`[data-block-id="${id}"] .board-note-title`)?.focus(), 80);
+    setTimeout(() => document.querySelector<HTMLElement>(`[data-board-key="${id}"] .board-note-title, [data-list-id="${id}"] .board-note-title`)?.focus(), 80);
   };
   const addNote = () => focusNew(board.addNote(), 'note');
   const addText = () => focusNew(board.addText(), 'text');
@@ -292,13 +305,30 @@ const Boards: React.FC = () => {
   const unavailable = board.blocks.filter(b => (b.type === 'file' || b.type === 'folder') && !b.ref.available).length;
   const activeIndex = tabs.findIndex(t => t.id === activeId);
 
-  const openBlock = (block: BoardBlock) => {
-    if ((block.type !== 'file' && block.type !== 'folder') || !block.ref.available) return;
-    if (block.type === 'file') { setOpened(block); return; }
-    // A folder opens in My Files (or Team Spaces for a Team Space folder); nothing about it changes.
-    if (block.ref.source === 'team') navigate(pagePath('teams'));
-    else navigate(pagePath('files'), { state: { openFolderId: block.ref.folderId } });
+  // Reset board: zones go and everything goes back into rows (as My Files > Board does). Only places change;
+  // every file, folder, note and text area stays on the board, and Undo puts the old arrangement back.
+  const resetBoard = () => {
+    const before = Object.fromEntries(board.blocks.map(b => [b.id, b.x === null || b.y === null ? null : { x: b.x, y: b.y, ...(b.w !== undefined && b.h !== undefined ? { w: b.w, h: b.h } : {}) }]));
+    const zonesBefore = board.zones;
+    board.arrange(Object.fromEntries(board.blocks.map(b => [b.id, null])), []);
+    setResetOpen(false);
+    showNotice({ text: 'The board was reset: zones removed and everything arranged in rows. Nothing in File Box changed.', undo: () => { board.arrange(before, zonesBefore); showNotice({ text: 'The board is back as it was.' }); } });
   };
+  const actions = {
+    onArrange: board.arrange, onEdit: board.edit, onFlush: board.flush, onRemove: board.remove, onReload: board.reload, onEditingChange: setEditingId,
+  };
+  const emptyBoard = (
+    <div className="boards-empty-canvas">
+      <p className="boards-empty-title">This board is empty.</p>
+      <p>Add files and folders you choose (they stay where they are in File Box), sticky notes or text areas.</p>
+      <div className="boards-empty-actions">
+        <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFile' })}>Add file</button>
+        <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFolder' })}>Add folder</button>
+        <button type="button" className="file-action-button" onClick={addNote}>Add sticky note</button>
+        <button type="button" className="file-action-button" onClick={addText}>Add text area</button>
+      </div>
+    </div>
+  );
 
   if (loading) return <section className="boards" aria-busy="true"><p className="boards-status">Loading your boards…</p></section>;
   if (loadError) {
@@ -311,48 +341,37 @@ const Boards: React.FC = () => {
 
   return (
     <section className="boards" aria-labelledby="boards-title">
+      <h1 id="boards-title" className="boards-visually-hidden">Boards</h1>
       <div className="boards-top">
-      <header className="boards-head">
-        <h1 id="boards-title">Boards</h1>
-        <p>Your own spaces for files, folders and notes. Placing something on a board never moves it.</p>
-      </header>
-
-      <div className="boards-tabbar">
-        <div ref={stripRef} className={`boards-tabs ${scrollEdges.left ? 'can-scroll-left' : ''} ${scrollEdges.right ? 'can-scroll-right' : ''}`} role="tablist" aria-label="Board tabs" onScroll={measureStrip}>
-          {tabs.map((tab, index) => (
-            <button
-              key={tab.id}
-              ref={(el) => { if (el) tabRefs.current.set(tab.id, el); else tabRefs.current.delete(tab.id); }}
-              type="button"
-              role="tab"
-              id={`board-tab-${tab.id}`}
-              aria-selected={tab.id === activeId}
-              aria-controls={`board-panel-${tab.id}`}
-              tabIndex={tab.id === activeId ? 0 : -1}
-              className={`boards-tab ${tab.id === activeId ? 'is-active' : ''} ${tabAccent(tab.color) ? 'has-color' : ''}`}
-              style={tabAccent(tab.color) ? { ['--tab-accent' as any]: tabAccent(tab.color) } : undefined}
-              onClick={() => activate(tab.id)}
-              onKeyDown={(event) => onTabKeyDown(event, index)}
-            >
-              {tab.icon && <span className="boards-tab-icon" aria-hidden="true">{tab.icon}</span>}
-              <span className="boards-tab-name">{tab.name}</span>
-              {tab.isDefault && <span className="boards-tab-default" title="Default tab" aria-hidden="true">⌂</span>}
-              {tab.isDefault && <span className="boards-visually-hidden"> (default)</span>}
-            </button>
-          ))}
-        </div>
-        <button type="button" className="boards-add-tab" onClick={() => setDialog({ kind: 'create' })} disabled={atLimit}
-          aria-label="New tab" title={atLimit ? `You can have up to ${limits?.tabs} tabs` : 'New tab'}>
-          <PlusIcon size={16} />
-        </button>
-      </div>
-      </div>
-
-      {active && (
-        <div className="boards-panel" role="tabpanel" id={`board-panel-${active.id}`} aria-labelledby={`board-tab-${active.id}`} tabIndex={0}>
-          <div className="boards-panel-head">
-            <h2>{active.icon && <span aria-hidden="true">{active.icon} </span>}{active.name}</h2>
-            <AddMenu disabled={room <= 0 || board.loading} onFile={() => setDialog({ kind: 'addFile' })} onFolder={() => setDialog({ kind: 'addFolder' })} onNote={addNote} onText={addText} />
+        <div className="boards-tabbar">
+          <div ref={stripRef} className={`boards-tabs ${scrollEdges.left ? 'can-scroll-left' : ''} ${scrollEdges.right ? 'can-scroll-right' : ''}`} role="tablist" aria-label="Board tabs" onScroll={measureStrip}>
+            {tabs.map((tab, index) => (
+              <button
+                key={tab.id}
+                ref={(el) => { if (el) tabRefs.current.set(tab.id, el); else tabRefs.current.delete(tab.id); }}
+                type="button"
+                role="tab"
+                id={`board-tab-${tab.id}`}
+                aria-selected={tab.id === activeId}
+                aria-controls={`board-panel-${tab.id}`}
+                tabIndex={tab.id === activeId ? 0 : -1}
+                className={`boards-tab ${tab.id === activeId ? 'is-active' : ''} ${tabAccent(tab.color) ? 'has-color' : ''}`}
+                style={tabAccent(tab.color) ? { ['--tab-accent' as any]: tabAccent(tab.color) } : undefined}
+                onClick={() => activate(tab.id)}
+                onKeyDown={(event) => onTabKeyDown(event, index)}
+              >
+                {tab.icon && <span className="boards-tab-icon" aria-hidden="true">{tab.icon}</span>}
+                <span className="boards-tab-name">{tab.name}</span>
+                {tab.isDefault && <span className="boards-tab-default" title="Default tab" aria-hidden="true">⌂</span>}
+                {tab.isDefault && <span className="boards-visually-hidden"> (default)</span>}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="boards-add-tab" onClick={() => setDialog({ kind: 'create' })} disabled={atLimit}
+            aria-label="New tab" title={atLimit ? `You can have up to ${limits?.tabs} tabs` : 'New tab'}>
+            <PlusIcon size={16} />
+          </button>
+          {active && (
             <ItemActions className="boards-tab-menu" label={`Options for tab ${active.name}`}>
               <button type="button" onClick={() => setDialog({ kind: 'edit', tab: active })}>Edit tab…</button>
               <button type="button" onClick={() => duplicateTab(active)} disabled={atLimit} title={atLimit ? `You can have up to ${limits?.tabs} tabs` : undefined}>Duplicate tab</button>
@@ -364,38 +383,37 @@ const Boards: React.FC = () => {
               {unavailable > 0 && <button type="button" onClick={() => board.removeUnavailable()}>Remove unavailable items ({unavailable})</button>}
               <button type="button" className="is-danger" onClick={() => { setDeleteError(''); setDialog({ kind: 'delete', tab: active }); }}>Delete tab…</button>
             </ItemActions>
+          )}
+        </div>
+      </div>
+
+      {notice && (
+        <div className={`boards-notice ${notice.tone === 'error' ? 'is-error' : ''}`}>
+          <span>{notice.text}</span>
+          {notice.undo && <button type="button" className="boards-button-quiet" onClick={notice.undo}>Undo</button>}
+          <button type="button" className="boards-notice-close" aria-label="Dismiss" onClick={() => setNotice(null)}>×</button>
+        </div>
+      )}
+
+      {active && (
+        <div className="file-browser personal-board" role="tabpanel" id={`board-panel-${active.id}`} aria-labelledby={`board-tab-${active.id}`}>
+          <div className="file-canvas">
+            {board.loading && <p className="boards-status">Loading this board…</p>}
+            {board.error && <div className="boards-empty-canvas" role="alert"><p className="boards-empty-title">{board.error}</p></div>}
+            {!board.loading && !board.error && (phone ? (
+              <>
+                <div className="file-board-toolbar boards-phone-toolbar">
+                  <AddMenu disabled={room <= 0} onFile={() => setDialog({ kind: 'addFile' })} onFolder={() => setDialog({ kind: 'addFolder' })} onNote={addNote} onText={addText} />
+                  <span className="file-board-hint">Zones and free arranging are on larger screens. Here you can edit and reorder.</span>
+                </div>
+                <BoardList blocks={board.blocks} zones={board.zones} saveState={board.saveState} editingId={editingId} empty={emptyBoard} {...actions} />
+              </>
+            ) : (
+              <PersonalBoard tabId={active.id} blocks={board.blocks} zones={board.zones} saveState={board.saveState} editingId={editingId}
+                toolbarStart={<AddMenu disabled={room <= 0} onFile={() => setDialog({ kind: 'addFile' })} onFolder={() => setDialog({ kind: 'addFolder' })} onNote={addNote} onText={addText} />}
+                onReset={() => setResetOpen(true)} empty={emptyBoard} {...actions} />
+            ))}
           </div>
-
-          {notice && (
-            <div className={`boards-notice ${notice.tone === 'error' ? 'is-error' : ''}`}>
-              <span>{notice.text}</span>
-              {notice.undo && <button type="button" className="boards-button-quiet" onClick={notice.undo}>Undo</button>}
-              <button type="button" className="boards-notice-close" aria-label="Dismiss" onClick={() => setNotice(null)}>×</button>
-            </div>
-          )}
-
-          {board.loading && <p className="boards-status">Loading this board…</p>}
-          {board.error && <div className="boards-empty" role="alert"><p className="boards-empty-title">{board.error}</p></div>}
-
-          {!board.loading && !board.error && board.blocks.length === 0 && (
-            <div className="boards-empty">
-              <span className="boards-empty-icon" aria-hidden="true"><BoardsIcon size={30} /></span>
-              <p className="boards-empty-title">This tab is empty.</p>
-              <p>Build this space your way.</p>
-              <div className="boards-empty-actions">
-                <button type="button" className="boards-empty-action" onClick={() => setDialog({ kind: 'addFile' })}>Add file</button>
-                <button type="button" className="boards-empty-action" onClick={() => setDialog({ kind: 'addFolder' })}>Add folder</button>
-                <button type="button" className="boards-empty-action" onClick={addNote}>Add sticky note</button>
-                <button type="button" className="boards-empty-action" onClick={addText}>Add text area</button>
-              </div>
-            </div>
-          )}
-
-          {!board.loading && !board.error && board.blocks.length > 0 && (
-            <BoardGrid blocks={board.blocks} pending={board.pending} saveState={board.saveState} editingId={editingId} onEditingChange={setEditingId}
-              onChange={board.change} onEdit={board.edit} onFlush={board.flush}
-              onOpen={openBlock} onRemove={board.remove} onAnnounce={setAnnouncement} />
-          )}
         </div>
       )}
 
@@ -421,9 +439,16 @@ const Boards: React.FC = () => {
             showNotice(board.addFolder(folderId) ? { text: `Added the folder to ${active?.name}. It stays where it is.` } : { tone: 'error', text: 'That folder is already on this tab.' });
           }} />
       )}
-      {opened && opened.type === 'file' && opened.ref.available && opened.ref.fileId && (
-        <FilePreview file={{ _id: opened.ref.fileId, originalName: opened.ref.name, mimeType: opened.ref.mimeType || '', size: opened.ref.size || 0, access: opened.ref.role } as unknown as FileItemType}
-          onClose={() => setOpened(null)} />
+      {resetOpen && (
+        <BoardDialog title="Reset this board?" describedBy="boards-reset-text" onClose={() => setResetOpen(false)}>
+          <p id="boards-reset-text" className="boards-dialog-text">
+            Zones will be removed and everything will be arranged back into rows. Files, folders, sticky notes, and text areas stay on this board. Nothing in File Box will be moved or deleted.
+          </p>
+          <div className="boards-dialog-actions">
+            <button type="button" className="boards-button-secondary" data-autofocus onClick={() => setResetOpen(false)}>Cancel</button>
+            <button type="button" className="boards-button-primary" onClick={resetBoard}>Reset board</button>
+          </div>
+        </BoardDialog>
       )}
       {dialog?.kind === 'create' && limits && (
         <BoardTabDialog mode="create" initial={{ name: '', icon: '', color: '' }} max={limits.tabName} onSave={createTab} onClose={() => setDialog(null)} />

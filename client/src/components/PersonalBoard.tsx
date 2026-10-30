@@ -1,0 +1,222 @@
+import React, { useMemo, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import BoardCanvas, { CanvasEntry, CanvasLayout } from './BoardCanvas';
+import FileItem from './FileItem';
+import FolderItem from './FolderItem';
+import { StickyNoteBlock, RichTextBlock } from './BoardNoteBlocks';
+import { DocumentIcon, FolderIcon } from './Icons';
+import { useAuth } from '../context/AuthContext';
+import { filesAPI, BoardBlock, BoardNote, BoardText, BoardZone } from '../services/api';
+import { FileItem as FileItemType, Folder } from '../types';
+import { pagePath } from '../config/workspaceNavigation';
+import { BLOCK_SIZES, Spot } from '../utils/boardLayout';
+
+/**
+ * One personal Boards tab on the free canvas shared with My Files > Board: the person's chosen files and
+ * folders (the same cards as in My Files, with all their usual actions), sticky notes and text areas.
+ * Files and folders are references: removing a card only takes it off this board.
+ */
+
+type RefBlock = Extract<BoardBlock, { type: 'file' | 'folder' }>;
+type Available = Extract<RefBlock['ref'], { available: true }>;
+
+export interface BoardActions {
+  onArrange: (items: Record<string, Spot | null>, zones?: BoardZone[], options?: { debounce?: boolean }) => void;
+  onEdit: (id: string, content: { note?: BoardNote; text?: BoardText }) => void;
+  onFlush: () => void;
+  onRemove: (block: BoardBlock) => void;
+  onReload: () => void;
+  onEditingChange: (id: string) => void;
+}
+
+/** The card a file shows in My Files, built from what the board knows about it (nothing is read from the file). */
+export const fileCard = (ref: Available, userId?: string): FileItemType => ({
+  _id: ref.fileId!, name: ref.name, originalName: ref.name, path: '', size: ref.size || 0, mimeType: ref.mimeType || '',
+  owner: ref.source === 'owned' ? (userId || '') : 'shared', parentFolder: ref.parentFolder || null, isFolder: false,
+  isStarred: Boolean(ref.isStarred), isTrashed: false, createdAt: ref.createdAt || ref.updatedAt || '', updatedAt: ref.updatedAt || '',
+  ...(ref.dataClassification ? { dataClassification: ref.dataClassification } : {}),
+  ...(ref.aiCaption ? { aiCaption: ref.aiCaption } : {}),
+  access: ref.role || 'viewer',
+} as FileItemType);
+
+export const folderCard = (ref: Available, userId?: string): Folder => ({
+  _id: ref.folderId!, name: ref.name, owner: ref.source === 'owned' ? (userId || '') : 'shared', parentFolder: null,
+  createdAt: ref.createdAt || '', isStarred: Boolean(ref.isStarred),
+  ...(ref.dataClassification ? { dataClassification: ref.dataClassification } : {}),
+} as unknown as Folder);
+
+export const blockName = (block: BoardBlock) => {
+  if (block.type === 'note') return `Sticky note${block.note.title ? `: ${block.note.title}` : ''}`;
+  if (block.type === 'text') return 'Text area';
+  return block.ref.available ? block.ref.name : block.type === 'file' ? 'Unavailable file' : 'Unavailable folder';
+};
+
+/** A file or folder this person can no longer open: nothing about it is shown, only a way to remove it. */
+export const UnavailableCard: React.FC<{ type: 'file' | 'folder'; onRemove: () => void }> = ({ type, onRemove }) => (
+  <div className="board-unavailable-card">
+    <span className="board-unavailable-icon" aria-hidden="true">{type === 'folder' ? <FolderIcon size={28} /> : <DocumentIcon size={28} />}</span>
+    <p className="board-unavailable-name">{type === 'file' ? 'File no longer available' : 'Folder no longer available'}</p>
+    <p className="board-block-why">It may have been deleted, moved to Trash, or is no longer shared with you.</p>
+    <button type="button" className="file-action-button" onClick={onRemove}>Remove from board</button>
+  </div>
+);
+
+/** Around a text area: leaving it (focus moves outside it, not into one of its dialogs) stops editing it. */
+export const TextFrame: React.FC<{ id: string; editingRef: React.MutableRefObject<string>; onEditingChange: (id: string) => void; children: React.ReactNode }> = ({ id, editingRef, onEditingChange, children }) => (
+  <div className="board-text-frame" onBlur={(event) => {
+    if (editingRef.current !== id) return;
+    const nextFocus = event.relatedTarget as HTMLElement | null;
+    if (nextFocus && (event.currentTarget.contains(nextFocus) || nextFocus.closest('.boards-dialog'))) return;
+    const frame = event.currentTarget;
+    setTimeout(() => {
+      const active = document.activeElement as HTMLElement | null;
+      if ((active && frame.contains(active)) || active?.closest('.boards-dialog')) return;
+      if (editingRef.current === id) onEditingChange('');
+    }, 0);
+  }}>
+    {children}
+  </div>
+);
+
+const RemoveIcon = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="3" /><path d="M8.5 12h7" /></svg>
+);
+
+/** The card for a file or folder block (shared by the canvas and the phone list). */
+export const useRefCard = ({ onRemove, onReload }: Pick<BoardActions, 'onRemove' | 'onReload'>) => {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  return (block: RefBlock, extra?: React.ReactNode) => {
+    if (!block.ref.available) return <UnavailableCard type={block.type} onRemove={() => onRemove(block)} />;
+    const ref = block.ref;
+    const remove = (
+      <>
+        <button onClick={() => onRemove(block)} className="icon-button" title="Remove from board" aria-label={`Remove ${ref.name} from this board (it stays in File Box)`}>{RemoveIcon}</button>
+        {extra}
+      </>
+    );
+    // Real File Box actions, exactly as elsewhere; afterwards the board shows the item's latest state.
+    const trash = async () => {
+      try {
+        if (block.type === 'file') await filesAPI.deleteFile(ref.fileId!);
+        else await filesAPI.deleteFolder(ref.folderId!);
+      } catch (error) {
+        console.error('Error deleting:', error);
+        alert('Failed to delete');
+      }
+      onReload();
+    };
+    if (block.type === 'folder') {
+      return (
+        <FolderItem folder={folderCard(ref, user?.id)} boardActions={remove} showTrash={false}
+          onClick={() => (ref.source === 'team' ? navigate(pagePath('teams')) : navigate(pagePath('files'), { state: { openFolderId: ref.folderId } }))}
+          onDelete={trash} onRestore={() => {}} onPermanentDelete={() => {}} onMove={onReload} />
+      );
+    }
+    return (
+      <FileItem file={fileCard(ref, user?.id)} boardActions={remove} showTrash={false}
+        onDelete={trash} onRestore={() => {}} onPermanentDelete={() => {}} onMove={onReload} onRename={onReload} />
+    );
+  };
+};
+
+interface PersonalBoardProps extends BoardActions {
+  tabId: string;
+  blocks: BoardBlock[];
+  zones: BoardZone[];
+  saveState: string;
+  editingId: string;
+  toolbarStart: React.ReactNode;
+  onReset: () => void;
+  empty: React.ReactNode;
+}
+
+const sameSpot = (a: Spot | undefined, b: Spot) => Boolean(a) && a!.x === b.x && a!.y === b.y && a!.w === b.w && a!.h === b.h;
+
+const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, saveState, editingId, toolbarStart, onReset, empty, ...actions }) => {
+  const { onArrange, onEdit, onFlush, onRemove, onEditingChange } = actions;
+  const refCard = useRefCard(actions);
+  const editingRef = useRef(editingId);
+  editingRef.current = editingId;
+
+  // The canvas layout from the saved blocks (a block without a place yet is left out: the canvas places it).
+  const layout = useMemo<CanvasLayout>(() => ({
+    items: Object.fromEntries(blocks.filter(b => b.x !== null && b.y !== null).map(b => [b.id, {
+      x: b.x as number, y: b.y as number, ...(b.type === 'note' || b.type === 'text' ? { w: b.w, h: b.h } : {}),
+    }])),
+    zones,
+  }), [blocks, zones]);
+
+  const focusHandle = (id: string) => setTimeout(() => document.querySelector<HTMLElement>(`[data-board-key="${id}"] .board-item-handle`)?.focus(), 0);
+  const stopEditing = (id: string) => {
+    onFlush();
+    if (editingRef.current === id) onEditingChange('');
+    focusHandle(id);
+  };
+
+  const onCommit = (next: CanvasLayout) => {
+    const items: Record<string, Spot | null> = {};
+    blocks.forEach((b) => {
+      const spot = next.items[b.id];
+      if (!spot) { if (b.x !== null && !(b.id in next.items)) items[b.id] = null; return; }
+      const own = b.type === 'note' || b.type === 'text';
+      const want: Spot = { x: Math.round(spot.x), y: Math.round(spot.y), ...(own ? { w: spot.w ?? b.w, h: spot.h ?? b.h } : {}) };
+      if (!sameSpot(layout.items[b.id], want)) items[b.id] = want;
+    });
+    const zonesChanged = JSON.stringify(next.zones) !== JSON.stringify(zones);
+    if (!Object.keys(items).length && !zonesChanged) return;
+    // Saved after a short pause (as My Files > Board does), so a burst of arrow keys or typing is one save.
+    onArrange(items, zonesChanged ? next.zones : undefined, { debounce: true });
+  };
+
+  const entries: CanvasEntry[] = blocks.map((block) => {
+    const name = blockName(block);
+    if (block.type === 'note') {
+      return {
+        key: block.id, name, className: 'is-note', handleOnly: true,
+        size: { w: block.w ?? BLOCK_SIZES.note.w, h: block.h ?? BLOCK_SIZES.note.h }, resize: BLOCK_SIZES.note,
+        onHandleKey: (event) => {
+          if (event.key !== 'Enter') return false;
+          event.preventDefault();
+          document.querySelector<HTMLElement>(`[data-board-key="${block.id}"] .board-note-body`)?.focus();
+          return true;
+        },
+        render: () => (
+          <StickyNoteBlock block={block} phone={false} first={false} last={false} onMove={() => {}}
+            onEdit={(note) => onEdit(block.id, { note })} onFlush={onFlush} onExit={() => stopEditing(block.id)} onRemove={() => onRemove(block)} />
+        ),
+      };
+    }
+    if (block.type === 'text') {
+      return {
+        key: block.id, name, className: `is-text ${editingId === block.id ? 'is-editing' : ''}`, handleOnly: true,
+        size: { w: block.w ?? BLOCK_SIZES.text.w, h: block.h ?? BLOCK_SIZES.text.h }, resize: BLOCK_SIZES.text,
+        onHandleKey: (event) => {
+          if (event.key !== 'Enter') return false;
+          event.preventDefault();
+          onEditingChange(block.id);
+          return true;
+        },
+        render: () => (
+          <TextFrame id={block.id} editingRef={editingRef} onEditingChange={onEditingChange}>
+            <RichTextBlock block={block} editing={editingId === block.id} saveState={saveState} phone={false} first={false} last={false} onMove={() => {}}
+              onStartEdit={() => onEditingChange(block.id)} onEdit={(doc) => onEdit(block.id, { text: { doc } })} onFlush={onFlush}
+              onExit={() => stopEditing(block.id)} onRemove={() => onRemove(block)} />
+          </TextFrame>
+        ),
+      };
+    }
+    return { key: block.id, name, className: block.ref.available ? undefined : 'is-unavailable', render: () => refCard(block) };
+  });
+
+  return (
+    <BoardCanvas boardKey={tabId} layout={layout} entries={entries} onCommit={onCommit} toolbarStart={toolbarStart} onReset={onReset} empty={empty} toolsBelowNearTop
+      hint="Drag items anywhere. Drop them in a zone to group them; moving a zone moves what’s in it."
+      onAutoPlace={(items) => onArrange(Object.fromEntries(Object.entries(items).map(([id, spot]) => {
+        const b = blocks.find(x => x.id === id);
+        return [id, { x: Math.round(spot.x), y: Math.round(spot.y), ...(b && (b.type === 'note' || b.type === 'text') ? { w: b.w, h: b.h } : {}) }];
+      })), undefined, { debounce: true })} />
+  );
+};
+
+export default PersonalBoard;

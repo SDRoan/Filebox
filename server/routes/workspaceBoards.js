@@ -7,7 +7,7 @@ const router = express.Router();
 
 const fail = (res, error) => {
   if (error instanceof boards.BoardInputError) {
-    return res.status(error.status).json({ message: error.message, ...(error.tab ? { tab: error.tab } : {}), ...(error.blocks ? { blocks: error.blocks } : {}), ...(error.tabs ? { tabs: error.tabs } : {}) });
+    return res.status(error.status).json({ message: error.message, ...(error.tab ? { tab: error.tab } : {}), ...(error.blocks ? { blocks: error.blocks } : {}), ...(error.zones ? { zones: error.zones } : {}), ...(error.tabs ? { tabs: error.tabs } : {}) });
   }
   console.error('Boards error:', error);
   return res.status(500).json({ message: 'Boards are not available right now.' });

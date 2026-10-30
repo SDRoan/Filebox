@@ -16,8 +16,12 @@ const workspaceTabSchema = new mongoose.Schema({
   // Bumped on every save; a save carrying an older number is refused, so one device cannot silently
   // overwrite changes made on another.
   rev: { type: Number, default: 0 },
-  // File, folder, sticky note and text blocks with their grid positions (Phase 2 and 3).
+  // File, folder, sticky note and text blocks with their places on the free canvas (pixels).
   blocks: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  // Zones drawn on this tab's board (same shape as My Files > Board zones).
+  zones: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  // 2 = free canvas in pixels. Older tabs (a 12-column grid) are converted when read (utils/boardLayout.js).
+  layoutVersion: { type: Number },
   // Stored size of the tab in bytes, kept so the per-person total can be checked without loading blocks.
   bytes: { type: Number, default: 0 },
 }, { timestamps: true });

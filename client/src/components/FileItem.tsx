@@ -35,6 +35,8 @@ interface FileItemProps {
   // When set (a timestamp), open this file's preview once.
   openPreview?: number;
   onPreviewOpened?: () => void;
+  // Personal Boards: actions for this card on the board (Remove from board), shown first in its menu.
+  boardActions?: React.ReactNode;
 }
 
 const FileItem: React.FC<FileItemProps> = ({
@@ -50,6 +52,7 @@ const FileItem: React.FC<FileItemProps> = ({
   onSelect,
   openPreview,
   onPreviewOpened,
+  boardActions,
 }) => {
   const [showPreview, setShowPreview] = useState(false);
   useEffect(() => {
@@ -334,6 +337,7 @@ const FileItem: React.FC<FileItemProps> = ({
         <ItemActions className="file-actions" label={`Actions for ${file.originalName}`}>
           {!showTrash ? (
             <>
+              {boardActions}
               {canPreview() && (
                 <button onClick={() => setShowPreview(true)} className="icon-button" title="Open">
                   <EyeIcon size={18} color="currentColor" />

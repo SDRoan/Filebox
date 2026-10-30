@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { workspaceBoardsAPI, AdvancedSearchResult, BoardBlock, BoardBlockInput, BoardNote, BoardTab, BoardText } from '../services/api';
-import { SIZES, firstFit, place } from '../utils/boardGrid';
+import { workspaceBoardsAPI, AdvancedSearchResult, BoardBlock, BoardBlockInput, BoardNote, BoardTab, BoardText, BoardZone } from '../services/api';
+import { BLOCK_SIZES, Spot } from '../utils/boardLayout';
 
 /**
- * The blocks of one Boards tab and how changes reach the account.
+ * The blocks and zones of one Boards tab and how changes reach the account.
  *
- * Every change (add, remove, move, resize, edit) waits as an action until it is sent. Saves go out after a
- * drag or resize ends, after a short pause in keyboard moves, 1 second after typing stops (or at once when a
+ * Every change (add, remove, a new arrangement on the canvas, edit) waits as an action until it is sent.
+ * Saves go out after a drag or resize ends, after a short pause in keyboard moves, 1 second after typing stops (or at once when a
  * note or text area loses focus), when the tab is switched, and after the Undo window of a removal. Saves run
  * one at a time and each takes only the changes not already sent, so nothing is sent twice. A save carries
  * a note's or text area's words only if they changed; the server keeps the stored ones otherwise.
@@ -19,7 +19,8 @@ import { SIZES, firstFit, place } from '../utils/boardGrid';
 export type BoardChange =
   | { kind: 'add'; blocks: Array<BoardBlock & { refId?: string }> }
   | { kind: 'remove'; id: string }
-  | { kind: 'move' | 'resize'; id: string; x: number; y: number; w: number; h: number }
+  // Places (and sizes) on the free canvas, and the tab's zones when they changed. null = not placed yet.
+  | { kind: 'layout'; items: Record<string, Spot | null>; zones?: BoardZone[] }
   | { kind: 'edit'; id: string; note?: BoardNote; text?: BoardText };
 
 export interface BoardNotice { text: string; tone?: 'info' | 'error'; undo?: () => void; removedId?: string }
@@ -53,23 +54,27 @@ function apply(blocks: BoardBlock[], change: BoardChange): BoardBlock[] {
     for (const added of change.blocks) {
       if (next.some(b => b.id === added.id)) continue;
       if (added.refId && next.some(b => b.type === added.type && refIdOf(b) === added.refId)) continue;
-      const spot = firstFit(next, added.w, added.h);
-      next = [...next, { ...added, x: spot.x, y: spot.y } as BoardBlock];
+      next = [...next, added as BoardBlock];
     }
     return next;
   }
-  const target = blocks.find(b => b.id === change.id);
-  return target ? place(blocks, { ...target, x: change.x, y: change.y, w: change.w, h: change.h }) : blocks;
+  return blocks.map((b) => {
+    if (!(b.id in change.items)) return b;
+    const spot = change.items[b.id];
+    if (!spot) return { ...b, x: null, y: null };
+    return { ...b, x: spot.x, y: spot.y, ...(spot.w !== undefined && spot.h !== undefined ? { w: spot.w, h: spot.h } : {}) };
+  });
 }
+const applyZones = (zones: BoardZone[], change: BoardChange) => (change.kind === 'layout' && change.zones ? change.zones : zones);
 
 interface Pending { actions: BoardChange[]; newRefs: Map<string, { type: 'file' | 'folder'; refId: string }>; dirty: Set<string> }
-interface Snapshot extends Pending { tabId: string; blocks: BoardBlock[]; serverIds: Set<string> }
+interface Snapshot extends Pending { tabId: string; blocks: BoardBlock[]; zones: BoardZone[]; serverIds: Set<string> }
 const emptyPending = (): Pending => ({ actions: [], newRefs: new Map(), dirty: new Set() });
 
 /** What a save sends: positions for all blocks, ids for new references, words only for new or edited notes/text. */
 function payloadOf(snap: Snapshot): BoardBlockInput[] {
   return snap.blocks.map((b) => {
-    const base: BoardBlockInput = { id: b.id, type: b.type, x: b.x, y: b.y, w: b.w, h: b.h };
+    const base: BoardBlockInput = { id: b.id, type: b.type, x: b.x, y: b.y, ...(b.w !== undefined && b.h !== undefined ? { w: b.w, h: b.h } : {}) };
     const added = snap.newRefs.get(b.id);
     if (added) return { ...base, ...(added.type === 'file' ? { fileId: added.refId } : { folderId: added.refId }) };
     const sendWords = !snap.serverIds.has(b.id) || snap.dirty.has(b.id);
@@ -81,6 +86,7 @@ function payloadOf(snap: Snapshot): BoardBlockInput[] {
 
 export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; onTab: (tab: BoardTab) => void; onNotice: (notice: BoardNotice | null) => void }) {
   const [blocks, setBlocksState] = useState<BoardBlock[]>([]);
+  const [zones, setZonesState] = useState<BoardZone[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [pendingRefs, setPendingRefs] = useState<Set<string>>(new Set());
@@ -90,6 +96,8 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
   const revs = useRef(new Map<string, number>());
   const blocksRef = useRef<BoardBlock[]>([]);
   const serverBlocks = useRef<BoardBlock[]>([]);
+  const zonesRef = useRef<BoardZone[]>([]);
+  const serverZones = useRef<BoardZone[]>([]);
   const pending = useRef<Pending>(emptyPending());
   const queue = useRef<Promise<void>>(Promise.resolve());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,13 +109,14 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
   const inFlight = useRef(0);
 
   const setBlocks = (next: BoardBlock[]) => { blocksRef.current = next; setBlocksState(next); };
+  const setZones = (next: BoardZone[]) => { zonesRef.current = next; setZonesState(next); };
   const syncPending = () => setPendingRefs(new Set(pending.current.newRefs.keys()));
 
   /** Take everything not yet sent for the open tab (so a later save cannot send it again). */
   const takeSnapshot = (): Snapshot | null => {
     const current = tabRef.current;
     if (!current || !pending.current.actions.length) return null;
-    const snap: Snapshot = { tabId: current.id, blocks: blocksRef.current, serverIds: new Set(serverBlocks.current.map(b => b.id)), ...pending.current };
+    const snap: Snapshot = { tabId: current.id, blocks: blocksRef.current, zones: zonesRef.current, serverIds: new Set(serverBlocks.current.map(b => b.id)), ...pending.current };
     pending.current = emptyPending();
     return snap;
   };
@@ -118,15 +127,16 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     inFlight.current += 1;
     if (isOpen()) setSaveState('saving');
     try {
-      const result = await workspaceBoardsAPI.saveBlocks(snap.tabId, rev, payloadOf(snap));
+      const result = await workspaceBoardsAPI.saveBlocks(snap.tabId, rev, payloadOf(snap), snap.zones);
       revs.current.set(snap.tabId, result.tab.rev);
       onTab(result.tab);
       if (isOpen()) {
         serverBlocks.current = result.blocks;
+        serverZones.current = result.zones;
         snap.newRefs.forEach((_, id) => pending.current.newRefs.delete(id));
         syncPending();
         // Changes made while this was saving stay on screen; the server's view fills in names and counts.
-        if (!pending.current.actions.length) setBlocks(result.blocks);
+        if (!pending.current.actions.length) { setBlocks(result.blocks); setZones(result.zones); }
         else {
           const fresh = new Map(result.blocks.map(b => [b.id, b]));
           setBlocks(blocksRef.current.map((b) => {
@@ -150,11 +160,14 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
         if (!retried) {
           // First conflict: replay this person's changes on the latest version, then try once more.
           const replayed = snap.actions.reduce(apply, data.blocks as BoardBlock[]);
+          const replayedZones = snap.actions.reduce(applyZones, (data.zones || []) as BoardZone[]);
           if (isOpen()) {
             serverBlocks.current = data.blocks;
+            serverZones.current = data.zones || [];
             setBlocks(pending.current.actions.reduce(apply, replayed));
+            setZones(pending.current.actions.reduce(applyZones, replayedZones));
           }
-          await send({ ...snap, blocks: replayed, serverIds: new Set((data.blocks as BoardBlock[]).map(b => b.id)) }, true);
+          await send({ ...snap, blocks: replayed, zones: replayedZones, serverIds: new Set((data.blocks as BoardBlock[]).map(b => b.id)) }, true);
           return;
         }
         // Second conflict: stop. Show the latest version and say what was not kept.
@@ -163,7 +176,9 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
           pending.current = emptyPending();
           syncPending();
           serverBlocks.current = data.blocks;
+          serverZones.current = data.zones || [];
           setBlocks(data.blocks);
+          setZones(data.zones || []);
           setSaveState('failed');
         }
         onNotice({ tone: 'error', text: `This board keeps changing on another device, so ${edited ? 'your latest text was not kept' : 'your last changes were not kept'}. Showing the latest version.` });
@@ -172,6 +187,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
         pending.current = emptyPending();
         syncPending();
         setBlocks(serverBlocks.current);
+        setZones(serverZones.current);
         setSaveState('failed');
         onNotice({ tone: 'error', text: data?.message || "Couldn't save the board. Your last change was undone." });
       }
@@ -219,6 +235,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     setLoading(true);
     setError('');
     setBlocks([]);
+    setZones([]);
     setSaveState('idle');
     workspaceBoardsAPI.getTab(tabId)
       .then((data) => {
@@ -227,7 +244,9 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
         revs.current.set(data.tab.id, data.tab.rev);
         onTab(data.tab);
         serverBlocks.current = data.blocks;
+        serverZones.current = data.zones || [];
         setBlocks(data.blocks);
+        setZones(data.zones || []);
         setLoading(false);
       })
       .catch((err) => { if (!cancelled) { setError(err?.response?.data?.message || "Couldn't open this tab."); setLoading(false); } });
@@ -252,7 +271,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
       if (!snap) return;
       const rev = revs.current.get(snap.tabId) ?? 0;
       // While another save is still running its revision would be stale; then the normal queue sends it.
-      if (inFlight.current || !workspaceBoardsAPI.saveBlocksOnLeave(snap.tabId, rev, payloadOf(snap))) {
+      if (inFlight.current || !workspaceBoardsAPI.saveBlocksOnLeave(snap.tabId, rev, payloadOf(snap), snap.zones)) {
         queue.current = queue.current.then(() => send(snap));
         return;
       }
@@ -264,7 +283,10 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
           const latest = await workspaceBoardsAPI.getTab(snap.tabId);
           revs.current.set(snap.tabId, latest.tab.rev);
           onTab(latest.tab);
-          if (tabRef.current?.id === snap.tabId && !pending.current.actions.length) { serverBlocks.current = latest.blocks; setBlocks(latest.blocks); setSaveState('saved'); }
+          if (tabRef.current?.id === snap.tabId && !pending.current.actions.length) {
+            serverBlocks.current = latest.blocks; serverZones.current = latest.zones || [];
+            setBlocks(latest.blocks); setZones(latest.zones || []); setSaveState('saved');
+          }
         } catch { /* offline or closed: nothing more to do */ }
       });
     };
@@ -281,6 +303,13 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     pending.current.actions.push(action);
     schedule(options.debounce ? KEYS_DELAY : 0);
   }, [schedule]);
+
+  /** A new arrangement on the canvas: places and sizes of some blocks, and the zones when they changed. */
+  const arrange = useCallback((items: Record<string, Spot | null>, nextZones?: BoardZone[], options: { debounce?: boolean } = {}) => {
+    const action: BoardChange = { kind: 'layout', items, ...(nextZones ? { zones: nextZones } : {}) };
+    if (nextZones) setZones(nextZones);
+    change(apply(blocksRef.current, action), action, options);
+  }, [change]);
 
   /** A note's or text area's words changed: shown at once, saved 1 second after typing pauses (at least every 4). */
   const edit = useCallback((id: string, content: { note?: BoardNote; text?: BoardText }) => {
@@ -305,11 +334,10 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     for (const f of files) {
       if (onBoard.has(f._id)) continue;
       onBoard.add(f._id);
-      const { w, h } = SIZES.file;
-      const spot = firstFit(next, w, h);
+      // Not placed yet: the board puts it below everything (as My Files > Board does) and keeps that spot.
       const block: BoardBlock & { refId?: string } = {
-        id: newBlockId(), type: 'file', x: spot.x, y: spot.y, w, h, refId: f._id,
-        ref: { available: true, fileId: f._id, name: f.originalName, mimeType: f.mimeType, size: f.size, technicalType: f.technicalType, updatedAt: f.updatedAt,
+        id: newBlockId(), type: 'file', x: null, y: null, refId: f._id,
+        ref: { available: true, fileId: f._id, name: f.originalName, mimeType: f.mimeType, size: f.size, technicalType: f.technicalType, updatedAt: f.updatedAt, createdAt: f.updatedAt,
           source: f.access.source, role: f.access.role, category: f.classification?.primaryCategory, documentType: f.classification?.documentType, ownerName: f.ownerName, teamName: f.access.teamName },
       };
       pending.current.newRefs.set(block.id, { type: 'file', refId: f._id });
@@ -318,38 +346,35 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     }
     if (!added.length) return 0;
     syncPending();
-    change(next, { kind: 'add', blocks: added });
+    change(next, { kind: 'add', blocks: added }, { debounce: true });
     return added.length;
   }, [change]);
 
   const addFolder = useCallback((folderId: string) => {
     if (blocksRef.current.some(b => b.type === 'folder' && refIdOf(b) === folderId)) return false;
-    const { w, h } = SIZES.folder;
-    const spot = firstFit(blocksRef.current, w, h);
     const block: BoardBlock & { refId?: string } = {
-      id: newBlockId(), type: 'folder', x: spot.x, y: spot.y, w, h, refId: folderId,
+      id: newBlockId(), type: 'folder', x: null, y: null, refId: folderId,
       ref: { available: true, folderId, name: 'Folder', source: 'owned' },
     };
     pending.current.newRefs.set(block.id, { type: 'folder', refId: folderId });
     syncPending();
-    change([...blocksRef.current, block], { kind: 'add', blocks: [block] });
+    change([...blocksRef.current, block], { kind: 'add', blocks: [block] }, { debounce: true });
     return true;
   }, [change]);
 
-  /** A new sticky note or text area at the first free spot. Returns its id (so it can be focused). */
+  // Adds wait a moment so the place the canvas gives a new item goes out in the same save.
+  /** A new sticky note or text area, placed below everything. Returns its id (so it can be focused). */
   const addNote = useCallback(() => {
-    const { w, h } = SIZES.note;
-    const spot = firstFit(blocksRef.current, w, h);
-    const block: BoardBlock = { id: newBlockId(), type: 'note', x: spot.x, y: spot.y, w, h, note: { title: '', body: '', color: 'yellow' } };
-    change([...blocksRef.current, block], { kind: 'add', blocks: [block] });
+    const { w, h } = BLOCK_SIZES.note;
+    const block: BoardBlock = { id: newBlockId(), type: 'note', x: null, y: null, w, h, note: { title: '', body: '', color: 'yellow' } };
+    change([...blocksRef.current, block], { kind: 'add', blocks: [block] }, { debounce: true });
     return block.id;
   }, [change]);
 
   const addText = useCallback(() => {
-    const { w, h } = SIZES.text;
-    const spot = firstFit(blocksRef.current, w, h);
-    const block: BoardBlock = { id: newBlockId(), type: 'text', x: spot.x, y: spot.y, w, h, text: EMPTY_DOC };
-    change([...blocksRef.current, block], { kind: 'add', blocks: [block] });
+    const { w, h } = BLOCK_SIZES.text;
+    const block: BoardBlock = { id: newBlockId(), type: 'text', x: null, y: null, w, h, text: EMPTY_DOC };
+    change([...blocksRef.current, block], { kind: 'add', blocks: [block] }, { debounce: true });
     return block.id;
   }, [change]);
 
@@ -381,7 +406,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
           pending.current.newRefs.set(block.id, { type: before.type, refId });
         }
         syncPending();
-        setBlocks(place([...blocksRef.current, before], before));
+        setBlocks([...blocksRef.current, before]);
         pending.current.actions.push({ kind: 'add', blocks: [{ ...before, refId }] });
         schedule(0);
         onNotice({ text: `${name} is back on this board.` });
@@ -412,7 +437,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
           return;
         }
         const back = gone.filter(b => !blocksRef.current.some(x => x.id === b.id));
-        setBlocks(back.reduce((list, b) => place([...list, b], b), blocksRef.current));
+        setBlocks([...blocksRef.current, ...back]);
         pending.current.actions.push({ kind: 'add', blocks: back });
         schedule(0);
         onNotice({ text: `Put back ${count}.` });
@@ -421,5 +446,22 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     return gone.length;
   }, [schedule, onNotice]);
 
-  return { blocks, loading, error, pending: pendingRefs, saveState, change, edit, flush, addFiles, addFolder, addNote, addText, remove, removeUnavailable };
+  /** Load the tab again from the server (after a real file action such as rename, move or trash). */
+  const reload = useCallback(async () => {
+    await queue.current;
+    const current = tabRef.current;
+    if (!current || pending.current.actions.length) return;
+    try {
+      const data = await workspaceBoardsAPI.getTab(current.id);
+      if (tabRef.current?.id !== current.id || pending.current.actions.length) return;
+      revs.current.set(current.id, data.tab.rev);
+      onTab(data.tab);
+      serverBlocks.current = data.blocks;
+      serverZones.current = data.zones || [];
+      setBlocks(data.blocks);
+      setZones(data.zones || []);
+    } catch { /* the next load shows it */ }
+  }, [onTab]);
+
+  return { blocks, zones, loading, error, pending: pendingRefs, saveState, change, arrange, edit, flush, addFiles, addFolder, addNote, addText, remove, removeUnavailable, reload };
 }

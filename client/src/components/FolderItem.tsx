@@ -20,6 +20,8 @@ interface FolderItemProps {
   showTrash: boolean;
   isSelected?: boolean;
   selectionMode?: boolean;
+  // Personal Boards: actions for this card on the board (Remove from board), shown first in its menu.
+  boardActions?: React.ReactNode;
 }
 
 const FolderItem: React.FC<FolderItemProps> = ({
@@ -32,6 +34,7 @@ const FolderItem: React.FC<FolderItemProps> = ({
   showTrash,
   isSelected = false,
   selectionMode = false,
+  boardActions,
 }) => {
   const { user } = useAuth();
   // Folder actions are owner-only on the server; teammates' folders in a Team Space only open.
@@ -100,6 +103,7 @@ const FolderItem: React.FC<FolderItemProps> = ({
       <ItemActions className="folder-actions" label={`Actions for ${folder.name}`}>
         {!showTrash ? (
           <>
+            {boardActions}
             <button onClick={() => setShowAddToBoard(true)} className="icon-button" title="Add to board…">
               <BoardsIcon size={18} color="currentColor" />
             </button>

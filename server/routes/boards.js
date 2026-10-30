@@ -1,18 +1,14 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const BoardLayout = require('../models/BoardLayout');
+const { coordinate, cleanZones } = require('../utils/boardLayout');
 const router = express.Router();
 
 // My Files > Board: each person's own layout for a folder (positions and zones only).
 
 const FOLDER_KEY = /^[a-z0-9-]{1,80}$/;
 const ITEM_KEY = /^(file|folder)-[a-f0-9]{24}$/;
-const SHAPES = ['rectangle', 'rounded', 'circle', 'pill'];
 const MAX_ITEMS = 2000;
-const MAX_ZONES = 100;
-const CANVAS = 20000;
-
-const coordinate = (value, max = CANVAS) => (typeof value === 'number' && Number.isFinite(value) ? Math.round(Math.min(max, Math.max(0, value))) : null);
 
 function sanitizeLayout(body) {
   const items = {};
@@ -23,23 +19,8 @@ function sanitizeLayout(body) {
       if (ITEM_KEY.test(key) && x !== null && y !== null) items[key] = { x, y };
     });
   }
-  const zones = (Array.isArray(body?.zones) ? body.zones : []).slice(0, MAX_ZONES).map(zone => {
-    const x = coordinate(zone?.x);
-    const y = coordinate(zone?.y);
-    const w = coordinate(zone?.w, 6000);
-    const h = coordinate(zone?.h, 6000);
-    if (typeof zone?.id !== 'string' || !/^[a-z0-9]{1,24}$/.test(zone.id) || [x, y, w, h].includes(null)) return null;
-    return {
-      id: zone.id,
-      name: typeof zone.name === 'string' ? zone.name.slice(0, 60) : '',
-      color: typeof zone.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(zone.color) ? zone.color.toLowerCase() : '#dbeafe',
-      shape: SHAPES.includes(zone.shape) ? zone.shape : 'rounded',
-      x, y, w: Math.max(120, w), h: Math.max(90, h),
-      // Where the zone's name sits inside it; left out means the shape's usual spot.
-      ...(coordinate(zone.labelX, 6000) !== null && coordinate(zone.labelY, 6000) !== null
-        ? { labelX: coordinate(zone.labelX, 6000), labelY: coordinate(zone.labelY, 6000) } : {}),
-    };
-  }).filter(Boolean);
+  // Zones are checked the same way as on personal Boards (utils/boardLayout.js).
+  const zones = cleanZones(body?.zones);
   return { items, zones };
 }
 
