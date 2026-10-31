@@ -20,7 +20,7 @@ const Icon: React.FC<{ children: React.ReactNode } & IconProps> = ({
     viewBox="0 0 24 24"
     fill="none"
     stroke={color}
-    strokeWidth="2"
+    strokeWidth="1.75"
     strokeLinecap="round"
     strokeLinejoin="round"
     className={className}
@@ -33,34 +33,34 @@ const Icon: React.FC<{ children: React.ReactNode } & IconProps> = ({
 // Files Icon - Folder with document
 export const FilesIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
-    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-    <path d="M8 13h8" />
-    <path d="M8 17h8" />
-    <path d="M8 9h8" />
+    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
   </Icon>
 );
 
 // Shared Icon - Two overlapping circles
 export const SharedIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
-    <circle cx="9" cy="12" r="4" />
-    <circle cx="15" cy="12" r="4" />
-    <path d="M9 12a4 4 0 0 1 6 0" />
+    <circle cx="18" cy="5" r="3" />
+    <circle cx="6" cy="12" r="3" />
+    <circle cx="18" cy="19" r="3" />
+    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
   </Icon>
 );
 
 // Starred Icon - Star
 export const StarredIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
-    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+    <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
   </Icon>
 );
 
 // Trash Icon - Trash can
 export const TrashIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
-    <polyline points="3 6 5 6 21 6" />
-    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    <path d="M3 6h18" />
+    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
     <line x1="10" y1="11" x2="10" y2="17" />
     <line x1="14" y1="11" x2="14" y2="17" />
   </Icon>
@@ -69,19 +69,18 @@ export const TrashIcon: React.FC<IconProps> = (props) => (
 // Team Folders Icon - Multiple folders
 export const TeamFoldersIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
-    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-    <path d="M6 19h12" />
-    <circle cx="9" cy="15" r="1" />
-    <circle cx="15" cy="15" r="1" />
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
   </Icon>
 );
 
 // File Requests Icon - Arrow pointing right
 export const FileRequestsIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
-    <path d="M5 12h14" />
-    <path d="M12 5l7 7-7 7" />
-    <rect x="3" y="10" width="4" height="4" rx="1" />
+    <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+    <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
   </Icon>
 );
 
@@ -124,12 +123,11 @@ export const SecurityIcon: React.FC<IconProps> = (props) => (
 // AI Assistant Icon - Sparkles/brain
 export const AIAssistantIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
-    <path d="M12 2L2 7l10 5 10-5-10-5z" />
-    <path d="M2 17l10 5 10-5" />
-    <path d="M2 12l10 5 10-5" />
-    <circle cx="12" cy="12" r="1" />
-    <circle cx="7" cy="7" r="1" />
-    <circle cx="17" cy="7" r="1" />
+    <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
+    <path d="M20 3v4" />
+    <path d="M22 5h-4" />
+    <path d="M4 17v2" />
+    <path d="M5 18H3" />
   </Icon>
 );
 
@@ -252,8 +250,8 @@ export const SearchIcon: React.FC<IconProps> = (props) => (
 // Settings Icon - Gear
 export const SettingsIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
+    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
     <circle cx="12" cy="12" r="3" />
-    <path d="M12 1v6m0 6v6m9-9h-6m-6 0H3m15.364 6.364l-4.243-4.243m-4.242 0L5.636 17.364m12.728 0l-4.243-4.243m-4.242 0L5.636 6.636" />
   </Icon>
 );
 
@@ -484,6 +482,16 @@ export const BookmarkIcon: React.FC<IconProps> = (props) => (
   </Icon>
 );
 
+// Boards: the same rounded blocks as My Files' Board view switch (box, circle, pill).
+export const BoardsIcon: React.FC<IconProps> = ({ size = 20, color = 'currentColor', className = '', style }) => (
+  <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke={color} strokeWidth="1.3" className={className}
+    style={{ display: 'inline-block', verticalAlign: 'middle', ...style }} aria-hidden="true">
+    <rect x="1.5" y="2.5" width="9" height="8" rx="2.5" />
+    <circle cx="15" cy="6.5" r="3.5" />
+    <rect x="5" y="13" width="12.5" height="5" rx="2.5" />
+  </svg>
+);
+
 // Grid Icon
 export const GridIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
@@ -576,12 +584,14 @@ export const LearningIcon: React.FC<IconProps> = (props) => (
   </Icon>
 );
 
-// Cloud Backup Icon - Cloud with arrow down
+// Folder Sync icon - folder with sync arrows
 export const CloudBackupIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
-    <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
-    <polyline points="12 16 12 22 8 18" />
-    <line x1="12" y1="22" x2="16" y2="18" />
+    <path d="M9 20H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v.5" />
+    <path d="M12 10v4h4" />
+    <path d="m12 14 1.535-1.605a5 5 0 0 1 8 1.5" />
+    <path d="M22 22v-4h-4" />
+    <path d="m22 18-1.535 1.605a5 5 0 0 1-8-1.5" />
   </Icon>
 );
 
@@ -720,23 +730,23 @@ export default {
 // Home Icon
 export const HomeIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
-    <path d="M3 10.5 12 3l9 7.5" />
-    <path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" />
+    <path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    <path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" />
   </Icon>
 );
 
 // Recent Icon - Clock
 export const RecentIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
-    <circle cx="12" cy="12" r="9" />
-    <path d="M12 7v5l3 2" />
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
   </Icon>
 );
 
 // Signature Icon - Pen stroke on a line
 export const SignatureIcon: React.FC<IconProps> = (props) => (
   <Icon {...props}>
-    <path d="M3 17c3-4 5-9 7-9s-1 9 1 9 3-4 4-4 1 3 3 3" />
-    <path d="M3 21h18" />
+    <path d="M12 20h9" />
+    <path d="M16.376 3.622a1 1 0 0 1 3.002 3.002L7.368 18.635a2 2 0 0 1-.855.506l-2.872.838a.5.5 0 0 1-.62-.62l.838-2.872a2 2 0 0 1 .506-.854z" />
   </Icon>
 );

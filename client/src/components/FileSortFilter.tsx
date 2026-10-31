@@ -4,16 +4,17 @@ import './FileSortFilter.css';
 type SortOption = 'name' | 'date' | 'size' | 'type';
 type SortOrder = 'asc' | 'desc';
 type FilterOption = 'all' | 'images' | 'videos' | 'documents' | 'folders';
+export type ViewMode = 'grid' | 'list';
 
 interface FileSortFilterProps {
   sortBy: SortOption;
   sortOrder: SortOrder;
   filterBy: FilterOption;
-  viewMode: 'grid' | 'list';
+  viewMode: ViewMode;
   onSortChange: (sort: SortOption) => void;
   onSortOrderChange: (order: SortOrder) => void;
   onFilterChange: (filter: FilterOption) => void;
-  onViewModeChange: (mode: 'grid' | 'list') => void;
+  onViewModeChange: (mode: ViewMode) => void;
 }
 
 const FileSortFilter: React.FC<FileSortFilterProps> = ({

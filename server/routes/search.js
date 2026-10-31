@@ -4,6 +4,9 @@ const File = require('../models/File');
 const FileContent = require('../models/FileContent');
 const aiSearch = require('../services/aiSearch');
 const { searchWorkspace } = require('../services/workspaceSearch');
+const { advancedSearch, SearchInputError } = require('../services/advancedSearch');
+const { TAXONOMY, isValid, classifyAndSave, effectiveClassification, setUserClassification } = require('../services/fileClassifier');
+const { authorizeFile, sendDenied } = require('../services/permissions');
 const router = express.Router();
 
 /**
@@ -31,6 +34,92 @@ router.get('/ai', auth, async (req, res) => {
   } catch (error) {
     console.error('AI search error:', error);
     res.status(500).json({ message: 'Search failed', error: error.message });
+  }
+});
+
+/**
+ * Advanced Search: words inside files, with format, date and location filters and sorting.
+ * Only stored text is searched (no file reads, OCR or AI), and only files the user can read are returned.
+ */
+router.get('/advanced', auth, async (req, res) => {
+  try {
+    const { q, category, documentType, topic, format, date, dateField, from, to, tz, location, folderId, teamId, currentFolderId, sort, limit, offset, parse, semantic } = req.query;
+    // parse: 'rules' reads filters out of the words; 'model' may also ask the local model once (after Enter).
+    // semantic: 'on' only when the person asked to search by meaning.
+    if (parse !== undefined && !['off', 'rules', 'model'].includes(parse)) return res.status(400).json({ message: `Unknown value "${parse}"` });
+    if (semantic !== undefined && !['off', 'on'].includes(semantic)) return res.status(400).json({ message: `Unknown value "${semantic}"` });
+    const result = await advancedSearch(req.user._id, {
+      text: q, category, documentType, topic, format, date, dateField, from, to, tz, location, folderId, teamId, currentFolderId, sort, limit, offset, parse, semantic,
+    });
+    // Same answer for a folder that does not exist and one the user cannot open.
+    if (result.folderNotFound) return res.status(404).json({ message: 'Folder not found' });
+    res.json(result);
+  } catch (error) {
+    if (error instanceof SearchInputError) return res.status(400).json({ message: error.message });
+    console.error('Advanced search error:', error);
+    res.status(500).json({ message: 'Search failed' });
+  }
+});
+
+/** The categories and document types Advanced Search and category corrections use. */
+router.get('/taxonomy', auth, (req, res) => {
+  res.json({ categories: Object.entries(TAXONOMY).map(([name, documentTypes]) => ({ name, documentTypes })) });
+});
+
+/**
+ * Correct a file's category: { primaryCategory, documentType }, or { reset: true } to go back to the
+ * automatic one. Owners and editors only; someone who cannot see the file gets the same 404 as a missing one.
+ */
+router.patch('/classification/:fileId', auth, async (req, res) => {
+  try {
+    const access = await authorizeFile(req.params.fileId, req.user._id, 'editor');
+    if (sendDenied(res, access)) return;
+    const { primaryCategory, documentType, reset } = req.body || {};
+    if (reset !== true && !isValid(primaryCategory, documentType)) {
+      return res.status(400).json({ message: 'Choose a category and one of its document types' });
+    }
+    const classification = await setUserClassification(access.file, req.user._id, reset === true ? null : { primaryCategory, documentType });
+    res.json({ fileId: access.file._id, classification });
+  } catch (error) {
+    console.error('Classification update error:', error);
+    res.status(500).json({ message: 'Could not update the category' });
+  }
+});
+
+/**
+ * Work out a file's automatic category again: rules now, then (when File Box AI is running) a fresh
+ * profile of this one file in the background. A person's correction is kept and still wins.
+ */
+router.post('/classification/:fileId/reclassify', auth, async (req, res) => {
+  try {
+    const access = await authorizeFile(req.params.fileId, req.user._id, 'editor');
+    if (sendDenied(res, access)) return;
+    const file = access.file;
+    await classifyAndSave(file._id);
+    const content = await FileContent.findOne({ file: file._id });
+    let profile = 'no_text';
+    if (content?.extractedText?.trim()) {
+      const health = await require('../services/ollamaClient').health();
+      profile = health.reachable && health.assistantModelAvailable ? 'queued' : 'unavailable';
+      if (profile === 'queued') {
+        const profiler = require('../services/fileProfiler');
+        setImmediate(async () => {
+          try {
+            // No usable answer: marked as read, as the background profiler does, so it is not picked again.
+            if (!(await profiler.profileFile(file, content))) {
+              console.log(`[Classify] Reclassify: no new profile for ${file.originalName}`);
+              await FileContent.updateOne({ _id: content._id }, { $set: { aiProfiledAt: new Date(), aiProfileVersion: profiler.PROFILE_VERSION, topics: content.topics || [] } });
+            }
+          } catch (error) {
+            console.error('[Classify] Reclassify profile failed:', error.message);
+          }
+        });
+      }
+    }
+    res.json({ fileId: file._id, classification: effectiveClassification(file, content?.toObject() || null), profile });
+  } catch (error) {
+    console.error('Reclassify error:', error);
+    res.status(500).json({ message: 'Could not reclassify the file' });
   }
 });
 
@@ -75,10 +164,15 @@ router.post('/extract-all', auth, async (req, res) => {
           continue;
         }
         
-        // Delete existing record if force mode or if it has no content
+        // Clear the old text in force mode or if it has none. The record itself stays, so a person's
+        // category correction (userClassification) survives re-reading the file.
         if (existing && (force || !existing.extractedText || existing.extractedText.length === 0)) {
-          console.log(`[Extract-All] 🗑️ Removing existing record for ${file.originalName} (force: ${force})`);
-          await FileContent.deleteOne({ file: file._id });
+          console.log(`[Extract-All] 🗑️ Clearing existing text for ${file.originalName} (force: ${force})`);
+          existing.extractedText = '';
+          existing.embedding = [];
+          existing.extractionStatus = 'pending';
+          existing.extractedAt = new Date();
+          await existing.save();
         }
 
         if (!textExtractor.isSupported(file.mimeType)) {
@@ -132,6 +226,7 @@ router.post('/extract-all', auth, async (req, res) => {
             });
             await fileContent.save();
           }
+          await classifyAndSave(file._id);
           extracted++;
           console.log(`[Extract-All] ✅ Successfully processed: ${file.originalName}`);
         } else {

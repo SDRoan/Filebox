@@ -125,10 +125,11 @@ router.post('/file/:fileId', auth, async (req, res) => {
 // Summarize with the local Ollama summary model
 async function generateSummary(file, text) {
   const summary = await ollamaClient.chatText({
+    task: 'summarize',
     model: config.ollama.summaryModel,
     system: 'You summarize files for a cloud storage product. Write a short plain-English summary: what the document is, its main points, and why it matters. Stay grounded in the text.',
-    content: `File name: ${file.originalName}\n\nDocument text:\n${text.substring(0, 6500)}`,
-    options: { temperature: 0.2 },
+    content: `File name: ${file.originalName}\n\nDocument text:`,
+    context: text,
   });
 
   if (!summary.trim()) {

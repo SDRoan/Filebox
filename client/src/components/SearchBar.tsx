@@ -85,11 +85,19 @@ const SearchBar: React.FC<SearchBarProps> = ({ onFileClick, onFolderClick }) => 
         <input
           ref={inputRef}
           type="text"
-          placeholder="Search your files"
-          aria-label="Search your files"
+          placeholder="Search or tell File Box what to do…"
+          aria-label="Search or tell File Box what to do"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => query.trim().length > 0 && setShowResults(true)}
+          onKeyDown={(e) => {
+            // Enter hands the request to File Box AI, which searches, answers or prepares an action to confirm.
+            if (e.key === 'Enter' && query.trim()) {
+              navigate(`${pagePath('ai-assistant')}?q=${encodeURIComponent(query.trim())}`);
+              setQuery('');
+              setShowResults(false);
+            }
+          }}
           className="workspace-search-input"
         />
         <svg className="workspace-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="m16 16 4.5 4.5" /></svg>
@@ -158,7 +166,7 @@ const SearchBar: React.FC<SearchBarProps> = ({ onFileClick, onFolderClick }) => 
                 setShowResults(false);
               }}
             >
-              Ask File Box AI about “{query.trim()}”
+              Ask File Box: “{query.trim()}” <span className="workspace-search-enter">Enter</span>
             </button>
           )}
         </div>

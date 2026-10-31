@@ -14,6 +14,7 @@ const Template = require('../models/Template');
 const CloudBackup = require('../models/CloudBackup');
 const TeamFolder = require('../models/TeamFolder');
 const cloudBackupService = require('./cloudBackup');
+const { restorableParent } = require('./fileResolver');
 const {
   buildDocxBufferFromHtml,
   buildPdfBytesFromHtml,
@@ -343,84 +344,21 @@ class AIActionExecutor {
     return folder;
   }
 
+  /**
+   * Files an action applies to. File Box AI resolves names first (asking when several match) and passes
+   * the result as context.targetFiles; the name lookup below is only a fallback for other callers.
+   */
   async resolveFilesFromMessageOrSelection(message, userId, context = {}) {
+    if (Array.isArray(context.targetFiles)) {
+      return context.targetFiles;
+    }
+
     const fileNames = this.extractFileNames(message);
     if (fileNames?.length) {
       return this.findFilesByName(fileNames, userId);
     }
 
     return this.getSelectedOwnedFiles(context, userId);
-  }
-
-  /**
-   * Parse user message to detect action intent.
-   */
-  parseAction(message) {
-    const lowerMessage = message.toLowerCase();
-
-    const match = (pattern) => pattern.test(message);
-    const mentionsFile = /(file|document|this)/i.test(message) || Boolean(this.extractFileNames(message));
-
-    if (match(/create.*(?:team\s+(?:folder|space)|teamspace)|make.*(?:team\s+(?:folder|space)|teamspace)|new.*team\s+(?:folder|space)/i)) {
-      return { type: 'create_team_folder', confidence: 0.92 };
-    }
-
-    if (match(/create.*file request|make.*file request|new.*file request/i)) {
-      return { type: 'create_file_request', confidence: 0.9 };
-    }
-
-    if (match(/create.*(?:pdf|docx?|word|text)?\s*file|make.*(?:pdf|docx?|word|text)?\s*file|new.*(?:pdf|docx?|word|text)?\s*file/i)) {
-      return { type: 'create_file', confidence: 0.92 };
-    }
-
-    if (match(/create.*secured link|create.*secure link|add.*secured link|add.*secure link/i)) {
-      return { type: 'create_secured_link', confidence: 0.9 };
-    }
-
-    if (match(/create.*shortcut|add.*shortcut|save.*shortcut|bookmark.*website/i)) {
-      return { type: 'create_shortcut', confidence: 0.88 };
-    }
-
-    if (match(/create.*template|make.*template|turn .* into .*template/i)) {
-      return { type: 'create_template', confidence: 0.87 };
-    }
-
-    if (match(/backup.*desktop|backup.*documents|cloud backup|set up.*backup|create.*backup/i)) {
-      return { type: 'create_cloud_backup', confidence: 0.88 };
-    }
-
-    if (
-      match(/create.*relationship|relate|link|connect.*file|relationship.*between|make.*relationship|add.*relationship/i) ||
-      ((this.extractFileNames(message) || []).length >= 2 && /(relationship|relate|link|connect)/i.test(message))
-    ) {
-      return { type: 'create_relationship', confidence: 0.9 };
-    }
-
-    if (match(/delete|remove|trash/i) && mentionsFile) {
-      return { type: 'delete_file', confidence: 0.82 };
-    }
-
-    if (match(/create.*folder|make.*folder|new.*folder/i)) {
-      return { type: 'create_folder', confidence: 0.9 };
-    }
-
-    if (match(/share.*file|share.*with|create.*share|share.*link|share this/i)) {
-      return { type: 'share_file', confidence: 0.82 };
-    }
-
-    if ((/star|favorite|bookmark/i.test(message) && mentionsFile) || /star this/i.test(lowerMessage)) {
-      return { type: 'star_file', confidence: 0.8 };
-    }
-
-    if ((/move|transfer|put.*in|move.*to/i.test(message) && /(file|document|this|\.)/i.test(message)) || /move this/i.test(lowerMessage)) {
-      return { type: 'move_file', confidence: 0.76 };
-    }
-
-    if ((/rename|change.*name|call.*file|name.*file/i.test(message) && mentionsFile) || /rename this/i.test(lowerMessage)) {
-      return { type: 'rename_file', confidence: 0.84 };
-    }
-
-    return null;
   }
 
   /**
@@ -609,12 +547,12 @@ class AIActionExecutor {
     return {
       success: true,
       message: `Moved ${deletedFiles.join(', ')} to Trash.`,
-      data: { deletedFiles },
+      data: { deletedFiles, fileIds: files.map((file) => file._id) },
     };
   }
 
-  async createFolder(message, userId) {
-    const folderName = this.extractFolderName(message);
+  async createFolder(message, userId, context = {}) {
+    const folderName = this.sanitizeLabel(context.newName || '') || this.extractFolderName(message);
 
     if (!folderName) {
       return {
@@ -623,32 +561,38 @@ class AIActionExecutor {
       };
     }
 
+    // Inside the folder the person is in (Ask File Box), or at the top of My Files.
+    const parent = context.parentFolder || null;
     const existing = await Folder.findOne({
       name: folderName,
       owner: userId,
+      parentFolder: parent ? parent._id : null,
       isTrashed: { $ne: true },
     });
 
     if (existing) {
       return {
         success: false,
-        message: `A folder named "${folderName}" already exists.`,
+        message: `A folder named "${folderName}" already exists${parent ? ` in "${parent.name}"` : ''}.`,
       };
     }
 
     const folder = new Folder({
       name: folderName,
       owner: userId,
+      parentFolder: parent ? parent._id : null,
     });
 
     await folder.save();
 
     return {
       success: true,
-      message: `Successfully created folder "${folderName}".`,
+      message: `Successfully created folder "${folderName}"${parent ? ` in "${parent.name}"` : ''}.`,
       data: {
         folderId: folder._id,
         folderName: folder.name,
+        parentFolder: parent ? parent._id : null,
+        parentName: parent ? parent.name : null,
       },
     };
   }
@@ -673,11 +617,16 @@ class AIActionExecutor {
     return {
       success: true,
       message: `Starred ${starredFiles.join(', ')}.`,
-      data: { starredFiles },
+      data: { starredFiles, fileIds: files.map((file) => file._id) },
     };
   }
 
   async shareFile(message, userId, context = {}) {
+    const recipientQuestion = this.shareRecipientQuestion(message);
+    if (recipientQuestion) {
+      return { success: false, needsInput: true, message: recipientQuestion };
+    }
+
     const files = await this.resolveFilesFromMessageOrSelection(message, userId, context);
 
     if (!files.length) {
@@ -719,6 +668,7 @@ class AIActionExecutor {
         success: true,
         message: `Shared ${sharedFiles.join(', ')} with ${userEmail}.`,
         data: {
+          fileIds: files.map((file) => file._id),
           sharedFiles,
           sharedWith: userEmail,
         },
@@ -743,6 +693,7 @@ class AIActionExecutor {
       success: true,
       message: `Created ${shareLinks.length} share link${shareLinks.length > 1 ? 's' : ''}.`,
       data: {
+        fileIds: files.map((file) => file._id),
         sharedFiles: shareLinks.map((link) => link.fileName),
         shareLinks,
       },
@@ -759,9 +710,15 @@ class AIActionExecutor {
       };
     }
 
-    const folderMatch = message.match(/(?:to|into|in)\s+["'`]?([^"'`]+?)["'`]?(?:[.!?]|$)/i)
+    if (context.targetFolder) {
+      return this.moveInto(files, context.targetFolder);
+    }
+
+    const quotedTarget = message.match(/\b(?:to|into|in)\s+(?:the\s+|my\s+)?["'`]([^"'`]+)["'`]/i);
+    const folderMatch = quotedTarget
+      || message.match(/(?:to|into|in)\s+["'`]?([^"'`]+?)["'`]?(?:[.!?]|$)/i)
       || message.match(/folder\s+["'`]?([^"'`]+?)["'`]?(?:[.!?]|$)/i);
-    const folderName = this.sanitizeLabel(folderMatch?.[1] || '');
+    const folderName = this.cleanFolderPhrase(folderMatch?.[1] || '');
 
     if (!folderName) {
       return {
@@ -778,6 +735,10 @@ class AIActionExecutor {
       };
     }
 
+    return this.moveInto(files, folder);
+  }
+
+  async moveInto(files, folder) {
     const movedFiles = [];
     for (const file of files) {
       file.parentFolder = folder._id;
@@ -789,6 +750,7 @@ class AIActionExecutor {
       success: true,
       message: `Moved ${movedFiles.join(', ')} to "${folder.name}".`,
       data: {
+        fileIds: files.map((file) => file._id),
         movedFiles,
         targetFolder: folder.name,
       },
@@ -806,7 +768,7 @@ class AIActionExecutor {
     }
 
     const newNameMatch = message.match(/(?:to|as|named|call)\s+["'`]?([^"'`]+?)["'`]?(?:[.!?]|$)/i);
-    const newName = this.sanitizeLabel(newNameMatch?.[1] || '');
+    const newName = this.sanitizeLabel(context.newName || newNameMatch?.[1] || '');
 
     if (!newName) {
       return {
@@ -817,16 +779,51 @@ class AIActionExecutor {
 
     const file = files[0];
     const oldName = file.originalName;
-    file.originalName = newName;
+    // Keep the file type when the new name has no extension ("Resume 2026" -> "Resume 2026.pdf").
+    const oldExt = path.extname(oldName);
+    const finalName = oldExt && !path.extname(newName) ? `${newName}${oldExt}` : newName;
+    file.originalName = finalName;
     await file.save();
 
     return {
       success: true,
-      message: `Renamed "${oldName}" to "${newName}".`,
+      message: `Renamed "${oldName}" to "${finalName}".`,
       data: {
+        fileIds: [file._id],
         oldName,
-        newName,
+        newName: finalName,
       },
+    };
+  }
+
+  /** Bring the user's own files back from Trash, to their folder when it still exists. */
+  async restoreFile(message, userId, context = {}) {
+    const files = Array.isArray(context.targetFiles) ? context.targetFiles : [];
+    if (!files.length) {
+      return {
+        success: false,
+        message: 'Tell me which file to restore from Trash.',
+      };
+    }
+
+    const restoredFiles = [];
+    for (const file of files) {
+      if (String(file.owner?._id || file.owner) !== String(userId) || !file.isTrashed) continue;
+      file.isTrashed = false;
+      file.deletedAt = null;
+      if (!(await restorableParent(file.parentFolder, userId))) file.parentFolder = null;
+      await file.save();
+      restoredFiles.push(file);
+    }
+
+    if (!restoredFiles.length) {
+      return { success: false, message: 'That file is not in your Trash.' };
+    }
+
+    return {
+      success: true,
+      message: `Restored ${restoredFiles.map((file) => file.originalName).join(', ')} from Trash.`,
+      data: { restoredFiles: restoredFiles.map((file) => file.originalName), fileIds: restoredFiles.map((file) => file._id) },
     };
   }
 
@@ -1114,31 +1111,26 @@ class AIActionExecutor {
       sourcePath = cloudBackupService.getDefaultBackupPaths().documents || '';
     }
 
-    // Custom folder paths are only accepted from the Backup page, never from chat.
+    // Custom folder paths are only accepted from the Folder Sync page, never from chat.
     if (!sourcePath) {
       return {
         success: false,
-        message: 'I can set up a Desktop or Documents backup. For any other folder, use the Backup page.',
-      };
-    }
-
-    const exists = await cloudBackupService.checkPathExists(sourcePath);
-    if (!exists) {
-      return {
-        success: false,
-        message: `I can't access "${sourcePath}" from the server right now.`,
+        message: 'I can sync your Desktop or Documents folder. For any other folder, use the Folder Sync page.',
       };
     }
 
     const backupFrequency = /hourly/i.test(message) ? 'hourly' : /weekly/i.test(message) ? 'weekly' : 'daily';
-    const backup = await cloudBackupService.createOrUpdateBackup(userId, sourceType, sourcePath, {
-      enabled: true,
-      backupFrequency,
-    });
+    let backup;
+    try {
+      // Checks the folder is approved for syncing (see services/cloudBackup.js).
+      backup = await cloudBackupService.createOrUpdateBackup(userId, sourceType, sourcePath, { enabled: true, backupFrequency });
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
 
     return {
       success: true,
-      message: `Created the ${sourceType} cloud backup configuration.`,
+      message: `Set up Folder Sync for your ${sourceType} folder (${backupFrequency}). Files only stored in iCloud are skipped.`,
       data: {
         backupId: backup._id,
         sourceType: backup.sourceType,
@@ -1148,12 +1140,24 @@ class AIActionExecutor {
     };
   }
 
+  /** "the Taxes 2026 folder" / "my Taxes folder" / '"Taxes 2026"' -> the folder's own name. */
+  cleanFolderPhrase(phrase = '') {
+    let name = this.sanitizeLabel(phrase).replace(/^["'`]+|["'`]+$/g, '');
+    name = name.replace(/^(?:the|my|our|a|an)\s+/i, '').replace(/\s+(?:folder|directory)$/i, '');
+    return name.replace(/^["'`]+|["'`]+$/g, '').trim();
+  }
+
   /**
-   * Names of the owned files an action would touch, so the assistant can ask for confirmation first.
+   * Sharing with a person needs their exact email. "Share X with Sarah" gets a question, never a public link.
+   * Returns the question to ask, or null when the request is fine as is.
    */
-  async describeTargets(message, userId, context = {}) {
-    const files = await this.resolveFilesFromMessageOrSelection(message, userId, context);
-    return files.map((file) => file.originalName);
+  shareRecipientQuestion(message = '') {
+    if (this.extractEmail(message)) return null;
+    const match = message.match(/\bwith\s+(?!(?:a|the|an)\s+(?:public\s+)?link\b|link\b|everyone\b|anyone\b|anybody\b)([a-z][\w'.-]*(?:\s+[a-z][\w'.-]*)?)/i);
+    if (!match) return null;
+    const name = match[1].replace(/[.,!?]+$/, '').trim();
+    const display = name.charAt(0).toUpperCase() + name.slice(1);
+    return `What's ${display}'s email address? File Box shares only with the exact email of a File Box account, for example "share it with ${name.toLowerCase().replace(/\s+/g, '.')}@example.com".`;
   }
 
   async executeAction(action, message, userId, context = {}) {
@@ -1164,7 +1168,7 @@ class AIActionExecutor {
         case 'delete_file':
           return this.deleteFile(message, userId, context);
         case 'create_folder':
-          return this.createFolder(message, userId);
+          return this.createFolder(message, userId, context);
         case 'star_file':
           return this.starFile(message, userId, context);
         case 'share_file':
@@ -1173,6 +1177,8 @@ class AIActionExecutor {
           return this.moveFile(message, userId, context);
         case 'rename_file':
           return this.renameFile(message, userId, context);
+        case 'restore_file':
+          return this.restoreFile(message, userId, context);
         case 'create_file_request':
           return this.createFileRequest(message, userId);
         case 'create_file':

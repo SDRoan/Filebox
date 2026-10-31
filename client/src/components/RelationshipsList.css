@@ -45,7 +45,7 @@
   color: white;
   border: none;
   padding: 0.6rem 1.2rem;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.9rem;
   font-weight: 500;
@@ -64,7 +64,7 @@
   color: white;
   border: none;
   padding: 0.6rem 1.2rem;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.9rem;
   font-weight: 500;
@@ -127,7 +127,7 @@
   width: 100%;
   padding: 10px 40px 10px 16px;
   border: 2px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   font-size: 14px;
 }
 
@@ -149,9 +149,9 @@
 .sort-select-rel {
   padding: 10px 16px;
   border: 2px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   font-size: 14px;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   cursor: pointer;
 }
 
@@ -166,7 +166,7 @@
   color: white;
   border: none;
   padding: 0.6rem 1.2rem;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.9rem;
   font-weight: 500;
@@ -185,9 +185,9 @@
   justify-content: space-between;
   align-items: center;
   padding: 1rem 1.5rem;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 2px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   transition: all 0.2s;
   cursor: pointer;
   gap: 1rem;
@@ -253,7 +253,7 @@
   padding: 8px 12px;
   background: #333;
   color: white;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 12px;
   white-space: nowrap;
   z-index: 1000;
@@ -310,7 +310,7 @@
 
 .relationship-type {
   padding: 0.3rem 0.8rem;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   font-size: 0.85rem;
   font-weight: 600;
   white-space: nowrap;
@@ -354,7 +354,7 @@
   color: white;
   border: none;
   padding: 0.5rem 1rem;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 1rem;
   transition: background 0.2s;

@@ -32,7 +32,7 @@
   color: white !important;
   border: none !important;
   padding: 0.5rem 1rem !important;
-  border-radius: 6px !important;
+  border-radius: calc(6px * var(--fb-radius-scale, 1)) !important;
   cursor: pointer;
   font-size: 0.8125rem !important;
   font-weight: 600;
@@ -66,9 +66,9 @@
 }
 
 .backup-card {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #e5e7eb;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   padding: 1.5rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   transition: all 0.2s;
@@ -107,7 +107,7 @@
 
 .status-badge {
   padding: 0.25rem 0.75rem;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   font-size: 0.75rem;
   font-weight: 600;
   color: white;
@@ -136,7 +136,7 @@
   bottom: 0;
   background-color: #ccc;
   transition: 0.3s;
-  border-radius: 24px;
+  border-radius: calc(24px * var(--fb-radius-scale, 1));
 }
 
 .toggle-slider:before {
@@ -146,7 +146,7 @@
   width: 18px;
   left: 3px;
   bottom: 3px;
-  background-color: white;
+  background-color: var(--fb-surface, #ffffff);
   transition: 0.3s;
   border-radius: 50%;
 }
@@ -166,7 +166,7 @@
   margin-bottom: 1rem;
   padding: 1rem;
   background: #f9fafb;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
 }
 
 .stat-item {
@@ -193,7 +193,7 @@
   padding: 0.75rem;
   background: #fee2e2;
   border: 1px solid #fecaca;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   margin-bottom: 1rem;
   color: #991b1b;
   font-size: 0.875rem;
@@ -211,11 +211,11 @@
 }
 
 .btn-secondary {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   color: #374151;
   border: 1px solid #d1d5db;
   padding: 0.5rem 1rem;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
@@ -236,11 +236,11 @@
 }
 
 .btn-danger {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   color: #dc2626;
   border: 1px solid #fecaca;
   padding: 0.5rem 1rem;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.875rem;
   font-weight: 500;
@@ -292,8 +292,8 @@
 }
 
 .modal-content {
-  background: white;
-  border-radius: 12px;
+  background: var(--fb-surface, #ffffff);
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   width: 100%;
   max-width: 500px;
   max-height: 90vh;
@@ -328,7 +328,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   transition: all 0.2s;
 }
 
@@ -358,10 +358,10 @@
   width: 100%;
   padding: 0.625rem 0.875rem;
   border: 1px solid #d1d5db;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.875rem;
   transition: all 0.2s;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   color: #111827;
 }
 
@@ -407,3 +407,6 @@
   padding-top: 1.5rem;
   border-top: 1px solid #e5e7eb;
 }
+
+.backup-intro { max-width: 720px; margin: -8px 0 22px; font-size: 14px; line-height: 1.55; color: #5d6359; }
+.backup-last-run { margin: 10px 0 0; font-size: 13px; color: #4a4f47; }

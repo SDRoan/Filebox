@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useFileFocus } from '../hooks/useFileFocus';
 import { FileItemType } from '../types';
 import { filesAPI } from '../services/api';
 import { EditIcon, SaveIcon, CloseIcon, LoadingIcon, DownloadIcon } from './Icons';
@@ -27,6 +28,7 @@ const getFileType = (file: FileItemType): 'pdf' | 'docx' | 'txt' => {
   };
 
 const FileEditor: React.FC<FileEditorProps> = ({ file, onClose, onSave }) => {
+  useFileFocus(file._id);
   const [content, setContent] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -47,7 +49,7 @@ const FileEditor: React.FC<FileEditorProps> = ({ file, onClose, onSave }) => {
 
       if (fileType === 'txt') {
         // For TXT files, get the text content directly
-        const blob = await filesAPI.downloadFile(file._id);
+        const blob = await filesAPI.downloadFile(file._id, { view: true });
         const text = await blob.text();
         setContent(text);
         setOriginalContent(text);

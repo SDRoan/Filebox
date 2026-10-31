@@ -13,8 +13,8 @@
 }
 
 .file-memory-modal {
-  background: white;
-  border-radius: 12px;
+  background: var(--fb-surface, #ffffff);
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   width: 100%;
   max-width: 800px;
   max-height: 90vh;
@@ -42,7 +42,7 @@
   border-bottom: 1px solid #e0e0e0;
   background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
   color: white;
-  border-radius: 12px 12px 0 0;
+  border-radius: calc(12px * var(--fb-radius-scale, 1)) calc(12px * var(--fb-radius-scale, 1)) 0 0;
 }
 
 .file-memory-header h2 {
@@ -109,7 +109,7 @@
 .usage-item {
   background: #f8f9fa;
   padding: 1rem;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   border-left: 3px solid #6b7280;
 }
 
@@ -134,7 +134,7 @@
   margin-bottom: 1rem;
   padding: 0.75rem;
   background: #f0f4ff;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
 }
 
 .insight-item strong {
@@ -153,14 +153,14 @@
   background: #6b7280;
   color: white;
   padding: 0.25rem 0.75rem;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   font-size: 0.85rem;
 }
 
 .importance-badge {
   display: inline-block;
   padding: 0.25rem 0.75rem;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   color: white;
   font-size: 0.75rem;
   font-weight: 600;
@@ -170,7 +170,7 @@
 .note-item {
   background: #fff9e6;
   padding: 1rem;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   margin-bottom: 0.75rem;
   border-left: 3px solid #f39c12;
 }
@@ -187,8 +187,8 @@
 
 .linked-item {
   padding: 0.75rem;
-  background: #e8f5e9;
-  border-radius: 6px;
+  background: var(--fb-g-e8f5e9, #e8f5e9);
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   margin-bottom: 0.5rem;
 }
 
@@ -223,7 +223,7 @@
   width: 100%;
   padding: 0.75rem;
   border: 1px solid #ddd;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.95rem;
   font-family: inherit;
   transition: border-color 0.2s;
@@ -257,7 +257,7 @@
   flex: 1;
   padding: 0.75rem;
   border: 1px solid #ddd;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 0.95rem;
 }
 
@@ -269,7 +269,7 @@
 .answer-box {
   background: #e3f2fd;
   padding: 1rem;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   border-left: 3px solid #2196f3;
   margin-top: 1rem;
 }
@@ -289,7 +289,7 @@
 .qa-item {
   background: #f5f5f5;
   padding: 1rem;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   margin-bottom: 0.75rem;
 }
 
@@ -318,7 +318,7 @@
   color: white;
   border: none;
   padding: 0.75rem 1.5rem;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.95rem;
   font-weight: 500;
@@ -339,7 +339,7 @@
   color: #333;
   border: 1px solid #ddd;
   padding: 0.75rem 1.5rem;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 0.95rem;
   transition: background 0.2s;

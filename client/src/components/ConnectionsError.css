@@ -1,5 +1,5 @@
-.connections-error { margin: 24px 0; padding: 28px; border: 1px solid #dedbd2; border-radius: 12px; background: #faf9f5; color: #30382e; }
+.connections-error { margin: 24px 0; padding: 28px; border: 1px solid #dedbd2; border-radius: calc(12px * var(--fb-radius-scale, 1)); background: #faf9f5; color: var(--fb-g-30382e, #30382e); }
 .connections-error h3 { margin: 0 0 10px; font-size: 18px; }
 .connections-error p { margin: 0 0 20px; max-width: 560px; line-height: 1.6; color: #64695f; }
-.connections-error button { padding: 10px 18px; border: 0; border-radius: 7px; background: #263e28; color: white; font: inherit; cursor: pointer; }
-.connections-error button:focus-visible { outline: 2px solid #263e28; outline-offset: 3px; }
+.connections-error button { padding: 10px 18px; border: 0; border-radius: calc(7px * var(--fb-radius-scale, 1)); background: var(--fb-g-263e28, #263e28); color: white; font: inherit; cursor: pointer; }
+.connections-error button:focus-visible { outline: 2px solid var(--fb-g-263e28, #263e28); outline-offset: 3px; }

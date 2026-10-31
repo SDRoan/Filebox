@@ -33,16 +33,8 @@ const mammoth = require('mammoth');
 const config = require('../config/aiConfig');
 const ollamaClient = require('./ollamaClient');
 
-let pdfjsLib = null;
-let createCanvas = null;
-try {
-  pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
-  const canvasModule = require('canvas');
-  createCanvas = canvasModule.createCanvas;
-  console.log('[PDF Extract] OCR rendering support enabled for scanned PDFs');
-} catch (error) {
-  console.log('[PDF Extract] OCR rendering support disabled (canvas/pdfjs not available)');
-}
+// PDFs are read and rendered with pdf-parse (its own bundled PDF engine). Loading a second, older
+// pdfjs-dist next to it made scanned-PDF OCR fail with "API version ... does not match the Worker version".
 
 class TextExtractor {
   getFileInfo(mimeType = '', fileName = '') {
@@ -222,36 +214,6 @@ class TextExtractor {
       console.error('[PDF Extract] pdf-parse error:', error.message);
     }
 
-    if (pdfjsLib) {
-      try {
-        const loadingTask = pdfjsLib.getDocument({ data: this.toPdfUint8Array(dataBuffer) });
-        const pdf = await loadingTask.promise;
-        numPages = pdf.numPages || numPages;
-
-        let fullText = '';
-        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum += 1) {
-          const page = await pdf.getPage(pageNum);
-          const textContent = await page.getTextContent();
-          const pageText = (textContent.items || [])
-            .map((item) => item.str || '')
-            .join(' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-
-          if (pageText) {
-            fullText += `${fullText ? '\n' : ''}${pageText}`;
-          }
-        }
-
-        if (fullText.trim().length > bestText.length) {
-          bestText = fullText.trim();
-          bestMethod = 'pdfjs-dist';
-        }
-      } catch (error) {
-        console.error('[PDF Extract] pdfjs-dist error:', error.message);
-      }
-    }
-
     return {
       text: bestText,
       method: bestMethod,
@@ -271,25 +233,19 @@ class TextExtractor {
       .trim();
   }
 
-  async renderPdfPageToBase64(page) {
-    if (!createCanvas) {
-      return '';
+  /** Page images of a PDF (first `maxPages` pages), for OCR of scanned documents. */
+  async renderPdfPages(dataBuffer, maxPages, scale) {
+    const parser = new PDFParse({ data: this.toPdfUint8Array(dataBuffer) });
+    try {
+      const result = await parser.getScreenshot({ first: maxPages, scale, imageBuffer: true });
+      return (result.pages || []).map(page => ({ pageNumber: page.pageNumber, png: Buffer.from(page.data) }));
+    } finally {
+      await parser.destroy();
     }
-
-    const viewport = page.getViewport({ scale: 2.5 });
-    const canvas = createCanvas(viewport.width, viewport.height);
-    const context = canvas.getContext('2d');
-
-    await page.render({
-      canvasContext: context,
-      viewport,
-    }).promise;
-
-    return canvas.toBuffer('image/png').toString('base64');
   }
 
   async extractFromScannedPDFWithOllama(filePath, dataBuffer, maxPages = 20) {
-    if (!pdfjsLib || !createCanvas || !config.ollama.enabled) {
+    if (!config.ollama.enabled) {
       return '';
     }
 
@@ -299,34 +255,25 @@ class TextExtractor {
         return '';
       }
 
-      const loadingTask = pdfjsLib.getDocument({ data: this.toPdfUint8Array(dataBuffer) });
-      const pdf = await loadingTask.promise;
-      const pageCount = Math.min(pdf.numPages, maxPages);
+      const pages = await this.renderPdfPages(dataBuffer, maxPages, 2.5);
       let fullText = '';
-
-      for (let pageNum = 1; pageNum <= pageCount; pageNum += 1) {
+      for (const { pageNumber, png } of pages) {
         try {
-          const page = await pdf.getPage(pageNum);
-          const base64Image = await this.renderPdfPageToBase64(page);
-          if (!base64Image) {
-            continue;
-          }
-
-          const pageText = await ollamaClient.chatImage({
+          const pageText = await ollamaClient.chat({
+            task: 'ocr',
             model: config.ollama.ocrModel,
+            // Only needed while a scan is read; free its memory soon after instead of keeping it 5 minutes.
+            keepAlive: '30s',
             content: 'Extract all readable text from this document page in natural reading order. Return only the text, with no commentary or markdown fences.',
-            images: [base64Image],
-            options: {
-              temperature: 0,
-            },
+            images: [png.toString('base64')],
           });
 
           const cleanText = this.cleanOcrText(pageText);
           if (cleanText) {
-            fullText += `${fullText ? '\n\n' : ''}--- Page ${pageNum} ---\n${cleanText}`;
+            fullText += `${fullText ? '\n\n' : ''}--- Page ${pageNumber} ---\n${cleanText}`;
           }
         } catch (error) {
-          console.error(`[PDF OCR] Ollama OCR failed on page ${pageNum}:`, error.message);
+          console.error(`[PDF OCR] Ollama OCR failed on page ${pageNumber}:`, error.message);
         }
       }
 
@@ -338,36 +285,17 @@ class TextExtractor {
   }
 
   async extractFromScannedPDF(filePath, dataBuffer, maxPages = 20) {
-    if (!pdfjsLib || !createCanvas) {
-      return '';
-    }
-
     try {
-      const loadingTask = pdfjsLib.getDocument({ data: this.toPdfUint8Array(dataBuffer) });
-      const pdf = await loadingTask.promise;
-      const pageCount = Math.min(pdf.numPages, maxPages);
+      const pages = await this.renderPdfPages(dataBuffer, maxPages, 3.0);
       let fullText = '';
-
-      for (let pageNum = 1; pageNum <= pageCount; pageNum += 1) {
+      for (const { pageNumber, png } of pages) {
         try {
-          const page = await pdf.getPage(pageNum);
-          const viewport = page.getViewport({ scale: 3.0 });
-          const canvas = createCanvas(viewport.width, viewport.height);
-          const context = canvas.getContext('2d');
-
-          await page.render({
-            canvasContext: context,
-            viewport,
-          }).promise;
-
-          const imageBuffer = canvas.toBuffer('image/png');
-          const pageText = await ocrImage(imageBuffer, `PDF OCR page ${pageNum}`);
-          const cleanText = pageText;
-          if (cleanText) {
-            fullText += `${fullText ? '\n\n' : ''}--- Page ${pageNum} ---\n${cleanText}`;
+          const pageText = await ocrImage(png, `PDF OCR page ${pageNumber}`);
+          if (pageText) {
+            fullText += `${fullText ? '\n\n' : ''}--- Page ${pageNumber} ---\n${pageText}`;
           }
         } catch (error) {
-          console.error(`[PDF OCR] Tesseract OCR failed on page ${pageNum}:`, error.message);
+          console.error(`[PDF OCR] Tesseract OCR failed on page ${pageNumber}:`, error.message);
         }
       }
 
@@ -403,8 +331,17 @@ class TextExtractor {
       return htmlText;
     } catch (error) {
       console.error('[Word Extract] convertToHtml failed:', error.message);
-      return '';
     }
+
+    // Not a real Word document (for example a text file renamed to .docx): read it as text if it is text.
+    try {
+      const buffer = await fs.readFile(filePath);
+      const head = buffer.subarray(0, 2048);
+      if (head.length && !head.includes(0)) return buffer.toString('utf-8').trim();
+    } catch (error) {
+      console.error('[Word Extract] Could not read as text:', error.message);
+    }
+    return '';
   }
 
   async extractFromText(filePath) {

@@ -17,9 +17,9 @@
 
 .file-request-item {
   padding: 20px;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
 }
 
 .request-header {
@@ -44,7 +44,7 @@
 
 .status-badge {
   padding: 4px 12px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   color: white;
   font-size: 11px;
   font-weight: 600;
@@ -59,7 +59,7 @@
 .icon-btn {
   background: none;
   border: 1px solid #ddd;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   padding: 6px 10px;
   cursor: pointer;
   font-size: 14px;
@@ -100,7 +100,7 @@
   justify-content: space-between;
   padding: 8px;
   background: #f9f9f9;
-  border-radius: 4px;
+  border-radius: calc(4px * var(--fb-radius-scale, 1));
   margin-bottom: 6px;
   font-size: 13px;
 }
@@ -114,7 +114,7 @@
   width: 100%;
   padding: 10px;
   border: 1px solid #ddd;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 14px;
   font-family: inherit;
   resize: vertical;
@@ -140,9 +140,9 @@
 }
 
 .modal-content-small {
-  background: white;
+  background: var(--fb-surface, #ffffff);
   padding: 30px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   width: 90%;
   max-width: 500px;
 }
@@ -156,7 +156,7 @@
   width: 100%;
   padding: 10px;
   border: 1px solid #ddd;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   font-size: 14px;
   margin-bottom: 15px;
 }
@@ -176,7 +176,7 @@
 .action-button {
   padding: 10px 20px;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 14px;
 }
@@ -215,7 +215,7 @@
   width: 100%;
   padding: 10px 40px 10px 16px;
   border: 2px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   font-size: 14px;
 }
 
@@ -237,9 +237,9 @@
 .sort-select-request {
   padding: 10px 16px;
   border: 2px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   font-size: 14px;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   cursor: pointer;
 }
 
@@ -251,7 +251,7 @@
 
 .expired-badge {
   padding: 4px 8px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   background: #e74c3c;
   color: white;
   font-size: 10px;
@@ -261,7 +261,7 @@
 
 .expiring-soon-badge {
   padding: 4px 8px;
-  border-radius: 12px;
+  border-radius: calc(12px * var(--fb-radius-scale, 1));
   background: #f39c12;
   color: white;
   font-size: 10px;
@@ -275,7 +275,7 @@
   margin: 12px 0;
   padding: 12px;
   background: #f9f9f9;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
 }
 
 .stat-item {
@@ -334,9 +334,9 @@
   justify-content: space-between;
   align-items: center;
   padding: 12px;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #e0e0e0;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   transition: all 0.2s;
 }
 
@@ -389,7 +389,7 @@
   background: #6b7280;
   color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s;
@@ -409,7 +409,7 @@
   color: #999;
   font-size: 14px;
   background: #f9f9f9;
-  border-radius: 6px;
+  border-radius: calc(6px * var(--fb-radius-scale, 1));
   margin-top: 12px;
 }
 
@@ -431,9 +431,9 @@
   top: 100%;
   right: 0;
   margin-top: 4px;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   border: 1px solid #e0e0e0;
-  border-radius: 8px;
+  border-radius: calc(8px * var(--fb-radius-scale, 1));
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 1000;
   min-width: 150px;
@@ -445,7 +445,7 @@
   padding: 12px 16px;
   text-align: left;
   border: none;
-  background: white;
+  background: var(--fb-surface, #ffffff);
   cursor: pointer;
   font-size: 14px;
   color: #333;

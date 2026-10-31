@@ -41,7 +41,7 @@ const fileSummary = (file) => ({
 });
 
 /** Files with identical content: same size first, then confirmed by SHA-256. */
-async function findDuplicates(files) {
+async function findDuplicates(files, { maxFiles = MAX_HASH_FILES, maxBytes = MAX_HASH_BYTES } = {}) {
   const bySize = new Map();
   files.filter(f => f.size > 0).forEach(f => bySize.set(f.size, [...(bySize.get(f.size) || []), f]));
   const candidates = [...bySize.values()].filter(group => group.length > 1).flat();
@@ -51,7 +51,7 @@ async function findDuplicates(files) {
   let complete = true;
   const byHash = new Map();
   for (const file of candidates) {
-    if (hashedFiles >= MAX_HASH_FILES || hashedBytes + file.size > MAX_HASH_BYTES) { complete = false; break; }
+    if (hashedFiles >= maxFiles || hashedBytes + file.size > maxBytes) { complete = false; break; }
     if (!(await fs.pathExists(file.path))) continue;
     try {
       const digest = await hashFile(file.path);

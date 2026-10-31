@@ -1,3 +1,4 @@
+import type { ImageCaption } from '../types';
 import axios from 'axios';
 import { LOCAL_PREVIEW_ENABLED } from '../config/localPreview';
 
@@ -24,12 +25,17 @@ const getLocalSession = () => {
   return localSessionRequest;
 };
 
-// Ensure a real session exists before sending any workspace request.
-api.interceptors.request.use(async (config) => {
+const currentToken = async (url = '') => {
   let token = LOCAL_PREVIEW_ENABLED ? sessionStorage.getItem('filebox-local-token') : localStorage.getItem('token');
-  if (LOCAL_PREVIEW_ENABLED && !token && !config.url?.startsWith('/auth/')) {
+  if (LOCAL_PREVIEW_ENABLED && !token && !url.startsWith('/auth/')) {
     token = (await getLocalSession()).token;
   }
+  return token;
+};
+
+// Ensure a real session exists before sending any workspace request.
+api.interceptors.request.use(async (config) => {
+  const token = await currentToken(config.url);
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -164,11 +170,25 @@ export const filesAPI = {
     const response = await api.post('/files/folder', { name, parentFolder });
     return response.data;
   },
-  downloadFile: async (fileId: string) => {
-    const response = await api.get(`/files/download/${fileId}`, {
+  // { view: true } when a file is only being opened to look at it (preview, editor), not saved to disk.
+  downloadFile: async (fileId: string, options: { view?: boolean } = {}) => {
+    const response = await api.get(`/files/download/${fileId}${options.view ? '?purpose=view' : ''}`, {
       responseType: 'blob',
     });
     return response.data;
+  },
+  // An image for a file card; not recorded as a view or download.
+  getThumbnail: async (fileId: string) => {
+    const response = await api.get(`/files/download/${fileId}?purpose=thumbnail`, { responseType: 'blob' });
+    return response.data as Blob;
+  },
+  getCaption: async (fileId: string) => {
+    const response = await api.get(`/files/${fileId}/caption`);
+    return response.data as { canCaption: boolean; caption: ImageCaption | null };
+  },
+  newCaption: async (fileId: string) => {
+    const response = await api.post(`/files/${fileId}/caption`);
+    return response.data as { caption: ImageCaption };
   },
   deleteFile: async (fileId: string) => {
     const response = await api.delete(`/files/${fileId}?type=file`);
@@ -539,6 +559,292 @@ export const searchAPI = {
   },
   extractAll: async (force: boolean = true) => {
     const response = await api.post('/search/extract-all', { force });
+    return response.data;
+  },
+};
+
+// Boards (/boards): a person's own tabbed workspace (server/services/workspaceBoards.js).
+export interface BoardTab {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  order: number;
+  isDefault: boolean;
+  // Revision the browser last saw; sent back with every change so another device's edit is never overwritten.
+  rev: number;
+  blocks: unknown[];
+  blockCount: number;
+  searchCount?: number;
+  // How the canvas looks (always sent; dots on white unless the person chose otherwise).
+  appearance?: BoardAppearance;
+  updatedAt?: string;
+}
+export type BoardPattern = 'dots' | 'grid' | 'blank' | 'lines' | 'paper';
+export type BoardTone = 'white' | 'warm' | 'blue' | 'lavender' | 'sage' | 'dark';
+export interface BoardAppearance { pattern: BoardPattern; tone: BoardTone }
+
+// A block's file or folder as the person can see it now. Anything they cannot open is only { available: false }.
+export type BoardRef =
+  | { available: false }
+  | {
+    available: true;
+    fileId?: string;
+    folderId?: string;
+    name: string;
+    mimeType?: string;
+    size?: number;
+    technicalType?: 'pdf' | 'image' | 'document' | 'text' | 'code' | 'other';
+    updatedAt?: string;
+    source: 'owned' | 'shared' | 'team';
+    role?: 'owner' | 'editor' | 'viewer';
+    isStarred?: boolean;
+    parentFolder?: string | null;
+    ownerName?: string | null;
+    teamName?: string;
+    category?: string;
+    documentType?: string;
+    itemCount?: number;
+    // What the board's file and folder cards show (the same cards as in My Files).
+    createdAt?: string;
+    dataClassification?: 'Public' | 'Internal' | 'Confidential' | 'Top Secret';
+    aiCaption?: { text?: string; hashtags?: string[]; status?: '' | 'writing' | 'done' | 'failed'; error?: string };
+  };
+
+export type NoteColor = 'yellow' | 'pink' | 'blue' | 'green' | 'purple' | 'orange';
+export interface BoardNote { title: string; body: string; color: NoteColor }
+// A text area's document: ProseMirror/TipTap JSON, cleaned by the server against an allowlist (never HTML).
+export interface RichTextNode { type: string; attrs?: Record<string, unknown>; content?: RichTextNode[]; text?: string; marks?: Array<{ type: string; attrs?: Record<string, unknown> }> }
+export interface BoardText { doc: RichTextNode }
+// Board-only blocks (server/services/boardBlocks.js).
+export type LabelSize = 's' | 'm' | 'l';
+export type LabelTone = 'default' | 'sage' | 'sky' | 'rose' | 'amber' | 'slate';
+export type LabelStyle = 'plain' | 'tag' | 'marker' | 'underline';
+// `style` is missing on a label saved before label styles (it is drawn plain).
+export interface BoardLabel { text: string; size: LabelSize; align: 'left' | 'center' | 'right'; tone: LabelTone; style?: LabelStyle }
+// A date-only deadline is due at the end of that calendar day wherever it is viewed; a timed one also keeps
+// the exact moment (UTC) its date and time meant where it was set.
+export interface BoardDeadline { title: string; note: string; due: { date: string; time: string | null; at: string | null } | null; completedAt: string | null }
+// A link: an http(s) address (as the URL parser writes it), an optional title and note. Never fetched.
+export interface BoardLink { url: string; title: string; note: string }
+// A file list: a title and rows in order, each with its own row id, pointing at files (resolved live, like file
+// cards). A row whose file cannot be opened now is { id, ref: { available: false } } and keeps its place.
+// `fileId` is only on a row added here since the last save (the server checks it); saved rows never carry one.
+export interface BoardFileListRow { id: string; ref: BoardRef; fileId?: string }
+export interface BoardFileList { title: string; items: BoardFileListRow[] }
+// A saved search: only the structured filters Advanced Search runs with, and how many results to show.
+// Results are never stored; they are worked out with current access each time (see runSearches).
+export interface BoardSavedSearch {
+  title: string; text: string; category: string; documentType: string; topic: string;
+  format: 'all' | 'pdf' | 'image' | 'document' | 'text' | 'code' | 'other';
+  date: 'any' | 'today' | 'week' | 'month' | 'year' | 'custom'; from: string | null; to: string | null;
+  dateField: 'modified' | 'uploaded';
+  location: 'everywhere' | 'my-files' | 'shared' | 'team' | 'folder'; folderId: string | null; teamId: string | null;
+  sort: 'best' | 'content' | 'modified' | 'newest' | 'oldest' | 'name';
+  show: 3 | 5 | 10;
+}
+// One result row of a saved search (what the block shows and the preview needs; no snippet).
+export type SavedSearchRow = Pick<AdvancedSearchResult, '_id' | 'originalName' | 'mimeType' | 'size' | 'technicalType' | 'createdAt' | 'updatedAt' | 'parentFolder' | 'folderName' | 'isStarred' | 'ownerName' | 'access'>;
+export type SavedSearchRun =
+  | { id: string; state: 'ok'; total: number; results: SavedSearchRow[]; scopeName?: string; tookMs?: number }
+  | { id: string; state: 'unavailable' | 'error' };
+// The content of a block that is not a file or folder, in a field named after its type.
+export interface BoardContent { note?: BoardNote; text?: BoardText; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink; filelist?: BoardFileList; search?: BoardSavedSearch }
+
+// A place on the free canvas in pixels; null x/y = not placed yet (the board puts it below everything).
+// Sticky notes and text areas also have a width and height.
+interface BoardPlace { id: string; x: number | null; y: number | null; w?: number; h?: number }
+export type BoardBlock =
+  | (BoardPlace & { type: 'file' | 'folder'; ref: BoardRef })
+  | (BoardPlace & { type: 'note'; note: BoardNote })
+  | (BoardPlace & { type: 'text'; text: BoardText })
+  | (BoardPlace & { type: 'label'; label: BoardLabel })
+  | (BoardPlace & { type: 'deadline'; deadline: BoardDeadline })
+  | (BoardPlace & { type: 'link'; link: BoardLink })
+  | (BoardPlace & { type: 'filelist'; filelist: BoardFileList })
+  | (BoardPlace & { type: 'search'; search: BoardSavedSearch });
+
+// What a save sends: positions for every block; a file/folder id only for blocks added since the last save;
+// a note's or text area's words only when they changed (the server keeps the stored ones otherwise).
+export interface BoardBlockInput {
+  id: string; type: BoardBlock['type']; x: number | null; y: number | null; w?: number; h?: number;
+  fileId?: string; folderId?: string; note?: BoardNote; text?: BoardText;
+  label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink;
+  // A file list's rows: { id } for a row the server has (it keeps that row's file), { id, fileId } for a new one.
+  filelist?: { title: string; items: Array<{ id: string; fileId?: string }> };
+  search?: BoardSavedSearch;
+}
+
+export interface BoardLimits { tabs: number; blocksPerTab: number; fileRefsPerTab: number; searchesPerTab: number; tabName: number; noteTitle: number; noteBody: number; richTextChars: number; richTextBytes: number; tabBytes: number; totalBytes: number }
+
+export const workspaceBoardsAPI = {
+  list: async (): Promise<{ tabs: BoardTab[]; limits: BoardLimits; colors: string[] }> => {
+    const response = await api.get('/workspace-boards');
+    return response.data;
+  },
+  createTab: async (body: { name: string; icon?: string; color?: string }): Promise<{ tab: BoardTab }> => {
+    const response = await api.post('/workspace-boards/tabs', body);
+    return response.data;
+  },
+  updateTab: async (tabId: string, body: { name?: string; icon?: string; color?: string; rev: number }): Promise<{ tab: BoardTab }> => {
+    const response = await api.patch(`/workspace-boards/tabs/${tabId}`, body);
+    return response.data;
+  },
+  deleteTab: async (tabId: string): Promise<{ tabs: BoardTab[]; deleted: string }> => {
+    const response = await api.delete(`/workspace-boards/tabs/${tabId}`);
+    return response.data;
+  },
+  /** Copy a tab (its notes, text and the items it points at that are available now; never the files themselves). */
+  duplicateTab: async (tabId: string): Promise<{ tab: BoardTab; tabs: BoardTab[]; skipped: number }> => {
+    const response = await api.post(`/workspace-boards/tabs/${tabId}/duplicate`);
+    return response.data;
+  },
+  // Every tab id once, in the new order. A 409 carries the latest { tabs }.
+  reorderTabs: async (tabIds: string[]): Promise<{ tabs: BoardTab[] }> => {
+    const response = await api.put('/workspace-boards/tabs/order', { tabIds });
+    return response.data;
+  },
+  /** The canvas pattern and tone of a tab (presentation only: the tab's revision does not change). */
+  setAppearance: async (tabId: string, appearance: BoardAppearance): Promise<{ tab: BoardTab }> => {
+    const response = await api.put(`/workspace-boards/tabs/${tabId}/appearance`, { appearance });
+    return response.data;
+  },
+  setDefaultTab: async (tabId: string): Promise<{ tabs: BoardTab[] }> => {
+    const response = await api.post(`/workspace-boards/tabs/${tabId}/default`);
+    return response.data;
+  },
+  /** Which of my tabs already hold this file or folder. */
+  placements: async (ref: { fileId?: string; folderId?: string }): Promise<{ tabIds: string[] }> => {
+    const response = await api.get('/workspace-boards/placements', { params: ref });
+    return response.data;
+  },
+  /** Add a file or folder to a tab (checked by the server); the board places it below everything. */
+  addRef: async (tabId: string, type: 'file' | 'folder', id: string): Promise<{ tab: BoardTab; added: boolean }> => {
+    const response = await api.post(`/workspace-boards/tabs/${tabId}/refs`, { type, id });
+    return response.data;
+  },
+  /** Run saved searches (their stored filters) with current access; at most 10 blocks. Nothing is stored. */
+  runSearches: async (tabId: string, blockIds: string[], signal?: AbortSignal): Promise<{ searches: SavedSearchRun[] }> => {
+    const response = await api.post(`/workspace-boards/tabs/${tabId}/searches/run`, { blockIds, tz: new Date().getTimezoneOffset() }, { signal });
+    return response.data;
+  },
+  /** "Save to board…" from Advanced Search: a saved-search block with these filters (placed below everything). */
+  addSearch: async (tabId: string, search: BoardSavedSearch): Promise<{ tab: BoardTab; blockId: string }> => {
+    const response = await api.post(`/workspace-boards/tabs/${tabId}/searches`, { search });
+    return response.data;
+  },
+  getTab: async (tabId: string): Promise<{ tab: BoardTab; blocks: BoardBlock[]; zones: BoardZone[] }> => {
+    const response = await api.get(`/workspace-boards/tabs/${tabId}`);
+    return response.data;
+  },
+  // A 409 carries the latest { tab, blocks, zones } (changed on another device).
+  saveBlocks: async (tabId: string, rev: number, blocks: BoardBlockInput[], zones: BoardZone[]): Promise<{ tab: BoardTab; blocks: BoardBlock[]; zones: BoardZone[] }> => {
+    const response = await api.put(`/workspace-boards/tabs/${tabId}/blocks`, { rev, blocks, zones });
+    return response.data;
+  },
+  /**
+   * Best-effort save while the page is being hidden or closed (fetch keepalive, which browsers limit to about
+   * 64 KB). Not guaranteed to finish; returns false when it could not even be sent.
+   */
+  saveBlocksOnLeave: (tabId: string, rev: number, blocks: BoardBlockInput[], zones: BoardZone[]): boolean => {
+    const token = LOCAL_PREVIEW_ENABLED ? sessionStorage.getItem('filebox-local-token') : localStorage.getItem('token');
+    const body = JSON.stringify({ rev, blocks, zones });
+    if (!token || body.length > 60000) return false;
+    try {
+      fetch(`${API_URL}/workspace-boards/tabs/${tabId}/blocks`, { method: 'PUT', keepalive: true, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body }).catch(() => {});
+      return true;
+    } catch {
+      return false;
+    }
+  },
+};
+
+// Advanced Search (server/services/advancedSearch.js). Every result, snippet and count comes from the
+// server's permission-checked search; the page only shows what it is sent.
+export interface FileClassification {
+  primaryCategory: string;
+  documentType: string;
+  topics: string[];
+  source: 'user' | 'rules' | 'profile' | 'default';
+  canChange?: boolean;
+}
+
+export interface AdvancedSearchResult {
+  _id: string;
+  originalName: string;
+  mimeType: string;
+  size: number;
+  technicalType: 'pdf' | 'image' | 'document' | 'text' | 'code' | 'other';
+  createdAt: string;
+  updatedAt: string;
+  parentFolder: string | null;
+  folderName: string | null;
+  isStarred: boolean;
+  ownerName: string | null;
+  access: { role: 'owner' | 'editor' | 'viewer'; source: 'owned' | 'shared' | 'team'; teamName?: string };
+  score: number;
+  matchedTerms: string[];
+  matchedIn: Array<'name' | 'content' | 'type' | 'category' | 'topic' | 'meaning'>;
+  snippet: { text: string; highlights: Array<[number, number]>; source: string } | null;
+  classification: FileClassification;
+}
+
+export interface SearchGroup { name: string; count: number }
+
+export interface AdvancedSearchResponse {
+  results: AdvancedSearchResult[];
+  total: number;
+  groups: { categories: SearchGroup[]; documentTypes: SearchGroup[] };
+  applied: Record<string, unknown> & {
+    terms: string[];
+    text?: string;
+    // What was read out of plain words ("invoices from September"), when the search asked for that.
+    parsed?: { understood: Array<{ key: string; label: string }>; confidence: 'high' | 'low' | 'model'; vague: string; usedModel: boolean; cached: boolean; original: string };
+    semantic?: { requested: string; used: boolean; added: number; reason: string; weak: boolean };
+  };
+}
+
+export interface AdvancedSearchParams {
+  q?: string;
+  category?: string;
+  documentType?: string;
+  topic?: string;
+  format?: string;
+  date?: string;
+  from?: string;
+  to?: string;
+  dateField?: string;
+  location?: string;
+  folderId?: string;
+  // One Team Space (location 'team' only); without it, all of the person's Team Spaces.
+  teamId?: string;
+  currentFolderId?: string;
+  sort?: string;
+  limit?: number;
+  offset?: number;
+  tz?: number;
+  // 'rules' reads filters out of the words; 'model' may also ask the local model once (after Enter).
+  parse?: 'off' | 'rules' | 'model';
+  // 'on' only when the person asked to search by meaning.
+  semantic?: 'on';
+}
+
+export const advancedSearchAPI = {
+  search: async (params: AdvancedSearchParams, signal?: AbortSignal): Promise<AdvancedSearchResponse> => {
+    const response = await api.get('/search/advanced', { params, signal });
+    return response.data;
+  },
+  taxonomy: async (): Promise<{ categories: Array<{ name: string; documentTypes: string[] }> }> => {
+    const response = await api.get('/search/taxonomy');
+    return response.data;
+  },
+  // A person's own label for a file; { reset: true } goes back to the automatic one.
+  setClassification: async (fileId: string, body: { primaryCategory: string; documentType: string } | { reset: true }): Promise<{ classification: FileClassification }> => {
+    const response = await api.patch(`/search/classification/${fileId}`, body);
+    return response.data;
+  },
+  reclassify: async (fileId: string): Promise<{ classification: FileClassification; profile: string }> => {
+    const response = await api.post(`/search/classification/${fileId}/reclassify`);
     return response.data;
   },
 };
@@ -1100,6 +1406,20 @@ export const signaturesAPI = {
     const response = await api.delete(`/signatures/${signatureId}`);
     return response.data;
   },
+  // Pages of a PDF for placing a signature: sizes, then each page as an image (object URL).
+  getPdfPages: async (fileId: string): Promise<{ total: number; pages: { width: number; height: number }[]; protected?: boolean; protectedMessage?: string }> => {
+    const response = await api.get(`/signatures/document/${fileId}/pages`);
+    return response.data;
+  },
+  getPdfPageImage: async (fileId: string, page: number): Promise<string> => {
+    const response = await api.get(`/signatures/document/${fileId}/pages/${page}`, { responseType: 'blob' });
+    return URL.createObjectURL(response.data);
+  },
+  /** Sign a PDF: position is the signature's top-left corner and width, as fractions of the page. */
+  signPdf: async (fileId: string, data: { signatureId: string; pageNumber: number; position: { x: number; y: number; width: number } }) => {
+    const response = await api.post(`/signatures/apply/${fileId}`, data);
+    return response.data;
+  },
   applySignature: async (fileId: string, data: { signatureId: string; pageNumber: number; position: { x: number; y: number; width: number; height: number } }) => {
     const response = await api.post(`/signatures/apply/${fileId}`, data);
     return response.data;
@@ -1110,15 +1430,236 @@ export const signaturesAPI = {
   },
 };
 
-// AI Assistant API (local Ollama)
-export type AssistantHistoryMessage = { role: 'user' | 'assistant'; content: string };
+// Home overview (local data only; works when File Box AI is offline)
+export interface HomeSuggestion {
+  id: string;
+  fingerprint: string;
+  noticed: string;
+  why: string;
+  recommendation: string;
+  action: { label: string; type: 'navigate' | 'duplicates' | 'organize'; to?: string };
+}
+export interface HomeActivity {
+  _id: string;
+  action: string;
+  source: 'user' | 'filebox';
+  details: string;
+  fileName: string | null;
+  folderName: string | null;
+  createdAt: string;
+  count: number;
+}
+export interface HomeOverview {
+  continueWorking: any[];
+  suggestions: HomeSuggestion[];
+  suggestionsAvailable: number;
+  activity: HomeActivity[];
+}
 
-export const aiAssistantAPI = {
-  chat: async (question: string, fileId?: string, context?: string, history?: AssistantHistoryMessage[]) => {
-    const response = await api.post('/ai-assistant/chat', { question, fileId, context, history });
+export const homeAPI = {
+  getOverview: async (): Promise<HomeOverview> => {
+    const response = await api.get('/home');
     return response.data;
   },
-  confirmAction: async (action: { type: string; question: string; fileId?: string | null }) => {
+  getDay: async (date?: string): Promise<DayOverview> => {
+    const response = await api.get('/home/day', { params: { date, tz: new Date().getTimezoneOffset() } });
+    return response.data;
+  },
+  // Starts writing the day's summary in the background; getDay reports it when ready.
+  writeDaySummary: async (date: string, force = false): Promise<{ writing: boolean }> => {
+    const response = await api.post('/home/day/summary', { date, force, tz: new Date().getTimezoneOffset() });
+    return response.data;
+  },
+};
+
+// "Your day" on Home: what was done in File Box on a date and File Box AI's summary of it.
+export interface DayFile {
+  fileId: string;
+  name: string;
+  kind: string;
+  about: string;
+  exists: boolean;
+  parentFolder: string | null;
+  minutes: number;
+  actions: Record<string, number>;
+  firstAt: string;
+  lastAt: string;
+}
+export interface DayFacts {
+  date: string;
+  totals: { activeMinutes: number; filesWorkedOn: number; uploaded: number; edited: number; viewed: number; downloaded: number; shared: number; organized: number; questions: number };
+  files: DayFile[];
+  questions: { question: string; at: string }[];
+  folders: { action: string; name: string; at: string }[];
+  fileboxActions: number;
+  timeline: { hour: number; items: string[] }[];
+  empty: boolean;
+}
+export interface DaySummary {
+  summary: string;
+  highlights: string[];
+  suggestions: string[];
+  basic: boolean;
+  generatedAt?: string;
+}
+export interface DayOverview {
+  facts: DayFacts;
+  summary: DaySummary | null;
+  writing: boolean;
+  days: { date: string; count: number }[];
+}
+
+export const preferencesAPI = {
+  get: async (): Promise<{ accentColor: string | null; appearance: unknown | null }> => {
+    const response = await api.get('/users/preferences');
+    return response.data;
+  },
+  setAppearance: async (appearance: unknown): Promise<{ appearance: unknown }> => {
+    const response = await api.put('/users/preferences', { appearance });
+    return response.data;
+  },
+  getBackground: async (): Promise<{ image: string | null }> => {
+    const response = await api.get('/users/preferences/background');
+    return response.data;
+  },
+  setBackground: async (image: string | null): Promise<void> => {
+    await api.put('/users/preferences/background', { image });
+  },
+  setAccent: async (accentColor: string | null): Promise<{ accentColor: string | null }> => {
+    const response = await api.put('/users/preferences', { accentColor });
+    return response.data;
+  },
+};
+
+// My Files > Board: a person's own layout for a folder (where items sit, and the zones they drew).
+export type BoardZoneShape = 'rectangle' | 'rounded' | 'circle' | 'pill';
+// labelX/labelY: where the zone's name sits inside it (left out = the shape's usual spot).
+// `emoji` and `style` are Boards-only and stored only when set (no style = the original tinted look).
+export type BoardZoneStyle = 'tint' | 'outline' | 'dashed' | 'glass';
+export interface BoardZone { id: string; name: string; color: string; shape: BoardZoneShape; x: number; y: number; w: number; h: number; labelX?: number; labelY?: number; emoji?: string; style?: BoardZoneStyle }
+export interface BoardLayout { items: Record<string, { x: number; y: number }>; zones: BoardZone[] }
+
+export const boardsAPI = {
+  get: async (folderKey: string): Promise<BoardLayout> => {
+    const response = await api.get(`/boards/${folderKey}`);
+    return response.data;
+  },
+  save: async (folderKey: string, layout: BoardLayout): Promise<BoardLayout> => {
+    const response = await api.put(`/boards/${folderKey}`, layout);
+    return response.data;
+  },
+};
+
+export const activityAPI = {
+  focus: async (fileId: string, seconds: number) => {
+    await api.post('/activity/focus', { fileId, seconds });
+  },
+};
+
+// AI Assistant API (local Ollama)
+export type AssistantHistoryMessage = { role: 'user' | 'assistant'; content: string };
+// Choices made from a "which one do you mean?" list, sent back with the original request.
+export type AssistantResolved = { files?: Record<string, string>; folder?: string; route?: Record<string, unknown> };
+export interface AssistantChoice {
+  id: string;
+  kind: 'file' | 'folder';
+  name: string;
+  location: string;
+  source: 'owned' | 'shared' | 'team';
+  sourceLabel: string;
+  updatedAt?: string;
+}
+
+// File Box AI as a companion: its name, tone, how often it speaks up, and what it remembers.
+export type CompanionTone = 'friendly' | 'concise' | 'professional' | 'playful';
+export type CompanionProactivity = 'quiet' | 'balanced' | 'chatty';
+export interface CompanionMemory { id: string; text: string; createdAt: string }
+export interface CompanionProfile { name: string; tone: CompanionTone; proactivity: CompanionProactivity; memoryOn: boolean; screenAware: boolean; memories: CompanionMemory[] }
+
+// Something Ask File Box noticed about the current file, folder or selection (rules and stored data only).
+export interface CompanionSuggestion {
+  key: string;
+  type: string;
+  kind: 'problem' | 'insight' | 'organize' | 'continue';
+  text: string;
+  action: { label: string; text?: string; mode?: 'send' | 'prefill'; open?: { fileId: string; name: string; parentFolder: string | null } };
+}
+
+export const companionAPI = {
+  get: async (): Promise<CompanionProfile> => (await api.get('/companion')).data,
+  update: async (settings: Partial<Omit<CompanionProfile, 'memories'>>): Promise<CompanionProfile> => (await api.put('/companion', settings)).data,
+  remember: async (text: string): Promise<CompanionProfile> => (await api.post('/companion/memories', { text })).data,
+  forget: async (id: string): Promise<CompanionProfile> => (await api.delete(`/companion/memories/${id}`)).data,
+  forgetAll: async (): Promise<CompanionProfile> => (await api.delete('/companion/memories')).data,
+  suggestions: async (focus: { fileId?: string; fileIds?: string[]; folderId?: string }): Promise<{ subject: string; suggestions: CompanionSuggestion[] }> =>
+    (await api.get('/companion/suggestions', { params: { fileId: focus.fileId, folderId: focus.folderId, fileIds: focus.fileIds?.length ? focus.fileIds.join(',') : undefined } })).data,
+};
+
+// What Ask File Box is looking at, sent with each question (ids are re-checked on the server).
+export interface AssistantFocus { fileId?: string; fileIds?: string[]; folderId?: string; page?: string }
+
+// Screen awareness for one question: which kind of view it is about, the PDF page, and (only when the
+// question needs to see the interface) a screenshot of the visible File Box app, sent once and not kept.
+export interface AssistantScreen { fingerprint: string; kind: 'pdf' | 'image' | 'ui'; pdfPage?: number; image?: string; explicit?: boolean; captureFailed?: boolean }
+
+export const aiAssistantAPI = {
+  chat: async (question: string, fileId?: string, context?: string, history?: AssistantHistoryMessage[], resolved?: AssistantResolved) => {
+    const response = await api.post('/ai-assistant/chat', { question, fileId, context, history, resolved });
+    return response.data;
+  },
+  /**
+   * Same as chat, but the answer arrives piece by piece (onToken) while File Box AI writes it.
+   * Resolves with the full reply; errors carry `response.data` like axios errors.
+   */
+  chatStream: async (
+    body: { question: string; fileId?: string; history?: AssistantHistoryMessage[]; resolved?: AssistantResolved; context?: string; focus?: AssistantFocus; screen?: AssistantScreen },
+    onToken: (text: string) => void,
+    onReset?: () => void,
+  ) => {
+    const token = await currentToken('/ai-assistant/chat');
+    const response = await fetch(`${API_URL}/ai-assistant/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ ...body, stream: true }),
+    });
+    const fail = (status: number, data: any) => Object.assign(new Error(data?.message || 'File Box AI could not answer.'), { response: { status, data } });
+    if (!response.ok || !response.body) throw fail(response.status, await response.json().catch(() => ({})));
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        if (event.type === 'token') onToken(event.text);
+        else if (event.type === 'reset') onReset?.();
+        else if (event.type === 'done') return event.reply;
+        else if (event.type === 'error') throw fail(event.status, event.body);
+      }
+    }
+    throw fail(500, { message: 'File Box AI stopped before finishing the answer.' });
+  },
+  presence: async () => {
+    await api.post('/ai-assistant/presence');
+  },
+  feedback: async (body: {
+    question: string; answer: string; rating: 'up' | 'down'; intent?: string; action?: string; phrase?: string;
+    shownFileIds?: string[]; correctFileId?: string; note?: string;
+  }): Promise<{ ok: boolean; learned: boolean }> => {
+    const response = await api.post('/ai-assistant/feedback', body);
+    return response.data;
+  },
+  readingStatus: async (): Promise<{ total: number; done: number; pending: number }> => {
+    const response = await api.get('/ai-assistant/reading-status');
+    return response.data;
+  },
+  confirmAction: async (action: { type: string; question: string; fileId?: string | null; fileIds?: string[] }) => {
     const response = await api.post('/ai-assistant/confirm', { ...action, fileId: action.fileId || undefined });
     return response.data;
   },

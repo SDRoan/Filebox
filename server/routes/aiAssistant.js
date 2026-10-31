@@ -9,6 +9,20 @@ const { authorizeFile, sendDenied } = require('../services/permissions');
 const fileAIActions = require('../services/fileAIActions');
 const { buildDuplicateSuggestions } = require('../services/duplicateSuggestions');
 const { suggestOrganization, applyProposals } = require('../services/organizeSuggestions');
+const { INTENTS } = require('../services/intentRouter');
+const { ACTIONS } = require('../services/requestUnderstanding');
+const { noteActivity, readingStatus } = require('../services/fileProfiler');
+const { recordFeedback } = require('../services/aiFeedback');
+const { fileById } = require('../services/fileResolver');
+const { logQuestion } = require('../services/activityLog');
+const companion = require('../services/companion');
+
+// Questions asked in File Box AI go into the day's activity (choices picked from a list are not new questions).
+const recordQuestion = (turn, reply) => {
+  if (turn.resolved?.route) return;
+  const fileId = reply?.sources?.[0]?.fileId || reply?.files?.[0]?.id || reply?.fileId || null;
+  logQuestion(turn.userId, turn.question, isId(String(fileId || '')) ? fileId : null);
+};
 
 const sanitizeHistory = (history = []) =>
   (Array.isArray(history) ? history : [])
@@ -18,11 +32,63 @@ const sanitizeHistory = (history = []) =>
     }))
     .filter((message) => message.content);
 
-const sendAssistantError = (res, error) => {
-  const message = error.message || 'The AI assistant could not complete this request.';
-  const offline = /ollama|connect|unavailable|ECONNREFUSED|model/i.test(message);
+const isId = (value) => typeof value === 'string' && /^[a-f0-9]{24}$/i.test(value);
 
-  res.status(offline ? 503 : 500).json({
+// Ask File Box screen awareness for one question (see services/companionScreen.js). The screenshot, if
+// any, is a JPEG of the visible File Box app; it is used for this answer only and never stored or logged.
+const MAX_SCREENSHOT_CHARS = 5.5 * 1024 * 1024;
+const sanitizeScreen = (screen) => {
+  if (!screen || typeof screen !== 'object' || !['pdf', 'image', 'ui'].includes(screen.kind)) return undefined;
+  const image = typeof screen.image === 'string' && screen.image.length <= MAX_SCREENSHOT_CHARS && /^\/9j\/[A-Za-z0-9+/]+=*$/.test(screen.image) ? screen.image : undefined;
+  return {
+    kind: screen.kind,
+    fingerprint: typeof screen.fingerprint === 'string' ? screen.fingerprint.slice(0, 300) : '',
+    pdfPage: Number.isInteger(screen.pdfPage) && screen.pdfPage > 0 && screen.pdfPage < 100000 ? screen.pdfPage : undefined,
+    image,
+    explicit: screen.explicit === true,
+    captureFailed: screen.captureFailed === true,
+  };
+};
+
+// Choices the user made from an earlier list. Only ids; the assistant re-checks access to each one.
+const sanitizeResolved = (resolved) => {
+  const files = {};
+  if (resolved && typeof resolved.files === 'object' && resolved.files) {
+    Object.entries(resolved.files).slice(0, 20).forEach(([name, id]) => {
+      if (typeof name === 'string' && name.length <= 200 && isId(id)) files[name.toLowerCase()] = id;
+    });
+  }
+  return { files, folder: isId(resolved?.folder) ? resolved.folder : undefined, route: sanitizeRoute(resolved?.route) };
+};
+
+// How File Box understood the original request, returned with a choice so it continues unchanged.
+// It is the user's own request; permissions and confirmations still apply to whatever it asks for.
+const sanitizeRoute = (route) => {
+  if (!route || typeof route !== 'object' || !INTENTS.includes(route.intent)) return undefined;
+  const text = (value) => (typeof value === 'string' ? value.slice(0, 200) : '');
+  return {
+    intent: route.intent,
+    action: ACTIONS.includes(route.action) && route.action !== 'none' ? route.action : undefined,
+    target: text(route.target),
+    destination: text(route.destination),
+    newName: text(route.newName),
+    searchTerms: text(route.searchTerms),
+    lookFor: ['what_the_file_is', 'words_inside_files', 'none'].includes(route.lookFor) ? route.lookFor : 'none',
+    source: route.source === 'model' ? 'model' : 'rule',
+    rule: text(route.rule),
+    confidence: typeof route.confidence === 'number' ? route.confidence : 0,
+    mode: route.mode === 'offline' ? 'offline' : 'ai',
+  };
+};
+
+const assistantErrorBody = (error) => {
+  const message = error.message || 'The AI assistant could not complete this request.';
+  // A model that took too long is not "offline"; say so plainly instead of showing the raw error.
+  if (/timeout|timed out/i.test(message)) {
+    return { status: 504, body: { code: 'AI_SLOW', message, answer: 'File Box AI took too long to answer (your computer may be busy). Please try again in a moment.', provider: 'ollama', model: config.ollama.assistantModel, timestamp: new Date() } };
+  }
+  const offline = /ollama|connect|unavailable|ECONNREFUSED|model/i.test(message);
+  return { status: offline ? 503 : 500, body: {
     code: offline ? 'AI_OFFLINE' : 'AI_ERROR',
     message,
     answer: offline
@@ -31,7 +97,12 @@ const sendAssistantError = (res, error) => {
     provider: 'ollama',
     model: config.ollama.assistantModel,
     timestamp: new Date(),
-  });
+  } };
+};
+
+const sendAssistantError = (res, error) => {
+  const { status, body } = assistantErrorBody(error);
+  res.status(status).json(body);
 };
 
 // Assistant health and model status
@@ -60,7 +131,12 @@ router.get('/status', auth, async (req, res) => {
 router.post('/chat', auth, async (req, res) => {
   try {
     const question = typeof req.body?.question === 'string' ? req.body.question.trim() : '';
-    const fileId = typeof req.body?.fileId === 'string' && req.body.fileId.trim() ? req.body.fileId.trim() : undefined;
+    // What the person is looking at (Ask File Box): the open file, selected files, the folder they are in.
+    // Only ids; every one is checked against their access before it is used.
+    const focus = req.body?.focus && typeof req.body.focus === 'object' ? req.body.focus : {};
+    const focusFileIds = [...new Set((Array.isArray(focus.fileIds) ? focus.fileIds : []).filter(isId))].slice(0, 20);
+    const fileId = typeof req.body?.fileId === 'string' && req.body.fileId.trim() ? req.body.fileId.trim()
+      : isId(focus.fileId) ? focus.fileId : (focusFileIds.length === 1 ? focusFileIds[0] : undefined);
     const context = typeof req.body?.context === 'string' ? req.body.context.trim() : '';
     const history = sanitizeHistory(req.body?.history);
 
@@ -71,17 +147,113 @@ router.post('/chat', auth, async (req, res) => {
       });
     }
 
-    const result = await ollamaWorkspaceAssistant.chat({
+    // File Box AI as a companion: its name, tone and what the person asked it to remember.
+    const profile = await companion.getProfile(req.user._id);
+    const memoryReply = await companion.handleMemoryCommand(req.user._id, question, profile);
+    const persona = companion.personaFor(profile, req.user.name);
+
+    const turn = {
       userId: req.user._id,
       question,
       fileId,
       history,
-      context,
-    });
+      // Where the person is in File Box (sent by the page), and their saved notes.
+      // With screen awareness off, only the page name is used (the page sends nothing more either).
+      context: [
+        (profile.screenAware === false ? context.split('\n\n')[0] : context).slice(0, 5000),
+        // With screen awareness off it cannot see the screen, and should say so rather than guess.
+        profile.screenAware === false && 'Screen awareness is turned off, so you cannot see their screen. If they ask about what is on it, say you cannot see the screen while screen awareness is off (the eye button in Ask File Box turns it on), and do not describe colors, layout or anything visual.',
+        companion.memoryNote(profile),
+      ].filter(Boolean).join('\n\n'),
+      resolved: sanitizeResolved(req.body?.resolved),
+      persona,
+      fileIds: focusFileIds,
+      folderId: isId(focus.folderId) ? focus.folderId : undefined,
+      screen: sanitizeScreen(req.body?.screen),
+    };
 
-    res.json(result);
+    if (memoryReply) {
+      const reply = { provider: 'local-rules', fileId: null, timestamp: new Date(), answer: memoryReply.answer, memoryChanged: Boolean(memoryReply.memoryChanged), route: { intent: 'memory' } };
+      if (req.body?.stream === true) {
+        res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+        return res.end(`${JSON.stringify({ type: 'done', reply })}\n`);
+      }
+      return res.json(reply);
+    }
+
+    // Streaming: one JSON object per line - { type: 'token', text } while the answer is written,
+    // then { type: 'done', reply } or { type: 'error', status, body }.
+    if (req.body?.stream === true) {
+      res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.flushHeaders?.();
+      const send = (event) => res.write(`${JSON.stringify(event)}\n`);
+      try {
+        const reply = await ollamaWorkspaceAssistant.chat({
+          ...turn,
+          onToken: (text) => send({ type: 'token', text }),
+          // The answer being written is replaced (File Box looked in more files); the page clears it.
+          onReset: () => send({ type: 'reset' }),
+        });
+        send({ type: 'done', reply });
+        recordQuestion(turn, reply);
+      } catch (error) {
+        send({ type: 'error', ...assistantErrorBody(error) });
+      }
+      return res.end();
+    }
+
+    const reply = await ollamaWorkspaceAssistant.chat(turn);
+    res.json(reply);
+    recordQuestion(turn, reply);
   } catch (error) {
     sendAssistantError(res, error);
+  }
+});
+
+// How far File Box has got reading the files this person can see (for "Reading your files: 4 of 6").
+router.get('/reading-status', auth, async (req, res) => {
+  try {
+    res.json(await readingStatus(req.user._id));
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Could not check reading progress.' });
+  }
+});
+
+// The File Box AI page is open: background file reading stays paused so questions are answered first.
+router.post('/presence', auth, (req, res) => {
+  noteActivity();
+  res.json({ ok: true });
+});
+
+// 👍/👎 on an answer, optionally with the file that was actually meant. File Box uses corrections for the
+// same person's later, similar requests.
+router.post('/feedback', auth, async (req, res) => {
+  try {
+    const body = req.body || {};
+    const rating = body.rating === 'up' ? 'up' : body.rating === 'down' ? 'down' : '';
+    const question = typeof body.question === 'string' ? body.question.trim() : '';
+    if (!rating || !question) return res.status(400).json({ message: 'A rating and the original question are required.' });
+    let correctFile = null;
+    if (body.correctFileId) {
+      const file = isId(body.correctFileId) ? await fileById(req.user._id, body.correctFileId, { level: 'viewer' }) : null;
+      if (!file) return res.status(400).json({ message: 'That file is not available to you.' });
+      correctFile = file._id;
+    }
+    await recordFeedback(req.user._id, {
+      question,
+      answer: typeof body.answer === 'string' ? body.answer : '',
+      intent: typeof body.intent === 'string' ? body.intent : '',
+      action: typeof body.action === 'string' ? body.action : '',
+      phrase: typeof body.phrase === 'string' ? body.phrase : '',
+      rating,
+      shownFiles: Array.isArray(body.shownFileIds) ? body.shownFileIds.filter(isId) : [],
+      correctFile,
+      note: typeof body.note === 'string' ? body.note : '',
+    });
+    res.json({ ok: true, learned: Boolean(correctFile) });
+  } catch (error) {
+    res.status(500).json({ message: error.message || 'Could not save feedback.' });
   }
 });
 
@@ -91,6 +263,7 @@ router.post('/confirm', auth, async (req, res) => {
     const type = typeof req.body?.type === 'string' ? req.body.type : '';
     const question = typeof req.body?.question === 'string' ? req.body.question.trim() : '';
     const fileId = typeof req.body?.fileId === 'string' && req.body.fileId.trim() ? req.body.fileId.trim() : undefined;
+    const fileIds = Array.isArray(req.body?.fileIds) ? req.body.fileIds.filter(isId).slice(0, 20) : undefined;
 
     if (!type || !question) {
       return res.status(400).json({ message: 'Action type and original request are required.' });
@@ -101,6 +274,7 @@ router.post('/confirm', auth, async (req, res) => {
       type,
       question,
       fileId,
+      fileIds,
     });
     res.json(result);
   } catch (error) {

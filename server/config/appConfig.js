@@ -29,6 +29,14 @@ module.exports = {
   // Storage Configuration
   storage: {
     defaultLimit: parseInt(process.env.DEFAULT_STORAGE_LIMIT_BYTES) || (10 * 1024 * 1024 * 1024), // Default 10GB
+  },
+
+  // Folder Sync copies folders from the computer File Box runs on. Only folders inside these roots
+  // can be synced (comma-separated; default: the home folder). FOLDER_SYNC_ENABLED=false turns it off,
+  // which a File Box shared by several people should do: their folders are not on this computer.
+  folderSync: {
+    enabled: process.env.FOLDER_SYNC_ENABLED !== 'false',
+    roots: (process.env.FOLDER_SYNC_ROOTS || require('os').homedir()).split(',').map(root => root.trim()).filter(Boolean),
   }
 };
 

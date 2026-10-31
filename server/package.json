@@ -5,8 +5,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "NODE_ENV=development nodemon --ignore node_modules.offloaded index.js",
-    "seed:learning": "node scripts/seedLearningResources.js"
+    "dev": "NODE_ENV=development nodemon index.js",
+    "seed:learning": "node scripts/seedLearningResources.js",
+    "test:ai": "node scripts/aiAccuracy.js"
   },
   "dependencies": {
     "archiver": "^7.0.1",

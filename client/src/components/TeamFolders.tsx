@@ -215,10 +215,10 @@ const TeamFolders: React.FC<TeamFoldersProps> = ({ onClose, onFolderSelect, embe
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
-      case 'admin': return '#3f6543';
+      case 'admin': return 'var(--fb-g-3f6543, #3f6543)';
       case 'editor': return '#5f7fa3';
-      case 'viewer': return '#9aa58f';
-      default: return '#9aa58f';
+      case 'viewer': return 'var(--fb-g-9aa58f, #9aa58f)';
+      default: return 'var(--fb-g-9aa58f, #9aa58f)';
     }
   };
 

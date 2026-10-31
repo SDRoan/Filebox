@@ -6,6 +6,7 @@ import FilePreview from './FilePreview';
 import MoveCopyModal from './MoveCopyModal';
 import ShareDialog from './ShareDialog';
 import FileAIDialog from './FileAIDialog';
+import AddToBoardDialog from './AddToBoardDialog';
 import { capabilitiesFor, AccessRole } from '../utils/permissions';
 import { formatRelativeTime } from '../utils/fileDisplay';
 import { shareAPI } from '../services/api';
@@ -14,7 +15,10 @@ import FileComments from './FileComments';
 import FileActivity from './FileActivity';
 import FileRelationships from './FileRelationships';
 import ClassificationBadge from './ClassificationBadge';
-import { ImageIcon, VideoIcon, AudioIcon, DocumentIcon, SummaryIcon, AnalyticsIcon, EyeIcon, PackageIcon, CopyIcon, ShareIcon, ScrollIcon, CommentIcon, DownloadIcon, StarredIcon, TrashIcon, RestoreIcon, LinkIcon, EditIcon, AIAssistantIcon } from './Icons';
+import { ImageIcon, VideoIcon, AudioIcon, DocumentIcon, SummaryIcon, AnalyticsIcon, EyeIcon, PackageIcon, CopyIcon, ShareIcon, ScrollIcon, CommentIcon, DownloadIcon, StarredIcon, TrashIcon, RestoreIcon, LinkIcon, EditIcon, AIAssistantIcon, SignatureIcon, BoardsIcon } from './Icons';
+import SignPdfDialog from './SignPdfDialog';
+import ImageThumbnail from './ImageThumbnail';
+import ImageCaption from './ImageCaption';
 import './FileItem.css';
 
 interface FileItemProps {
@@ -28,6 +32,11 @@ interface FileItemProps {
   isSelected?: boolean;
   selectionMode?: boolean;
   onSelect?: () => void;
+  // When set (a timestamp), open this file's preview once.
+  openPreview?: number;
+  onPreviewOpened?: () => void;
+  // Personal Boards: actions for this card on the board (Remove from board), shown first in its menu.
+  boardActions?: React.ReactNode;
 }
 
 const FileItem: React.FC<FileItemProps> = ({
@@ -41,13 +50,25 @@ const FileItem: React.FC<FileItemProps> = ({
   isSelected = false,
   selectionMode = false,
   onSelect,
+  openPreview,
+  onPreviewOpened,
+  boardActions,
 }) => {
   const [showPreview, setShowPreview] = useState(false);
+  useEffect(() => {
+    if (!openPreview) return;
+    setShowPreview(true);
+    onPreviewOpened?.();
+    // Only when a new request arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openPreview]);
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [showAIDialog, setShowAIDialog] = useState(false);
+  const [showAddToBoard, setShowAddToBoard] = useState(false);
   const [showVersions, setShowVersions] = useState(false);
+  const [showSign, setShowSign] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showActivity, setShowActivity] = useState(false);
   const [showRelationships, setShowRelationships] = useState(false);
@@ -263,7 +284,7 @@ const FileItem: React.FC<FileItemProps> = ({
             onClick={(e) => e.stopPropagation()}
           />
         )}
-        <div className="file-icon" onClick={() => !selectionMode && canPreview() && !showTrash && setShowPreview(true)} style={{ cursor: !selectionMode && canPreview() && !showTrash ? 'pointer' : 'default' }}>{getFileIcon(file.mimeType)}</div>
+        <div className="file-icon" onClick={() => !selectionMode && canPreview() && !showTrash && setShowPreview(true)} style={{ cursor: !selectionMode && canPreview() && !showTrash ? 'pointer' : 'default' }}>{file.mimeType.startsWith('image/') && !showTrash ? <ImageThumbnail fileId={file._id} name={file.originalName} fallback={getFileIcon(file.mimeType)} /> : getFileIcon(file.mimeType)}</div>
         <div className="file-info" onClick={() => !selectionMode && canPreview() && !showTrash && !isRenaming && setShowPreview(true)} style={{ cursor: !selectionMode && canPreview() && !showTrash && !isRenaming ? 'pointer' : 'default', flex: 1 }}>
           {isRenaming ? (
             <input
@@ -287,6 +308,9 @@ const FileItem: React.FC<FileItemProps> = ({
             }}>
               {file.originalName}
             </div>
+          )}
+          {file.mimeType.startsWith('image/') && !showTrash && !isRenaming && (
+            <ImageCaption fileId={file._id} initial={file.aiCaption} canWrite={caps.canEdit} />
           )}
           <div className="file-meta">
             {formatSize(file.size)} • {showTrash && file.deletedAt ? (
@@ -313,6 +337,7 @@ const FileItem: React.FC<FileItemProps> = ({
         <ItemActions className="file-actions" label={`Actions for ${file.originalName}`}>
           {!showTrash ? (
             <>
+              {boardActions}
               {canPreview() && (
                 <button onClick={() => setShowPreview(true)} className="icon-button" title="Open">
                   <EyeIcon size={18} color="currentColor" />
@@ -331,7 +356,10 @@ const FileItem: React.FC<FileItemProps> = ({
                   <LinkIcon size={18} color="currentColor" />
                 </button>
               )}
-              <button onClick={() => setShowAIDialog(true)} className="icon-button" title="Ask File Box AI">
+              <button onClick={() => setShowAddToBoard(true)} className="icon-button" title="Add to board…">
+                <BoardsIcon size={18} color="currentColor" />
+              </button>
+              <button onClick={() => setShowAIDialog(true)} className="icon-button" title="Ask File Box">
                 <AIAssistantIcon size={18} color="currentColor" />
               </button>
               {caps.canRename && (
@@ -374,6 +402,11 @@ const FileItem: React.FC<FileItemProps> = ({
                   title={file.isStarred ? 'Unstar' : 'Star'}
                 >
                   <StarredIcon size={18} color="currentColor" />
+                </button>
+              )}
+              {caps.canEdit && /pdf/i.test(file.mimeType || '') && (
+                <button onClick={() => setShowSign(true)} className="icon-button" title="Sign">
+                  <SignatureIcon size={18} color="currentColor" />
                 </button>
               )}
               {caps.canViewVersions && (
@@ -445,11 +478,17 @@ const FileItem: React.FC<FileItemProps> = ({
           }}
         />
       )}
+      {showAddToBoard && (
+        <AddToBoardDialog item={{ type: 'file', id: file._id, name: file.originalName }} onClose={() => setShowAddToBoard(false)} />
+      )}
       {showAIDialog && (
         <FileAIDialog fileId={file._id} fileName={file.originalName} onClose={() => setShowAIDialog(false)} />
       )}
       {showShareModal && (
         <ShareDialog fileId={file._id} fileName={file.originalName} onClose={() => setShowShareModal(false)} />
+      )}
+      {showSign && (
+        <SignPdfDialog file={file} onClose={() => setShowSign(false)} />
       )}
       {showVersions && (
         <FileVersions

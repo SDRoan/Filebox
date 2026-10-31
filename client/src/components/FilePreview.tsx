@@ -1,11 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useFileFocus } from '../hooks/useFileFocus';
 import { FileItemType } from '../types';
 import { filesAPI } from '../services/api';
 import CodeViewer from './CodeViewer';
-import FileMemory from './FileMemory';
 import PredictiveOrganization from './PredictiveOrganization';
 import FileEditor from './FileEditor';
-import { MemoryIcon, DownloadIcon, CloseIcon, EditIcon } from './Icons';
+import { DownloadIcon, CloseIcon, EditIcon, SignatureIcon } from './Icons';
+import SignPdfDialog from './SignPdfDialog';
+import { capabilitiesFor, AccessRole } from '../utils/permissions';
+import { useCompanion } from '../context/CompanionContext';
+import PdfPageViewer from './PdfPageViewer';
 import './FilePreview.css';
 
 interface FilePreviewProps {
@@ -14,11 +18,23 @@ interface FilePreviewProps {
 }
 
 const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
+  // Ask File Box knows which file is open while the preview shows.
+  const { showFile, hideFile, setFilePage } = useCompanion();
+  // PDFs show in File Box's own viewer (page-aware); the browser's viewer is one click away.
+  const [browserPdfViewer, setBrowserPdfViewer] = useState(false);
+  const reportPage = useCallback((page: number, total: number) => setFilePage(file._id, page, total), [file._id, setFilePage]);
+  useEffect(() => {
+    showFile({ id: file._id, name: file.originalName, mimeType: file.mimeType });
+    return () => hideFile(file._id);
+  }, [file._id, file.originalName, file.mimeType, showFile, hideFile]);
+  useFileFocus(file._id);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
-  const [showMemory, setShowMemory] = useState(false);
+  const [showSign, setShowSign] = useState(false);
+  // Owners and editors can sign PDFs (same rule as the file menu).
+  const canSign = /pdf/i.test(file.mimeType || '') && capabilitiesFor(((file as any).access as AccessRole) || 'owner').canEdit;
   const [showOrgSuggestions, setShowOrgSuggestions] = useState(true);
   const [showEditor, setShowEditor] = useState(false);
 
@@ -41,7 +57,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
 
       // Handle images
       if (mimeType.startsWith('image/')) {
-        const blob = await filesAPI.downloadFile(file._id);
+        const blob = await filesAPI.downloadFile(file._id, { view: true });
         const url = URL.createObjectURL(blob);
         setPreviewUrl(url);
         setLoading(false);
@@ -50,7 +66,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
 
       // Handle videos
       if (mimeType.startsWith('video/')) {
-        const blob = await filesAPI.downloadFile(file._id);
+        const blob = await filesAPI.downloadFile(file._id, { view: true });
         const url = URL.createObjectURL(blob);
         setPreviewUrl(url);
         setLoading(false);
@@ -59,7 +75,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
 
       // Handle PDFs
       if (mimeType.includes('pdf')) {
-        const blob = await filesAPI.downloadFile(file._id);
+        const blob = await filesAPI.downloadFile(file._id, { view: true });
         const url = URL.createObjectURL(blob);
         setPreviewUrl(url);
         setLoading(false);
@@ -148,7 +164,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
         mimeType.includes('css') ||
         mimeType.includes('html')
       ) {
-        const blob = await filesAPI.downloadFile(file._id);
+        const blob = await filesAPI.downloadFile(file._id, { view: true });
         const text = await blob.text();
         setTextContent(text);
         setLoading(false);
@@ -283,7 +299,7 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
 
   return (
     <div className="file-preview-overlay" onClick={onClose}>
-      <div className="file-preview-container" onClick={(e) => e.stopPropagation()}>
+      <div className="file-preview-container" data-file-id={file._id} onClick={(e) => e.stopPropagation()}>
         <div className="file-preview-header">
           <div className="file-preview-title">
             <h3>{file.originalName}</h3>
@@ -292,14 +308,6 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
             </span>
           </div>
           <div className="file-preview-actions">
-            <button 
-              onClick={() => setShowMemory(true)} 
-              className="preview-action-btn memory-btn"
-              title="View File Memory"
-            >
-              <MemoryIcon size={16} color="#ffffff" />
-              <span>Memory</span>
-            </button>
             {isEditableFile() && (
               <button 
                 onClick={() => setShowEditor(true)} 
@@ -308,6 +316,12 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
               >
                 <EditIcon size={16} color="#ffffff" />
                 <span>Edit</span>
+              </button>
+            )}
+            {canSign && (
+              <button onClick={() => setShowSign(true)} className="preview-action-btn" title="Sign this PDF">
+                <SignatureIcon size={16} color="#ffffff" />
+                <span>Sign</span>
               </button>
             )}
             <button onClick={handleDownload} className="preview-action-btn" title="Download File">
@@ -356,7 +370,11 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
             </video>
           )}
 
-          {!loading && !error && fileType === 'pdf' && previewUrl && (
+          {!loading && !error && fileType === 'pdf' && previewUrl && !browserPdfViewer && (
+            <PdfPageViewer url={previewUrl} name={file.originalName} onPageChange={reportPage} onOpenBrowserViewer={() => setBrowserPdfViewer(true)} />
+          )}
+
+          {!loading && !error && fileType === 'pdf' && previewUrl && browserPdfViewer && (
             <iframe
               src={previewUrl}
               className="preview-pdf"
@@ -415,8 +433,8 @@ const FilePreview: React.FC<FilePreviewProps> = ({ file, onClose }) => {
           }}
         />
       )}
-      {showMemory && (
-        <FileMemory fileId={file._id} onClose={() => setShowMemory(false)} />
+      {showSign && (
+        <SignPdfDialog file={file} onClose={() => setShowSign(false)} onSigned={() => loadPreview()} />
       )}
     </div>
   );

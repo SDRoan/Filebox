@@ -52,7 +52,7 @@ const FileAIDialog: React.FC<FileAIDialogProps> = ({ fileId, fileName, onClose }
       <div className="ai-panel-dialog" role="dialog" aria-modal="true" aria-labelledby="file-ai-title">
         <header className="ai-panel-header">
           <div>
-            <h2 id="file-ai-title"><AIAssistantIcon size={18} /> Ask File Box AI</h2>
+            <h2 id="file-ai-title"><AIAssistantIcon size={18} /> Ask File Box</h2>
             <p title={fileName}>{fileName}</p>
           </div>
           <button className="ai-panel-close" onClick={onClose} aria-label="Close"><CloseIcon size={18} /></button>
@@ -92,7 +92,7 @@ const FileAIDialog: React.FC<FileAIDialogProps> = ({ fileId, fileName, onClose }
             {result.truncated && <p className="ai-panel-muted">This file is long; only the first part was read.</p>}
           </section>
         )}
-        <p className="ai-panel-footnote">Runs on this computer with Ollama. Your file is not sent anywhere.</p>
+        <p className="ai-panel-footnote">File Box AI runs on this computer with Ollama. Your file is not sent anywhere.</p>
       </div>
     </div>
   );

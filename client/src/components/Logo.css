@@ -1,6 +1,6 @@
-.logo-container { display: flex; align-items: center; gap: 10px; color: #253d32; }
+.logo-container { display: flex; align-items: center; gap: 10px; color: var(--fb-g-253d32, #253d32); }
 .logo-img { display: block; flex-shrink: 0; width: 34px; height: 34px; }
-.logo-text { color: #252c28; font-size: 22px; font-weight: 650; letter-spacing: -1px; }
+.logo-text { color: var(--fb-g-252c28, #252c28); font-size: 22px; font-weight: 650; letter-spacing: -1px; }
 .logo-small .logo-img { width: 30px; height: 30px; }
 .logo-small .logo-text { font-size: 20px; }
 .logo-large .logo-img { width: 46px; height: 46px; }

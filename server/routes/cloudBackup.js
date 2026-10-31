@@ -1,121 +1,78 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('../middleware/auth');
+const CloudBackup = require('../models/CloudBackup');
 const cloudBackupService = require('../services/cloudBackup');
 
-// Get all backups for the current user
+// Folder Sync (see services/cloudBackup.js). Every route works only on the signed-in account's syncs.
+
+const sendError = (res, error, fallback) => res.status(error.status || 500).json({ message: error.message || fallback });
+
 router.get('/', auth, async (req, res) => {
   try {
-    const backups = await cloudBackupService.getUserBackups(req.user._id);
-    res.json(backups);
+    res.json(await cloudBackupService.getUserBackups(req.user._id));
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 'Could not load your synced folders.');
   }
 });
 
-// Get default backup paths
+// Desktop / Documents, if they may be synced, plus the approved roots (for the page's hint).
 router.get('/default-paths', auth, async (req, res) => {
   try {
     const paths = cloudBackupService.getDefaultBackupPaths();
-    const availablePaths = {};
-    
-    // Check which paths exist
-    for (const [key, path] of Object.entries(paths)) {
-      if (path) {
-        availablePaths[key] = {
-          path: path,
-          exists: await cloudBackupService.checkPathExists(path)
-        };
-      }
+    const available = {};
+    for (const [key, folder] of Object.entries(paths)) {
+      available[key] = { path: folder, exists: await cloudBackupService.checkPathExists(folder) };
     }
-    
-    res.json(availablePaths);
+    res.json({ ...available, enabled: cloudBackupService.isEnabled(), roots: cloudBackupService.approvedRoots() });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 'Could not check your folders.');
   }
 });
 
-// Create or update a backup configuration
 router.post('/', auth, async (req, res) => {
   try {
     const { sourceType, sourcePath, enabled, backupFrequency } = req.body;
-    
-    if (!sourceType || !sourcePath) {
-      return res.status(400).json({ message: 'sourceType and sourcePath are required' });
+    if (!['desktop', 'documents', 'custom'].includes(sourceType) || !sourcePath) {
+      return res.status(400).json({ message: 'Choose a folder to sync.' });
     }
-
-    // Check if path exists and is accessible
-    const pathExists = await cloudBackupService.checkPathExists(sourcePath);
-    if (!pathExists) {
-      return res.status(400).json({ 
-        message: 'Source path does not exist or you do not have permission to access it. Please check the folder permissions.' 
-      });
-    }
-
-    const backup = await cloudBackupService.createOrUpdateBackup(
-      req.user._id,
-      sourceType,
-      sourcePath,
-      { enabled, backupFrequency }
-    );
-
-    res.json(backup);
+    res.json(await cloudBackupService.createOrUpdateBackup(req.user._id, sourceType, sourcePath, { enabled, backupFrequency }));
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 'Could not save this sync.');
   }
 });
 
-// Perform a manual backup
+// Sync now: starts in the background and answers right away; the page shows progress.
 router.post('/:backupId/backup', auth, async (req, res) => {
   try {
-    const backup = await cloudBackupService.performBackup(req.params.backupId);
-    res.json(backup);
+    const backup = await cloudBackupService.startBackup(req.params.backupId, req.user._id);
+    res.status(202).json(backup);
   } catch (error) {
-    // Check if it's a permission error
-    if (error.message && (error.message.includes('Permission denied') || error.message.includes('EPERM') || error.message.includes('EACCES'))) {
-      return res.status(403).json({ 
-        message: error.message || 'Permission denied: Cannot access the backup folder. Please check folder permissions in System Preferences > Security & Privacy > Privacy > Full Disk Access.' 
-      });
-    }
-    res.status(500).json({ message: error.message || 'Failed to perform backup' });
+    sendError(res, error, 'Could not start syncing.');
   }
 });
 
-// Update backup settings
 router.put('/:backupId', auth, async (req, res) => {
   try {
     const { enabled, backupFrequency } = req.body;
-    const CloudBackup = require('../models/CloudBackup');
-    
-    const backup = await CloudBackup.findOne({
-      _id: req.params.backupId,
-      user: req.user._id
-    });
-
-    if (!backup) {
-      return res.status(404).json({ message: 'Backup not found' });
-    }
-
-    if (enabled !== undefined) backup.enabled = enabled;
-    if (backupFrequency) backup.backupFrequency = backupFrequency;
+    const backup = await CloudBackup.findOne({ _id: req.params.backupId, user: req.user._id });
+    if (!backup) return res.status(404).json({ message: 'Sync not found.' });
+    if (enabled !== undefined) backup.enabled = Boolean(enabled);
+    if (['hourly', 'daily', 'weekly'].includes(backupFrequency)) backup.backupFrequency = backupFrequency;
     backup.updatedAt = new Date();
-    
-    await backup.save();
-    res.json(backup);
+    res.json(await backup.save());
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 'Could not update this sync.');
   }
 });
 
-// Delete a backup configuration
 router.delete('/:backupId', auth, async (req, res) => {
   try {
     await cloudBackupService.deleteBackup(req.params.backupId, req.user._id);
-    res.json({ message: 'Backup configuration deleted' });
+    res.json({ message: 'Stopped syncing this folder. Files already copied stay in File Box.' });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    sendError(res, error, 'Could not remove this sync.');
   }
 });
 
 module.exports = router;
-

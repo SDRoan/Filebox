@@ -1,11 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import FileBrowser from './FileBrowser';
 import SearchBar from './SearchBar';
 import HomeView from './HomeView';
 import RecentView from './RecentView';
 import SettingsView from './SettingsView';
+import CustomizeView from './CustomizeView';
+import TopBarColor from './TopBarColor';
+import CompanionPanel from './CompanionPanel';
+import { noteActivity, startWatching } from '../companion/screen';
 import StorageView from './StorageView';
 import TeamFolders from './TeamFolders';
 import FileRequests from './FileRequests';
@@ -23,8 +27,14 @@ import Integrations from './Integrations';
 import SignatureManager from './SignatureManager';
 import { FileRowItem } from './FileRowList';
 import { useAuth } from '../context/AuthContext';
+import { useAppearance } from '../context/AppearanceContext';
+import { useCompanion } from '../context/CompanionContext';
 import { FileItemType } from '../types';
 import { getWorkspacePage, pagePath } from '../config/workspaceNavigation';
+import AdvancedSearch from './AdvancedSearch';
+import Boards from './Boards';
+import { filesAPI, preferencesAPI } from '../services/api';
+import { applyAccent, rememberAccent } from '../theme/accent';
 import './Dashboard.css';
 import './WorkspacePages.css';
 
@@ -34,6 +44,7 @@ const Dashboard: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { appearance } = useAppearance();
   const page = getWorkspacePage(location.pathname);
   const currentView = page.id;
   const setCurrentView = useCallback((view: string, state?: unknown) => navigate(pagePath(view), state ? { state } : undefined), [navigate]);
@@ -45,14 +56,52 @@ const Dashboard: React.FC = () => {
   const [relationshipsRefreshKey, setRelationshipsRefreshKey] = useState(0);
   const [newFolderRequest, setNewFolderRequest] = useState(0);
   const [pendingUploads, setPendingUploads] = useState<{ id: number; files: File[] } | null>(null);
+  const [openFileRequest, setOpenFileRequest] = useState<{ id: string; at: number } | null>(null);
 
   const currentFolderId = folderStack[folderStack.length - 1];
+  // Advanced Search opened from inside a folder can search just that folder.
+  const insideFolder = (currentView === 'files' || currentView === 'teams') && currentFolderId && currentFolderId !== 'root';
+  const advancedSearchLink = insideFolder ? `/search?folder=${encodeURIComponent(currentFolderId)}` : '/search';
+
+  // Tell File Box AI where the person is, so "this folder" or "here" mean something to it.
+  const { setPageContext, setPage, setFolder } = useCompanion();
+  useEffect(() => { setPage(page.label); }, [page.label, setPage]);
+  useEffect(() => { startWatching(); }, []);
+  useEffect(() => { noteActivity(`Went to ${page.label}`); }, [page.label]);
+  useEffect(() => {
+    let cancelled = false;
+    const base = `The person is on the "${page.label}" page of File Box.`;
+    setPageContext(base);
+    const inFolder = (currentView === 'files' || currentView === 'teams') && currentFolderId && currentFolderId !== 'root';
+    if (inFolder) {
+      filesAPI.getFolder(currentFolderId)
+        .then(folder => {
+          if (cancelled || !folder?.name) return;
+          setPageContext(`${base} They are inside their folder "${folder.name}".`);
+          setFolder({ id: currentFolderId, name: folder.name });
+        })
+        .catch(() => setFolder(null));
+    } else {
+      setFolder(null);
+      if (currentView === 'files') setPageContext(`${base} They are at the top level of My Files.`);
+    }
+    return () => { cancelled = true; };
+  }, [page.label, currentView, currentFolderId, setPageContext, setFolder]);
+
+  // The account's accent color (Settings > Appearance), so it follows the person to other browsers.
+  useEffect(() => {
+    preferencesAPI.get()
+      .then(({ accentColor }) => { applyAccent(accentColor); rememberAccent(accentColor); })
+      .catch(() => { /* keep the color saved in this browser */ });
+  }, []);
 
   // Other pages (Home, Recent, File Box AI) can open a folder in My Files via navigation state.
   useEffect(() => {
-    const state = location.state as { openFolderId?: string | null } | null;
+    const state = location.state as { openFolderId?: string | null; highlightFileId?: string } | null;
     if (currentView !== 'files' || !state || !('openFolderId' in state)) return;
     setFolderStack(state.openFolderId ? ['root', state.openFolderId] : ['root']);
+    // …and open one file in it ("Continue" in Ask File Box, a file found by File Box AI).
+    if (state.highlightFileId) setOpenFileRequest({ id: state.highlightFileId, at: Date.now() });
     navigate(location.pathname, { replace: true, state: null });
   }, [location.state, location.pathname, currentView, navigate]);
 
@@ -106,10 +155,13 @@ const Dashboard: React.FC = () => {
     pendingUploads,
     onPendingUploadsHandled: () => setPendingUploads(null),
     onNewFolderHandled: () => setNewFolderRequest(0),
+    openFileRequest,
+    onOpenFileHandled: () => setOpenFileRequest(null),
   };
 
   return (
-    <div className="dashboard">
+    <div className={`dashboard ${appearance.sidebar.position === 'right' ? 'sidebar-right' : ''}`}>
+      <div className="dashboard-backdrop" aria-hidden="true" />
       <a className="skip-link" href="#main-content">Skip to content</a>
       <Sidebar
         currentView={currentView}
@@ -126,10 +178,16 @@ const Dashboard: React.FC = () => {
           <button className="mobile-nav-toggle" onClick={() => setMobileNavOpen(!mobileNavOpen)} aria-label="Open navigation" aria-expanded={mobileNavOpen} aria-controls="workspace-navigation">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
-          <div className="workspace-breadcrumb"><span>File Box</span><span aria-hidden="true">/</span><strong>{page.label}</strong></div>
+          <div className="workspace-breadcrumb"><span>{appearance.brandName.trim() || 'File Box'}</span><span aria-hidden="true">/</span><strong>{page.label}</strong></div>
           {currentView !== 'home' && <SearchBar onFileClick={openFile} onFolderClick={handleFolderClick} />}
+          {currentView !== 'home' && currentView !== 'search' && (
+            <Link className="adv-entry-link" to={advancedSearchLink}>Advanced search</Link>
+          )}
+          <TopBarColor />
         </header>
         <div className={`workspace-view workspace-view-${currentView}`}>
+        {currentView === 'search' && <AdvancedSearch />}
+        {currentView === 'boards' && <Boards />}
         {currentView === 'home' && (
           <HomeView onOpenFile={openFile} onOpenFolder={handleFolderClick} />
         )}
@@ -233,6 +291,9 @@ const Dashboard: React.FC = () => {
         {currentView === 'settings' && (
           <SettingsView onOpenPage={handleViewChange} />
         )}
+        {currentView === 'customize' && (
+          <CustomizeView />
+        )}
         {currentView === 'relationships' && (
           <RelationshipsList key={relationshipsRefreshKey} />
         )}
@@ -259,6 +320,7 @@ const Dashboard: React.FC = () => {
       {currentView === 'analytics' && (
         <AnalyticsDashboard onClose={() => setCurrentView('settings')} />
       )}
+      <CompanionPanel currentView={currentView} />
     </div>
   );
 };

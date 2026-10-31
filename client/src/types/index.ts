@@ -23,8 +23,17 @@ export interface FileItem {
   dataClassification?: 'Public' | 'Internal' | 'Confidential' | 'Top Secret';
   encryptionEnabled?: boolean;
   watermarkEnabled?: boolean;
+  aiCaption?: ImageCaption;
   createdAt: string;
   updatedAt: string;
+}
+
+/** A fun caption for a picture, written by File Box AI. */
+export interface ImageCaption {
+  text?: string;
+  hashtags?: string[];
+  status?: '' | 'writing' | 'done' | 'failed';
+  error?: string;
 }
 
 // Alias for convenience

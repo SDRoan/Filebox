@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { filesAPI } from '../services/api';
 import { Folder } from '../types';
 import { FolderIcon, CloseIcon } from './Icons';
@@ -9,10 +9,15 @@ interface FolderPickerModalProps {
   onClose: () => void;
   excludeFolderId?: string; // Don't show this folder (to prevent moving into itself)
   currentFolderId?: string;
+  // Optional wording for other uses (Boards: "Add a folder"); without them the picker reads as before.
+  title?: string;
+  confirmLabel?: string;
 }
 
 const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
   onSelect,
+  title,
+  confirmLabel,
   onClose,
   excludeFolderId,
   currentFolderId,
@@ -24,6 +29,17 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
   const [showCreateFolder, setShowCreateFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Where focus was when the picker opened (given back when it closes), and whether to put focus on the
+  // list once a folder's contents have loaded (after going in or out with the keyboard).
+  const opener = useRef<HTMLElement | null>(null);
+  if (opener.current === null) opener.current = document.activeElement as HTMLElement | null;
+  const focusList = useRef(true);
+
+  useEffect(() => {
+    const back = opener.current;
+    return () => { setTimeout(() => { if (back?.isConnected && (!document.activeElement || document.activeElement === document.body)) back.focus(); }, 0); };
+  }, []);
 
   useEffect(() => {
     loadFolders();
@@ -49,12 +65,21 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
     }
   };
 
+  // After the list loads, keyboard users land on its first row (or Back), not on the page behind.
+  useEffect(() => {
+    if (loading || !focusList.current) return;
+    focusList.current = false;
+    const box = dialogRef.current;
+    (box?.querySelector<HTMLElement>('.folder-item:not(.root-item)') || box?.querySelector<HTMLElement>('.folder-item') || box?.querySelector<HTMLElement>('.nav-up-btn'))?.focus();
+  }, [loading]);
+
   const handleFolderClick = (folder: Folder) => {
     setFolderStack([...folderStack, folder._id]);
     setCurrentFolder(folder._id);
   };
 
   const handleNavigateUp = () => {
+    focusList.current = true;
     if (folderStack.length > 0) {
       const newStack = [...folderStack];
       newStack.pop();
@@ -106,6 +131,30 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
     }
   };
 
+  // Keyboard on a folder row: Enter or Space chooses it (like a click), → looks inside (like a double-click),
+  // ← or Backspace goes back up, ↑ / ↓ move between rows.
+  const onRowKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, choose: () => void, open?: () => void) => {
+    const rows = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('.folder-item') || []);
+    const i = rows.indexOf(event.currentTarget);
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose(); }
+    else if (event.key === 'ArrowRight' && open) { event.preventDefault(); focusList.current = true; open(); }
+    else if ((event.key === 'ArrowLeft' || event.key === 'Backspace') && currentFolder) { event.preventDefault(); handleNavigateUp(); }
+    else if (event.key === 'ArrowDown') { event.preventDefault(); rows[Math.min(rows.length - 1, i + 1)]?.focus(); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); rows[Math.max(0, i - 1)]?.focus(); }
+  };
+
+  // Escape closes the picker (or, while naming a new folder, only cancels that); Tab stays inside it.
+  const onDialogKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === 'Escape' && !showCreateFolder) { event.stopPropagation(); onClose(); return; }
+    if (event.key !== 'Tab' || !dialogRef.current) return;
+    const focusable = Array.from(dialogRef.current.querySelectorAll<HTMLElement>('button:not(:disabled), input, [tabindex="0"]'));
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  };
+
   const getBreadcrumbs = () => {
     const breadcrumbs = ['Root'];
     // We'd need to load folder names for breadcrumbs, but for now just show current
@@ -114,10 +163,11 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
 
   return (
     <div className="folder-picker-overlay" onClick={onClose}>
-      <div className="folder-picker-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="folder-picker-modal" ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="folder-picker-title"
+        onClick={(e) => e.stopPropagation()} onKeyDown={onDialogKeyDown}>
         <div className="folder-picker-header">
-          <h3>Select Destination Folder</h3>
-          <button className="close-btn" onClick={onClose}>
+          <h3 id="folder-picker-title">{title || 'Select Destination Folder'}</h3>
+          <button className="close-btn" onClick={onClose} aria-label="Close">
             <CloseIcon size={18} color="currentColor" />
           </button>
         </div>
@@ -133,7 +183,7 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
                     ← Back
                   </button>
                 )}
-                <span className="current-path">
+                <span className="current-path" aria-live="polite">
                   {currentFolder ? 'Current Folder' : 'Root'}
                 </span>
               </div>
@@ -187,10 +237,16 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
                       + New Folder
                     </button>
                   </div>
-                  <div className="folder-list">
+                  {confirmLabel && <p className="folder-picker-hint">{confirmLabel}: click a folder (or press Enter). Double-click it (or press →) to look inside.</p>}
+                  <p id="folder-picker-keys" className="folder-picker-sr-only">Enter chooses a folder. Right arrow looks inside it, left arrow goes back.</p>
+                  <div className="folder-list" role="list" aria-label="Folders">
                 <div
                   className="folder-item root-item"
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Choose Root (Home)"
                   onClick={handleSelectRoot}
+                  onKeyDown={(e) => onRowKeyDown(e, handleSelectRoot)}
                 >
                   <FolderIcon size={20} color="currentColor" className="folder-icon" />
                   <span className="folder-name">Root (Home)</span>
@@ -200,12 +256,17 @@ const FolderPickerModal: React.FC<FolderPickerModalProps> = ({
                   <div
                     key={folder._id}
                     className="folder-item"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Choose ${folder.name}`}
+                    aria-describedby="folder-picker-keys"
                     onClick={() => handleSelectFolder(folder._id)}
                     onDoubleClick={() => handleFolderClick(folder)}
+                    onKeyDown={(e) => onRowKeyDown(e, () => handleSelectFolder(folder._id), () => handleFolderClick(folder))}
                   >
                     <FolderIcon size={20} color="currentColor" className="folder-icon" />
                     <span className="folder-name">{folder.name}</span>
-                    <span className="folder-arrow">→</span>
+                    <span className="folder-arrow" aria-hidden="true">→</span>
                   </div>
                 ))}
 
