@@ -210,7 +210,8 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
     zones,
   }), [blocks, zones]);
 
-  const focusHandle = (id: string) => setTimeout(() => document.querySelector<HTMLElement>(`[data-board-key="${id}"] .board-item-handle`)?.focus(), 0);
+  // Back to the block's grip when leaving it (Escape): it is where the person already is, so the board does not scroll.
+  const focusHandle = (id: string) => setTimeout(() => document.querySelector<HTMLElement>(`[data-board-key="${id}"] .board-item-handle`)?.focus({ preventScroll: true }), 0);
   const stopEditing = (id: string) => {
     onFlush();
     if (editingRef.current === id) onEditingChange('');

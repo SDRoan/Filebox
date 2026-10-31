@@ -80,7 +80,7 @@ const AddMenu: React.FC<{ disabled: boolean; onAdd: (kind: AddKind) => void }> =
   const menu = useRef<HTMLDivElement>(null);
   const items = () => Array.from(menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') || []);
   useEffect(() => { if (open) items()[0]?.focus(); }, [open]);
-  const close = (focusButton = true) => { setOpen(false); if (focusButton) button.current?.focus(); };
+  const close = (focusButton = true) => { setOpen(false); if (focusButton) button.current?.focus({ preventScroll: true }); };
   // Focus goes back to "+ Add" first, so a dialog opened from the menu returns there when it closes.
   const choose = (run: () => void) => { close(); run(); };
   const onMenuKey = (event: React.KeyboardEvent) => {
@@ -319,8 +319,19 @@ const Boards: React.FC = () => {
     const next = { left: el.scrollLeft > 2, right: el.scrollLeft + el.clientWidth < el.scrollWidth - 2 };
     setScrollEdges(prev => (prev.left === next.left && prev.right === next.right ? prev : next));
   }, []);
+  // Keep the open tab visible in the tab row: only the row scrolls sideways, never the page. (scrollIntoView
+  // would also scroll the page up to the tabs, which happened after every save while someone was further down.)
   useEffect(() => {
-    tabRefs.current.get(activeId)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    const strip = stripRef.current;
+    const tab = tabRefs.current.get(activeId);
+    if (strip && tab) {
+      // Rectangles are in screen pixels; File Box zooms the workspace for its Text size setting.
+      const zoom = Number(getComputedStyle(document.documentElement).getPropertyValue('--fb-zoom')) || 1;
+      const s = strip.getBoundingClientRect();
+      const t = tab.getBoundingClientRect();
+      if (t.left < s.left) strip.scrollLeft -= (s.left - t.left) / zoom;
+      else if (t.right > s.right) strip.scrollLeft += (t.right - s.right) / zoom;
+    }
     measureStrip();
   }, [activeId, tabs, measureStrip]);
   useEffect(() => {

@@ -56,7 +56,8 @@ export const FileListBlock: React.FC<Common & {
   const name = title || 'File list';
 
   const save = (items: BoardFileListRow[], now = true) => onEdit({ title, items }, now);
-  const focusRow = (rowId: string) => setTimeout(() => card.current?.querySelector<HTMLElement>(`[data-row-id="${rowId}"] .board-filelist-main`)?.focus(), 0);
+  // Moving between rows may scroll the row into view; returning to a row (after its preview) never scrolls.
+  const focusRow = (rowId: string, back = false) => setTimeout(() => card.current?.querySelector<HTMLElement>(`[data-row-id="${rowId}"] .board-filelist-main`)?.focus(back ? { preventScroll: true } : undefined), 0);
   const moveRow = (index: number, to: number) => {
     if (to < 0 || to >= rows.length || to === index) return;
     const items = [...rows];
@@ -154,7 +155,7 @@ export const FileListBlock: React.FC<Common & {
         <BoardAddFileDialog title={`Add files to ${name}`} where="this list" alreadyLabel="In this list"
           fullText={rows.length >= LIMIT.rows ? `This list is full (${LIMIT.rows} files).` : 'This tab has as many files as it can hold (1,000).'}
           onTab={inList} remaining={canAdd}
-          onClose={() => { setPicking(false); setTimeout(() => card.current?.querySelector<HTMLElement>('.board-filelist-add')?.focus(), 0); }}
+          onClose={() => { setPicking(false); setTimeout(() => card.current?.querySelector<HTMLElement>('.board-filelist-add')?.focus({ preventScroll: true }), 0); }}
           onAdd={(files) => {
             setPicking(false);
             const added = files.filter(f => !inList.has(f._id)).slice(0, canAdd).map(f => ({ id: newRowId(), fileId: f._id, ref: searchRef(f) }));
@@ -165,7 +166,7 @@ export const FileListBlock: React.FC<Common & {
       )}
       {/* Outside the board: the board's surfaces may have their own colours (dark mode), which would contain it. */}
       {preview && createPortal(
-        <FilePreview file={fileCard(preview.ref, user?.id)} onClose={() => { const id = preview.rowId; setPreview(null); focusRow(id); }} />,
+        <FilePreview file={fileCard(preview.ref, user?.id)} onClose={() => { const id = preview.rowId; setPreview(null); focusRow(id, true); }} />,
         document.body,
       )}
     </div>

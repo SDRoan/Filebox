@@ -19,7 +19,7 @@ const BoardDialog: React.FC<{ title: string; describedBy?: string; wide?: boolea
     return () => {
       setTimeout(() => {
         const free = !document.activeElement || document.activeElement === document.body;
-        if (!node?.isConnected && free && back?.isConnected) back.focus();
+        if (!node?.isConnected && free && back?.isConnected) back.focus({ preventScroll: true });
       }, 0);
     };
   }, []);

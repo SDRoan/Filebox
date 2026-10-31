@@ -17,7 +17,7 @@ const BoardAppearanceMenu: React.FC<{ value: BoardAppearance; onChange: (next: B
     setTimeout(() => wrap.current?.querySelector<HTMLInputElement>('input:checked')?.focus(), 0);
     return () => document.removeEventListener('pointerdown', away, true);
   }, [open]);
-  const close = () => { setOpen(false); button.current?.focus(); };
+  const close = () => { setOpen(false); button.current?.focus({ preventScroll: true }); };
   return (
     <div ref={wrap} className="board-look" onKeyDown={(event) => { if (event.key === 'Escape' && open) { event.preventDefault(); event.stopPropagation(); close(); } }}
       onBlur={(event) => { if (open && !event.currentTarget.contains(event.relatedTarget as Node) && event.relatedTarget) setOpen(false); }}>

@@ -90,7 +90,7 @@ export const LinkBlock: React.FC<Common & { block: Extract<BoardBlock, { type: '
       {note && <p className="board-link-note">{note}</p>}
       {editing && (
         <LinkDialog initial={block.link} onClose={() => setEditing(false)}
-          onSave={(next) => { setEditing(false); onEdit(next); setTimeout(() => anchor.current?.focus(), 50); }} />
+          onSave={(next) => { setEditing(false); onEdit(next); setTimeout(() => anchor.current?.focus({ preventScroll: true }), 50); }} />
       )}
     </div>
   );

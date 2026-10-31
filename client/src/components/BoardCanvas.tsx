@@ -85,7 +85,7 @@ const ItemToolbar: React.FC<{ name: string; actions: ItemAction[]; below: boolea
     const buttons = Array.from(ref.current?.querySelectorAll<HTMLButtonElement>('button') || []);
     if (event.key === 'Escape') {
       event.preventDefault();
-      ref.current?.closest('.board-item')?.querySelector<HTMLElement>('.board-item-handle')?.focus();
+      ref.current?.closest('.board-item')?.querySelector<HTMLElement>('.board-item-handle')?.focus({ preventScroll: true });
       return;
     }
     const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
@@ -399,7 +399,7 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
                           if (event.key !== 'Escape' || emojiFor !== zone.id) return;
                           event.preventDefault(); event.stopPropagation();
                           setEmojiFor(null);
-                          event.currentTarget.querySelector<HTMLElement>('.board-zone-emoji-button')?.focus();
+                          event.currentTarget.querySelector<HTMLElement>('.board-zone-emoji-button')?.focus({ preventScroll: true });
                         }}>
                         <button type="button" className="board-zone-emoji-button" aria-expanded={emojiFor === zone.id} aria-haspopup="true" aria-label={zone.emoji ? `Zone emoji: ${zone.emoji}. Change` : 'Add an emoji'} title="Emoji"
                           onClick={(event) => {

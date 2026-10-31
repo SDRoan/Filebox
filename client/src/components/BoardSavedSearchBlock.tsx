@@ -185,7 +185,8 @@ export const SavedSearchBlock: React.FC<Common & {
   const rows = run && run.status !== 'unavailable' ? run.results || [] : [];
   const total = run && run.status !== 'unavailable' ? run.total : undefined;
   const fresh = run?.fresh || new Set<string>();
-  const focusRow = (id: string) => setTimeout(() => card.current?.querySelector<HTMLElement>(`[data-result-id="${id}"] .board-search-main`)?.focus(), 0);
+  // Moving between rows may scroll the row into view; returning to a row (after its preview) never scrolls.
+  const focusRow = (id: string, back = false) => setTimeout(() => card.current?.querySelector<HTMLElement>(`[data-result-id="${id}"] .board-search-main`)?.focus(back ? { preventScroll: true } : undefined), 0);
   const onRowKey = (index: number) => (event: React.KeyboardEvent) => {
     if (event.key === 'Escape') { event.preventDefault(); onExit(); }
     else if (event.key === 'ArrowDown' && rows[index + 1]) { event.preventDefault(); focusRow(rows[index + 1]._id); }
@@ -251,12 +252,12 @@ export const SavedSearchBlock: React.FC<Common & {
       {editing && (
         <SavedSearchDialog initial={s} scopeName={run?.status === 'ok' ? run.scopeName : undefined} onClose={() => setEditing(false)}
           // Saving always runs it again once saved (also when nothing changed, e.g. access came back).
-          onSave={(next) => { setEditing(false); onEdit(next); onRefresh(); setTimeout(() => card.current?.querySelector<HTMLElement>('.board-search-refresh, .board-search-action')?.focus(), 50); }} />
+          onSave={(next) => { setEditing(false); onEdit(next); onRefresh(); setTimeout(() => card.current?.querySelector<HTMLElement>('.board-search-refresh, .board-search-action')?.focus({ preventScroll: true }), 50); }} />
       )}
       {/* Outside the board: the board's surfaces may have their own colours (dark mode), which would contain it. */}
       {preview && createPortal(
         <FilePreview file={{ ...preview, name: preview.originalName, access: preview.access.role } as unknown as FileItemType}
-          onClose={() => { const id = preview._id; setPreview(null); focusRow(id); }} />,
+          onClose={() => { const id = preview._id; setPreview(null); focusRow(id, true); }} />,
         document.body,
       )}
     </div>
