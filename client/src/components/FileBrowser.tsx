@@ -8,7 +8,6 @@ import FolderItem from './FolderItem';
 import UploadButton from './UploadButton';
 import CreateFolderModal from './CreateFolderModal';
 import FileSortFilter, { SortOption, SortOrder, FilterOption, ViewMode } from './FileSortFilter';
-import FileBoard from './FileBoard';
 import { useCompanion } from '../context/CompanionContext';
 import OrganizeReview from './OrganizeReview';
 import { AIAssistantIcon, CloseIcon as DialogCloseIcon } from './Icons';
@@ -71,11 +70,13 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
   const [sortBy, setSortBy] = useState<SortOption>('name');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [filterBy, setFilterBy] = useState<FilterOption>('all');
-  // Grid, List or Board, remembered in this browser.
+  // Grid or List, remembered in this browser. My Files no longer has a Board view (Boards is its own
+  // section); a "board" saved by an older version opens as Grid and is saved as Grid.
   const [viewMode, setViewModeState] = useState<ViewMode>(() => {
     try {
       const saved = localStorage.getItem('filebox-file-view');
-      return saved === 'list' || saved === 'board' ? saved : 'grid';
+      if (saved === 'board') localStorage.setItem('filebox-file-view', 'grid');
+      return saved === 'list' ? 'list' : 'grid';
     } catch { return 'grid'; }
   });
   const setViewMode = (mode: ViewMode) => {
@@ -98,11 +99,6 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
   }, [selectedItems, selectionMode, files, folders, setSelection]);
   useEffect(() => () => setSelection([]), [setSelection]);
 
-  const allowBoard = !showTrash && !showStarred;
-  const showBoard = allowBoard && viewMode === 'board';
-  const boardKey = isTeamFolder && teamFolderId
-    ? `team-${teamFolderId}${currentFolderId && currentFolderId !== teamFolderId ? `-${currentFolderId}` : ''}`
-    : (currentFolderId && currentFolderId !== 'root' ? currentFolderId : 'root');
   const { user, refreshUser } = useAuth();
   const socketRef = useRef<Socket | null>(null);
 
@@ -606,7 +602,7 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
           </div>
         </div>
         <div className="file-browser-header">
-          <FileSortFilter sortBy={sortBy} sortOrder={sortOrder} filterBy={filterBy} viewMode={showBoard ? 'board' : viewMode === 'board' ? 'grid' : viewMode} allowBoard={allowBoard}
+          <FileSortFilter sortBy={sortBy} sortOrder={sortOrder} filterBy={filterBy} viewMode={viewMode}
             onSortChange={setSortBy} onSortOrderChange={setSortOrder} onFilterChange={setFilterBy} onViewModeChange={setViewMode} />
         </div>
         {selectionMode && <div className="file-selection-toolbar">
@@ -637,20 +633,10 @@ const FileBrowser: React.FC<FileBrowserProps> = ({
             </div>
           </div>
         ) : (
-          showBoard ? (
-            <FileBoard
-              folderKey={boardKey}
-              entries={[
-                ...filteredAndSorted.folders.map(folder => ({ key: `folder-${folder._id}`, name: folder.name, render: () => renderFolder(folder) })),
-                ...filteredAndSorted.files.map(file => ({ key: `file-${file._id}`, name: file.originalName, render: () => renderFile(file) })),
-              ]}
-            />
-          ) : (
           <div className={`file-list ${viewMode === 'list' ? 'list-view' : 'grid-view'}`}>
             {filteredAndSorted.folders.map(renderFolder)}
             {filteredAndSorted.files.map(renderFile)}
           </div>
-          )
         ))}
         <div className="file-canvas-footer"><span>{itemCount} {itemCount === 1 ? 'item' : 'items'}</span><span>{showTrash ? 'Items are kept for 30 days' : `Sorted by ${sortBy === 'date' ? 'date added' : sortBy}`}</span></div>
         </div>
