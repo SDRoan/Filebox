@@ -1,6 +1,6 @@
 import React, { useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import BoardCanvas, { CanvasEntry, CanvasLayout } from './BoardCanvas';
+import BoardCanvas, { CanvasEntry, CanvasLayout, ItemAction } from './BoardCanvas';
 import FileItem from './FileItem';
 import FolderItem from './FolderItem';
 import { StickyNoteBlock, RichTextBlock } from './BoardNoteBlocks';
@@ -182,11 +182,21 @@ interface PersonalBoardProps extends BoardActions {
   toolbarStart: React.ReactNode;
   onReset: () => void;
   empty: React.ReactNode;
+  // The canvas pattern (a class) and tools at the end of the toolbar (the Canvas look control).
+  canvasClassName?: string;
+  toolbarEnd?: React.ReactNode;
 }
+
+const ICON = {
+  edit: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z" /><path d="M13.5 6.5l4 4" /></svg>,
+  style: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-1-.8-1.4-.8-2.3 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5C21 6.4 17 3 12 3z" /><circle cx="7.5" cy="11" r="1" /><circle cx="10.5" cy="7.5" r="1" /><circle cx="15" cy="8" r="1" /></svg>,
+  remove: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>,
+};
+const EDIT_NAMES: Record<string, string> = { note: 'Edit sticky note', text: 'Edit text', label: 'Edit label', deadline: 'Edit deadline', link: 'Edit link', filelist: 'Edit file list', search: 'Edit saved search' };
 
 const sameSpot = (a: Spot | undefined, b: Spot) => Boolean(a) && a!.x === b.x && a!.y === b.y && a!.w === b.w && a!.h === b.h;
 
-const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, saveState, editingId, toolbarStart, onReset, empty, ...actions }) => {
+const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, saveState, editingId, toolbarStart, onReset, empty, canvasClassName, toolbarEnd, ...actions }) => {
   const { onArrange, onEdit, onFlush, onRemove, onEditingChange } = actions;
   const refCard = useRefCard(actions);
   const editingRef = useRef(editingId);
@@ -223,11 +233,37 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
     onArrange(items, zonesChanged ? next.zones : undefined, { debounce: true });
   };
 
+  // Quick actions of a selected block: they use the block's own controls (its first field, its menu).
+  const inItem = <T extends HTMLElement = HTMLElement>(id: string, sel: string) => document.querySelector<T>(`[data-board-key="${id}"] ${sel}`);
+  const openMenu = (id: string, sel: string) => {
+    const menu = inItem<HTMLDetailsElement>(id, sel);
+    if (!menu) return;
+    menu.open = true;
+    setTimeout(() => menu.querySelector<HTMLElement>('.item-actions-popover button')?.focus(), 0);
+  };
+  const menuItem = (id: string, label: string) => () => Array.from(document.querySelectorAll<HTMLButtonElement>(`[data-board-key="${id}"] .item-actions-popover button`)).find(b => b.textContent === label)?.click();
+  const focusIn = (id: string, sel: string) => () => inItem(id, sel)?.focus();
+  const quick = (block: BoardBlock, edit: () => void, style?: () => void): ItemAction[] => [
+    { id: 'edit', label: EDIT_NAMES[block.type], icon: ICON.edit, run: edit },
+    ...(style ? [{ id: 'style', label: 'Style', icon: ICON.style, run: style }] : []),
+    { id: 'remove', label: 'Remove from board', icon: ICON.remove, run: () => onRemove(block) },
+  ];
+  const quickFor = (block: BoardBlock): ItemAction[] | undefined => {
+    if (block.type === 'note') return quick(block, focusIn(block.id, '.board-note-title'), () => openMenu(block.id, '.board-block-menu'));
+    if (block.type === 'text') return quick(block, () => onEditingChange(block.id));
+    if (block.type === 'label') return quick(block, focusIn(block.id, '.board-label-text'), () => openMenu(block.id, '.board-label-menu'));
+    if (block.type === 'deadline') return quick(block, focusIn(block.id, '.board-deadline-title'));
+    if (block.type === 'link') return quick(block, menuItem(block.id, 'Edit link…'));
+    if (block.type === 'filelist') return quick(block, focusIn(block.id, '.board-filelist-title'));
+    if (block.type === 'search') return quick(block, menuItem(block.id, 'Edit search…'));
+    return undefined;
+  };
+
   const entries: CanvasEntry[] = blocks.map((block) => {
     const name = blockName(block);
     if (block.type === 'note') {
       return {
-        key: block.id, name, className: 'is-note', handleOnly: true,
+        key: block.id, name, className: 'is-note', handleOnly: true, actions: quickFor(block),
         size: { w: block.w ?? BLOCK_SIZES.note.w, h: block.h ?? BLOCK_SIZES.note.h }, resize: BLOCK_SIZES.note,
         onHandleKey: (event) => {
           if (event.key !== 'Enter') return false;
@@ -246,7 +282,7 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
       const limits = block.type === 'label' ? { ...BLOCK_SIZES.label, minH: size.h, maxH: size.h } : BLOCK_SIZES[block.type];
       const firstField = { label: '.board-label-text', deadline: '.board-deadline-title', link: '.board-link-title', filelist: '.board-filelist-title', search: '.board-search-main, .board-search-action' }[block.type];
       return {
-        key: block.id, name, className: `is-${block.type}`, handleOnly: true, size, resize: limits,
+        key: block.id, name, className: `is-${block.type}`, handleOnly: true, size, resize: limits, actions: quickFor(block),
         onHandleKey: (event) => {
           if (event.key !== 'Enter') return false;
           event.preventDefault();
@@ -258,7 +294,7 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
     }
     if (block.type === 'text') {
       return {
-        key: block.id, name, className: `is-text ${editingId === block.id ? 'is-editing' : ''}`, handleOnly: true,
+        key: block.id, name, className: `is-text ${editingId === block.id ? 'is-editing' : ''}`, handleOnly: true, actions: quickFor(block),
         size: { w: block.w ?? BLOCK_SIZES.text.w, h: block.h ?? BLOCK_SIZES.text.h }, resize: BLOCK_SIZES.text,
         onHandleKey: (event) => {
           if (event.key !== 'Enter') return false;
@@ -275,12 +311,13 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
         ),
       };
     }
-    return { key: block.id, name, className: block.ref.available ? undefined : 'is-unavailable', render: () => refCard(block) };
+    return { key: block.id, name, className: `is-${block.type}${block.ref.available ? '' : ' is-unavailable'}`, render: () => refCard(block) };
   });
 
   return (
     <BoardCanvas boardKey={tabId} layout={layout} entries={entries} onCommit={onCommit} toolbarStart={toolbarStart} onReset={onReset} empty={empty} toolsBelowNearTop
-      hint="Drag items anywhere. Drop them in a zone to group them; moving a zone moves what’s in it."
+      toolbarEnd={toolbarEnd} canvasClassName={canvasClassName} zoneLooks
+      hint="Drag anything anywhere. Moving a zone moves what’s in it."
       onAutoPlace={(items) => onArrange(Object.fromEntries(Object.entries(items).map(([id, spot]) => {
         const b = blocks.find(x => x.id === id);
         return [id, { x: Math.round(spot.x), y: Math.round(spot.y), ...(b && hasOwnSize(b) ? ownSize(b) : {}) }];

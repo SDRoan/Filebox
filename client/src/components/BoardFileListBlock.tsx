@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import ItemActions from './ItemActions';
 import BoardAddFileDialog from './BoardAddFileDialog';
 import FilePreview from './FilePreview';
@@ -162,8 +163,10 @@ export const FileListBlock: React.FC<Common & {
             focusRow(added[0].id);
           }} />
       )}
-      {preview && (
-        <FilePreview file={fileCard(preview.ref, user?.id)} onClose={() => { const id = preview.rowId; setPreview(null); focusRow(id); }} />
+      {/* Outside the board: the board's surfaces may have their own colours (dark mode), which would contain it. */}
+      {preview && createPortal(
+        <FilePreview file={fileCard(preview.ref, user?.id)} onClose={() => { const id = preview.rowId; setPreview(null); focusRow(id); }} />,
+        document.body,
       )}
     </div>
   );

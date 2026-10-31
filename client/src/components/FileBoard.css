@@ -26,7 +26,9 @@
 .board-item:hover > .file-item, .board-item:hover > .folder-item { cursor: grab; }
 body.board-dragging, body.board-dragging * { cursor: grabbing !important; user-select: none; }
 
-.board-zone { position: absolute; border: 2px solid; touch-action: none; cursor: grab; transition: box-shadow 120ms; }
+.board-zone { position: absolute; border: 2px solid; touch-action: none; cursor: grab; transition: box-shadow 120ms;
+  /* The zone's colour (set on the zone as --zone): the original tinted look. */
+  background: color-mix(in srgb, var(--zone, #dbeafe) 80%, transparent); border-color: var(--zone, #dbeafe); }
 .board-zone.shape-rectangle { border-radius: calc(4px * var(--fb-radius-scale, 1)); }
 .board-zone.shape-rounded { border-radius: calc(22px * var(--fb-radius-scale, 1)); }
 .board-zone.shape-circle { border-radius: 50%; }

@@ -4,6 +4,14 @@
  */
 
 const SHAPES = ['rectangle', 'rounded', 'circle', 'pill'];
+// How a zone is drawn (Boards). Tint is the original look; only other styles and an emoji are stored.
+const ZONE_STYLES = ['tint', 'outline', 'dashed', 'glass'];
+/** Exactly one emoji (the rule tab icons use); anything else is dropped. */
+function oneEmoji(value) {
+  if (typeof value !== 'string' || !value.trim() || value.length > 16) return '';
+  const graphemes = [...new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(value.trim())];
+  return graphemes.length === 1 && /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(graphemes[0].segment) ? graphemes[0].segment : '';
+}
 const CANVAS = 20000;
 const MAX_ZONES = 100;
 // Sticky notes and text areas have their own size (pixels); file and folder cards are 200 px wide.
@@ -32,6 +40,8 @@ function cleanZone(zone) {
     name: typeof zone.name === 'string' ? zone.name.slice(0, 60) : '',
     color: typeof zone.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(zone.color) ? zone.color.toLowerCase() : '#dbeafe',
     shape: SHAPES.includes(zone.shape) ? zone.shape : 'rounded',
+    ...(oneEmoji(zone.emoji) ? { emoji: oneEmoji(zone.emoji) } : {}),
+    ...(ZONE_STYLES.includes(zone.style) && zone.style !== 'tint' ? { style: zone.style } : {}),
     x, y, w: Math.max(120, w), h: Math.max(90, h),
     // Where the zone's name sits inside it; left out means the shape's usual spot.
     ...(coordinate(zone.labelX, 6000) !== null && coordinate(zone.labelY, 6000) !== null

@@ -22,6 +22,8 @@ const workspaceTabSchema = new mongoose.Schema({
   zones: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 2 = free canvas in pixels. Older tabs (a 12-column grid) are converted when read (utils/boardLayout.js).
   layoutVersion: { type: Number },
+  // How the board's canvas looks: { pattern, tone }. Left out (every tab made before) means dots on white.
+  appearance: { type: mongoose.Schema.Types.Mixed },
   // Stored size of the tab in bytes, kept so the per-person total can be checked without loading blocks.
   bytes: { type: Number, default: 0 },
 }, { timestamps: true });

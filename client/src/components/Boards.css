@@ -260,7 +260,7 @@ html.fb-has-backdrop .boards-top { padding: 8px 12px 0; }
 
 /* Phone: the board as a list, grouped under its zones */
 .board-list-phone { display: flex; flex-direction: column; gap: 12px; padding: 12px; }
-.board-list-zone { padding: 8px; border: 2px solid; border-radius: calc(14px * var(--fb-radius-scale, 1)); }
+.board-list-zone { padding: 8px; border: 2px solid; border-radius: calc(14px * var(--fb-radius-scale, 1)); border-color: var(--zone, #dbeafe); background: color-mix(in srgb, var(--zone, #dbeafe) 33%, transparent); }
 .board-list-zone.is-loose { padding: 0; border: 0; }
 .board-list-zone-name { margin: 4px 6px 8px; font-size: 14px; font-weight: 600; color: #26301f; }
 .board-list { margin: 0; padding: 0; list-style: none; }

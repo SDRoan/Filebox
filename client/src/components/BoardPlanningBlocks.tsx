@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ItemActions from './ItemActions';
 import { Common, MoveItems } from './BoardNoteBlocks';
-import { BoardBlock, BoardDeadline, BoardLabel, LabelSize, LabelTone } from '../services/api';
+import { BoardBlock, BoardDeadline, BoardLabel, LabelSize, LabelStyle, LabelTone } from '../services/api';
 
 /**
  * Board-only planning blocks: a label (a plain heading for an area of the board) and a deadline. Like
@@ -35,25 +35,34 @@ const leaveSaves = (onFlush: () => void) => (event: React.FocusEvent) => { if (!
 export const LABEL_TONES: Array<[LabelTone, string]> = [['default', 'Default'], ['sage', 'Sage'], ['sky', 'Sky'], ['rose', 'Rose'], ['amber', 'Amber'], ['slate', 'Slate']];
 const SIZES: Array<[LabelSize, string]> = [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']];
 const ALIGNS: Array<[BoardLabel['align'], string]> = [['left', 'Left'], ['center', 'Center'], ['right', 'Right']];
+// Plain heading text, a tag, a soft highlighter stroke or an underline (all in the label's colour).
+const STYLES: Array<[LabelStyle, string]> = [['plain', 'Plain'], ['tag', 'Tag'], ['marker', 'Marker'], ['underline', 'Underline']];
 
 export const LabelBlock: React.FC<Common & { block: Extract<BoardBlock, { type: 'label' }>; onEdit: Edit<BoardLabel> }> = ({ block, onEdit, onFlush, onExit, onRemove, onMove, phone, first, last }) => {
   const card = useRef<HTMLDivElement>(null);
   const [label, setLabel] = useSaved(block.label, card);
   const composing = useRef(false);
   const send = (next: BoardLabel, now = false) => { setLabel(next); if (!composing.current || now) onEdit(next, now); };
+  const style = label.style || 'plain';
   return (
-    <div ref={card} className={`board-label size-${label.size} align-${label.align} tone-${label.tone}`} onBlur={leaveSaves(onFlush)}>
-      <input className="board-label-text" value={label.text} placeholder="Label" aria-label="Label text" maxLength={LIMIT.label + 2}
+    <div ref={card} className={`board-label size-${label.size} align-${label.align} tone-${label.tone} style-${style}`} onBlur={leaveSaves(onFlush)}>
+      {/* A tag, marker or underline hugs the words: the field grows with what is typed (a hidden copy sizes it). */}
+      <span className="board-label-fit" data-value={label.text || 'Label'}>
+      <input className="board-label-text" value={label.text} placeholder="Label" aria-label="Label text" maxLength={LIMIT.label + 2} size={1}
         onChange={e => send({ ...label, text: clip(e.target.value, LIMIT.label) })}
         onCompositionStart={() => { composing.current = true; }}
         onCompositionEnd={(e) => { composing.current = false; send({ ...label, text: clip((e.target as HTMLInputElement).value, LIMIT.label) }); }}
         onKeyDown={(e) => { if (e.key === 'Escape' || (e.key === 'Enter' && !e.nativeEvent.isComposing)) { e.preventDefault(); onExit(); } }} />
+      </span>
       <ItemActions className="board-block-menu board-label-menu" label="Options for this label">
         <div className="board-label-options" role="group" aria-label="Heading size">
           {SIZES.map(([value, name]) => <button key={value} type="button" aria-pressed={label.size === value} onClick={() => send({ ...label, size: value }, true)}>{name}</button>)}
         </div>
         <div className="board-label-options" role="group" aria-label="Alignment">
           {ALIGNS.map(([value, name]) => <button key={value} type="button" aria-pressed={label.align === value} onClick={() => send({ ...label, align: value }, true)}>{name}</button>)}
+        </div>
+        <div className="board-label-options" role="group" aria-label="Style">
+          {STYLES.map(([value, name]) => <button key={value} type="button" aria-pressed={style === value} onClick={() => send({ ...label, style: value }, true)}>{name}</button>)}
         </div>
         <div className="board-label-tones" role="group" aria-label="Color">
           {LABEL_TONES.map(([value, name]) => (

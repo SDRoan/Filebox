@@ -576,8 +576,13 @@ export interface BoardTab {
   blocks: unknown[];
   blockCount: number;
   searchCount?: number;
+  // How the canvas looks (always sent; dots on white unless the person chose otherwise).
+  appearance?: BoardAppearance;
   updatedAt?: string;
 }
+export type BoardPattern = 'dots' | 'grid' | 'blank' | 'lines' | 'paper';
+export type BoardTone = 'white' | 'warm' | 'blue' | 'lavender' | 'sage' | 'dark';
+export interface BoardAppearance { pattern: BoardPattern; tone: BoardTone }
 
 // A block's file or folder as the person can see it now. Anything they cannot open is only { available: false }.
 export type BoardRef =
@@ -614,7 +619,9 @@ export interface BoardText { doc: RichTextNode }
 // Board-only blocks (server/services/boardBlocks.js).
 export type LabelSize = 's' | 'm' | 'l';
 export type LabelTone = 'default' | 'sage' | 'sky' | 'rose' | 'amber' | 'slate';
-export interface BoardLabel { text: string; size: LabelSize; align: 'left' | 'center' | 'right'; tone: LabelTone }
+export type LabelStyle = 'plain' | 'tag' | 'marker' | 'underline';
+// `style` is missing on a label saved before label styles (it is drawn plain).
+export interface BoardLabel { text: string; size: LabelSize; align: 'left' | 'center' | 'right'; tone: LabelTone; style?: LabelStyle }
 // A date-only deadline is due at the end of that calendar day wherever it is viewed; a timed one also keeps
 // the exact moment (UTC) its date and time meant where it was set.
 export interface BoardDeadline { title: string; note: string; due: { date: string; time: string | null; at: string | null } | null; completedAt: string | null }
@@ -695,6 +702,11 @@ export const workspaceBoardsAPI = {
   // Every tab id once, in the new order. A 409 carries the latest { tabs }.
   reorderTabs: async (tabIds: string[]): Promise<{ tabs: BoardTab[] }> => {
     const response = await api.put('/workspace-boards/tabs/order', { tabIds });
+    return response.data;
+  },
+  /** The canvas pattern and tone of a tab (presentation only: the tab's revision does not change). */
+  setAppearance: async (tabId: string, appearance: BoardAppearance): Promise<{ tab: BoardTab }> => {
+    const response = await api.put(`/workspace-boards/tabs/${tabId}/appearance`, { appearance });
     return response.data;
   },
   setDefaultTab: async (tabId: string): Promise<{ tabs: BoardTab[] }> => {
@@ -1522,7 +1534,9 @@ export const preferencesAPI = {
 // My Files > Board: a person's own layout for a folder (where items sit, and the zones they drew).
 export type BoardZoneShape = 'rectangle' | 'rounded' | 'circle' | 'pill';
 // labelX/labelY: where the zone's name sits inside it (left out = the shape's usual spot).
-export interface BoardZone { id: string; name: string; color: string; shape: BoardZoneShape; x: number; y: number; w: number; h: number; labelX?: number; labelY?: number }
+// `emoji` and `style` are Boards-only and stored only when set (no style = the original tinted look).
+export type BoardZoneStyle = 'tint' | 'outline' | 'dashed' | 'glass';
+export interface BoardZone { id: string; name: string; color: string; shape: BoardZoneShape; x: number; y: number; w: number; h: number; labelX?: number; labelY?: number; emoji?: string; style?: BoardZoneStyle }
 export interface BoardLayout { items: Record<string, { x: number; y: number }>; zones: BoardZone[] }
 
 export const boardsAPI = {

@@ -20,6 +20,7 @@ const LIMITS = Object.freeze({
 const LABEL_SIZES = ['s', 'm', 'l'];
 const LABEL_ALIGN = ['left', 'center', 'right'];
 const LABEL_TONES = ['default', 'sage', 'sky', 'rose', 'amber', 'slate'];
+const LABEL_STYLES = ['plain', 'tag', 'marker', 'underline'];
 const ITEM_ID = /^[a-z0-9]{8}$/;
 const DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -34,13 +35,15 @@ const within = (text, max, what) => { if (chars(text) > max) throw new BlockErro
 
 /** A label: one line of heading text with a size, an alignment and a subtle tone. */
 function cleanLabel(raw) {
-  if (raw === undefined) return { text: '', size: 'm', align: 'left', tone: 'default' };
+  if (raw === undefined) return { text: '', size: 'm', align: 'left', tone: 'default', style: 'plain' };
   if (!isObject(raw)) throw new BlockError('This label could not be saved.');
   return {
     text: within(oneLine(raw.text), LIMITS.label, 'A label'),
     size: LABEL_SIZES.includes(raw.size) ? raw.size : 'm',
     align: LABEL_ALIGN.includes(raw.align) ? raw.align : 'left',
     tone: LABEL_TONES.includes(raw.tone) ? raw.tone : 'default',
+    // How it is drawn: plain heading text, a tag, a highlighter stroke or an underline (a label saved before is plain).
+    style: LABEL_STYLES.includes(raw.style) ? raw.style : 'plain',
   };
 }
 
@@ -216,4 +219,4 @@ function cleanSavedSearch(raw) {
 
 const CLEANERS = Object.freeze({ label: cleanLabel, deadline: cleanDeadline, link: cleanLink, filelist: cleanFileList, search: cleanSavedSearch });
 
-module.exports = { BlockError, LIMITS, LABEL_SIZES, LABEL_ALIGN, LABEL_TONES, CLEANERS, cleanLabel, cleanDeadline, cleanLink, linkUrl, cleanFileList, cleanSavedSearch, SEARCH };
+module.exports = { BlockError, LIMITS, LABEL_SIZES, LABEL_ALIGN, LABEL_TONES, LABEL_STYLES, CLEANERS, cleanLabel, cleanDeadline, cleanLink, linkUrl, cleanFileList, cleanSavedSearch, SEARCH };

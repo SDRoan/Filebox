@@ -75,8 +75,8 @@ const BoardList: React.FC<BoardActions & { blocks: BoardBlock[]; zones: BoardZon
   return (
     <div className="board-list-phone">
       {groups.map(({ zone, list }) => (
-        <section key={zone.id} className="board-list-zone" style={{ borderColor: zone.color, background: `${zone.color}55` }} aria-label={zone.name || 'Zone'}>
-          <h3 className="board-list-zone-name">{zone.name || 'Zone'}</h3>
+        <section key={zone.id} className={`board-list-zone style-${zone.style || 'tint'}`} style={{ ['--zone' as string]: zone.color } as React.CSSProperties} aria-label={zone.name || 'Zone'}>
+          <h3 className="board-list-zone-name">{zone.emoji && <span className="board-zone-emoji" aria-hidden="true">{zone.emoji} </span>}{zone.name || 'Zone'}</h3>
           <ol className="board-list file-list list-view">{list.map(row)}</ol>
         </section>
       ))}

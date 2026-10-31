@@ -46,3 +46,8 @@ export const writeOpenTab = (userId: string | undefined, tabId: string) => {
     localStorage.removeItem(`filebox-boards-last-tab-${userId || 'me'}`);
   } catch { /* only a convenience */ }
 };
+
+// ---- The canvas of a tab: a subtle pattern and a tone (dots on white unless the person chooses otherwise).
+export const BOARD_PATTERNS: Array<[import('../services/api').BoardPattern, string]> = [['dots', 'Dots'], ['grid', 'Grid'], ['blank', 'Blank'], ['lines', 'Lined paper'], ['paper', 'Soft paper']];
+export const BOARD_TONES: Array<[import('../services/api').BoardTone, string]> = [['white', 'White'], ['warm', 'Warm'], ['blue', 'Soft blue'], ['lavender', 'Soft lavender'], ['sage', 'Soft sage'], ['dark', 'Dark']];
+export const DEFAULT_APPEARANCE = { pattern: 'dots', tone: 'white' } as const;

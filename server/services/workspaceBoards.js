@@ -37,6 +37,13 @@ const LIMITS = Object.freeze({
   tabBytes: 1024 * 1024,
   totalBytes: 10 * 1024 * 1024,
 });
+// The canvas of a tab: a subtle pattern and a tone. Dots on white is how every board looked before.
+const APPEARANCE = Object.freeze({ patterns: ['dots', 'grid', 'blank', 'lines', 'paper'], tones: ['white', 'warm', 'blue', 'lavender', 'sage', 'dark'] });
+const DEFAULT_APPEARANCE = Object.freeze({ pattern: 'dots', tone: 'white' });
+const appearanceOf = (tab) => ({
+  pattern: APPEARANCE.patterns.includes(tab?.appearance?.pattern) ? tab.appearance.pattern : DEFAULT_APPEARANCE.pattern,
+  tone: APPEARANCE.tones.includes(tab?.appearance?.tone) ? tab.appearance.tone : DEFAULT_APPEARANCE.tone,
+});
 const COLORS = Object.freeze(['sage', 'sky', 'lavender', 'rose', 'amber', 'mint', 'coral', 'slate', 'sand', 'teal']);
 const TAB_ID = /^[a-z0-9]{10}$/;
 const DEFAULT_TAB_NAME = 'My board';
@@ -213,6 +220,7 @@ const publicTab = (tab) => ({
   blocks: [],
   blockCount: (tab.blocks || []).length,
   searchCount: (tab.blocks || []).filter(b => b.type === 'search').length,
+  appearance: appearanceOf(tab),
   updatedAt: tab.updatedAt,
 });
 
@@ -227,9 +235,9 @@ async function settleDefault(userId, tabs) {
   return tabs.map(t => ({ ...t, isDefault: t.tabId === keep.tabId }));
 }
 
-async function createTabRecord(userId, { name, icon = '', color = '', isDefault = false, blocks = [], zones = [] }, existing) {
+async function createTabRecord(userId, { name, icon = '', color = '', isDefault = false, blocks = [], zones = [], appearance = null }, existing) {
   const order = existing.length ? Math.max(...existing.map(t => t.order)) + 1 : 0;
-  const record = { user: userId, tabId: newTabId(), name, icon, color, order, isDefault, rev: 0, blocks, zones, layoutVersion: LAYOUT_VERSION };
+  const record = { user: userId, tabId: newTabId(), name, icon, color, order, isDefault, rev: 0, blocks, zones, layoutVersion: LAYOUT_VERSION, ...(appearance ? { appearance } : {}) };
   record.bytes = tabBytes(record);
   const total = existing.reduce((sum, t) => sum + (t.bytes || 0), 0);
   if (total + record.bytes > LIMITS.totalBytes) throw new BoardInputError('Your Boards are full. Remove something to add more.', 413);
@@ -284,6 +292,23 @@ async function updateTab(userId, tabId, body = {}) {
     error.tab = publicTab(latest);
     throw error;
   }
+  return publicTab(updated);
+}
+
+/**
+ * How a tab's canvas looks ({ pattern, tone }). Like the order and the default, this is not content: it
+ * never changes the tab's revision or its "updated" time, so it never conflicts with a block save.
+ */
+async function setAppearance(userId, tabId, body = {}) {
+  if (!TAB_ID.test(tabId || '')) throw new BoardInputError('Tab not found.', 404);
+  const raw = body.appearance;
+  if (!raw || typeof raw !== 'object' || !APPEARANCE.patterns.includes(raw.pattern) || !APPEARANCE.tones.includes(raw.tone)) throw new BoardInputError('Choose a pattern and a tone.');
+  const updated = await WorkspaceTab.findOneAndUpdate(
+    { user: userId, tabId },
+    { $set: { appearance: { pattern: raw.pattern, tone: raw.tone } } },
+    { new: true, timestamps: false }
+  ).lean();
+  if (!updated) throw new BoardInputError('Tab not found.', 404);
   return publicTab(updated);
 }
 
@@ -604,7 +629,7 @@ async function duplicateTab(userId, tabId) {
     return { ...b, filelist: { title: b.filelist.title, items: items.map(r => ({ id: r.id, fileId: idOf(r.fileId) })) } };
   });
   const blocks = storedBlocks(copied.map(b => ({ ...b, id: freshId() })));
-  const record = await createTabRecord(userId, { name: copyName(source.name, new Set(existing.map(t => t.name))), icon: source.icon || '', color: source.color || '', blocks, zones }, existing);
+  const record = await createTabRecord(userId, { name: copyName(source.name, new Set(existing.map(t => t.name))), icon: source.icon || '', color: source.color || '', blocks, zones, appearance: source.appearance ? appearanceOf(source) : null }, existing);
   const order = existing.map(t => t.tabId);
   order.splice(order.indexOf(tabId) + 1, 0, record.tabId);
   await writeOrder(userId, order, [...existing, record]);
@@ -733,5 +758,5 @@ async function conflict(userId, tabId) {
 
 module.exports = {
   LIMITS, COLORS, NOTE_COLORS, SIZES: layout.SIZES, LAYOUT_VERSION, canvasOf, BoardInputError, cleanName, cleanIcon, cleanColor, listTabs, createTab, updateTab, deleteTab,
-  getTab, saveBlocks, resolveBlocks, duplicateTab, reorderTabs, setDefaultTab, placements, addRef, runTabSearches, addSearch, DEFAULT_TAB_NAME,
+  getTab, saveBlocks, resolveBlocks, duplicateTab, reorderTabs, setDefaultTab, placements, addRef, runTabSearches, addSearch, setAppearance, APPEARANCE, DEFAULT_TAB_NAME,
 };

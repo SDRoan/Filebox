@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { workspaceBoardsAPI, BoardTab, BoardLimits } from '../services/api';
+import { workspaceBoardsAPI, BoardAppearance, BoardTab, BoardLimits } from '../services/api';
 import ItemActions from './ItemActions';
 import BoardDialog from './BoardDialog';
 import BoardTabDialog, { TabLook } from './BoardTabDialog';
 import { LinkDialog } from './BoardLinkBlock';
 import { SavedSearchDialog } from './BoardSavedSearchBlock';
+import BoardAppearanceMenu from './BoardAppearanceMenu';
 import { useSavedSearchRuns } from '../hooks/useSavedSearchRuns';
 import PersonalBoard from './PersonalBoard';
 import BoardList from './BoardList';
@@ -14,10 +15,11 @@ import BoardAddFileDialog from './BoardAddFileDialog';
 import FolderPickerModal from './FolderPickerModal';
 import { PlusIcon } from './Icons';
 import { useBoardTabBlocks, BoardNotice } from '../hooks/useBoardTabBlocks';
-import { readOpenTab, writeOpenTab, tabAccent } from '../utils/boardTabs';
+import { readOpenTab, writeOpenTab, tabAccent, DEFAULT_APPEARANCE } from '../utils/boardTabs';
 import './FileBrowser.css';
 import './FileBoard.css';
 import './Boards.css';
+import './BoardsPlayground.css';
 
 /**
  * Boards (/boards): a person's own tabbed workspace. Each tab is its own board on the same free canvas as
@@ -52,6 +54,25 @@ const ADD_GROUPS: Array<{ name: string; items: Array<[AddKind, string]> }> = [
   { name: 'Other', items: [['label', 'Label'], ['link', 'Link']] },
 ];
 
+// What each kind of block is for (shown under its name) and its icon.
+const ADD_HELP: Record<AddKind, string> = {
+  file: 'Add a file from File Box', folder: 'Pin a folder you use often', filelist: 'A titled group of files', search: 'Live group of matching files',
+  note: 'Quick thought or reminder', text: 'Notes, headings and checklists', deadline: 'A date to keep in sight',
+  label: 'A heading for part of the board', link: 'A web page to come back to',
+};
+const icon = (paths: React.ReactNode) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths}</svg>;
+const ADD_ICONS: Record<AddKind, React.ReactNode> = {
+  file: icon(<><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></>),
+  folder: icon(<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />),
+  filelist: icon(<><path d="M9 6h11M9 12h11M9 18h11" /><rect x="3.5" y="4.5" width="3" height="3" rx="0.6" /><rect x="3.5" y="10.5" width="3" height="3" rx="0.6" /><rect x="3.5" y="16.5" width="3" height="3" rx="0.6" /></>),
+  search: icon(<><circle cx="11" cy="11" r="6" /><path d="M20 20l-4.2-4.2" /><path d="M8.5 11h5" /></>),
+  note: icon(<><path d="M5 4h14v11l-5 5H5z" /><path d="M14 20v-5h5" /></>),
+  text: icon(<><path d="M5 6h14M5 11h14M5 16h9" /></>),
+  deadline: icon(<><rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M8 3v4M16 3v4M3.5 10h17" /><path d="M12 13v3l2 1" /></>),
+  label: icon(<><path d="M4 12V5a1 1 0 0 1 1-1h7l8 8-8 8-8-8z" /><circle cx="8.5" cy="8.5" r="1.3" /></>),
+  link: icon(<><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></>),
+};
+
 /** "+ Add": a grouped menu, usable with the keyboard (arrows move between items, Enter, Escape). */
 const AddMenu: React.FC<{ disabled: boolean; onAdd: (kind: AddKind) => void }> = ({ disabled, onAdd }) => {
   const [open, setOpen] = useState(false);
@@ -83,10 +104,17 @@ const AddMenu: React.FC<{ disabled: boolean; onAdd: (kind: AddKind) => void }> =
             <div key={group.name} role="group" aria-labelledby={`boards-add-group-${g}`} className="boards-add-group">
               <p id={`boards-add-group-${g}`} className="boards-add-group-name" role="presentation">{group.name}</p>
               {group.items.map(([kind, label]) => (
-                <button key={kind} type="button" role="menuitem" onClick={() => choose(() => onAdd(kind))}>{label}</button>
+                // The name is the item's name; what it is for is its description (shown under it).
+                <button key={kind} type="button" role="menuitem" aria-label={label} aria-describedby={`boards-add-help-${kind}`} data-help={ADD_HELP[kind]}
+                  onClick={() => choose(() => onAdd(kind))}>
+                  <span className="boards-add-icon">{ADD_ICONS[kind]}</span>{label}
+                </button>
               ))}
             </div>
           ))}
+          <div className="boards-visually-hidden">
+            {ADD_GROUPS.flatMap(g => g.items).map(([kind]) => <span key={kind} id={`boards-add-help-${kind}`}>{ADD_HELP[kind]}</span>)}
+          </div>
         </div>
       )}
     </div>
@@ -357,15 +385,31 @@ const Boards: React.FC = () => {
     onArrange: board.arrange, onEdit: board.edit, onFlush: board.flush, onRemove: board.remove, onReload: board.reload, onEditingChange: setEditingId,
     onRemoveRow: board.removeListRow, refRoom, searchRuns,
   };
+  // How this tab's canvas looks (dots on white unless chosen): applied at once, saved without a revision.
+  const appearance: BoardAppearance = active?.appearance || DEFAULT_APPEARANCE;
+  const setAppearance = (next: BoardAppearance) => {
+    if (!active) return;
+    const id = active.id;
+    const before = active.appearance;
+    setTabs(prev => prev.map(t => (t.id === id ? { ...t, appearance: next } : t)));
+    workspaceBoardsAPI.setAppearance(id, next).catch(() => {
+      setTabs(prev => prev.map(t => (t.id === id ? { ...t, appearance: before } : t)));
+      showNotice({ tone: 'error', text: "Couldn't change the canvas. Try again." });
+    });
+  };
+  const look = <BoardAppearanceMenu value={appearance} onChange={setAppearance} />;
   const emptyBoard = (
     <div className="boards-empty-canvas">
-      <p className="boards-empty-title">This board is empty.</p>
-      <p>Add files and folders you choose (they stay where they are in File Box), notes, text (with checklists), deadlines, labels, links or file lists.</p>
+      <span className="boards-empty-art" aria-hidden="true">
+        <svg width="72" height="56" viewBox="0 0 72 56" fill="none"><rect x="4" y="30" width="64" height="4" rx="2" fill="currentColor" opacity="0.18" /><rect x="10" y="10" width="22" height="18" rx="3" fill="currentColor" opacity="0.12" stroke="currentColor" strokeOpacity="0.45" /><path d="M38 6h22v18l-5 5H38z" fill="currentColor" opacity="0.2" stroke="currentColor" strokeOpacity="0.55" strokeLinejoin="round" /><path d="M55 29v-5h5" stroke="currentColor" strokeOpacity="0.55" strokeLinejoin="round" /><path d="M42 13h12M42 18h8" stroke="currentColor" strokeOpacity="0.6" strokeLinecap="round" /><path d="M14 16h12M14 21h7" stroke="currentColor" strokeOpacity="0.45" strokeLinecap="round" /></svg>
+      </span>
+      <p className="boards-empty-title">Make this space yours.</p>
+      <p>Bring together the files you use, notes, plans and links. Nothing moves in File Box.</p>
       <div className="boards-empty-actions">
-        <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFile' })}>Add file</button>
-        <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFolder' })}>Add folder</button>
-        <button type="button" className="file-action-button" onClick={addNote}>Add sticky note</button>
-        <button type="button" className="file-action-button" onClick={addText}>Add text area</button>
+        <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFile' })}><span className="boards-empty-icon">{ADD_ICONS.file}</span>Add file</button>
+        <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFolder' })}><span className="boards-empty-icon">{ADD_ICONS.folder}</span>Add folder</button>
+        <button type="button" className="file-action-button" onClick={addNote}><span className="boards-empty-icon">{ADD_ICONS.note}</span>Add sticky note</button>
+        <button type="button" className="file-action-button" onClick={addText}><span className="boards-empty-icon">{ADD_ICONS.text}</span>Add text area</button>
         <button type="button" className="file-action-button" aria-haspopup="menu"
           onClick={() => document.querySelector<HTMLButtonElement>('.boards .boards-add-button')?.click()}>More…</button>
       </div>
@@ -438,7 +482,7 @@ const Boards: React.FC = () => {
       )}
 
       {active && (
-        <div className="file-browser personal-board" role="tabpanel" id={`board-panel-${active.id}`} aria-labelledby={`board-tab-${active.id}`}>
+        <div className={`file-browser personal-board tone-${appearance.tone}`} role="tabpanel" id={`board-panel-${active.id}`} aria-labelledby={`board-tab-${active.id}`}>
           <div className="file-canvas">
             {board.loading && <p className="boards-status">Loading this board…</p>}
             {board.error && <div className="boards-empty-canvas" role="alert"><p className="boards-empty-title">{board.error}</p></div>}
@@ -446,13 +490,14 @@ const Boards: React.FC = () => {
               <>
                 <div className="file-board-toolbar boards-phone-toolbar">
                   <AddMenu disabled={room <= 0} onAdd={onAdd} />
+                  {look}
                   <span className="file-board-hint">Zones and free arranging are on larger screens. Here you can edit and reorder.</span>
                 </div>
                 <BoardList blocks={board.blocks} zones={board.zones} saveState={board.saveState} editingId={editingId} empty={emptyBoard} {...actions} />
               </>
             ) : (
               <PersonalBoard tabId={active.id} blocks={board.blocks} zones={board.zones} saveState={board.saveState} editingId={editingId}
-                toolbarStart={<AddMenu disabled={room <= 0} onAdd={onAdd} />}
+                toolbarStart={<AddMenu disabled={room <= 0} onAdd={onAdd} />} toolbarEnd={look} canvasClassName={`pattern-${appearance.pattern}`}
                 onReset={() => setResetOpen(true)} empty={emptyBoard} {...actions} />
             ))}
           </div>

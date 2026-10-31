@@ -85,6 +85,13 @@ router.put('/tabs/:tabId/blocks', auth, async (req, res) => {
   } catch (error) { fail(res, error); }
 });
 
+// The canvas pattern and tone of a tab (presentation only: no revision change).
+router.put('/tabs/:tabId/appearance', auth, async (req, res) => {
+  try {
+    res.json({ tab: await boards.setAppearance(req.user._id, req.params.tabId, req.body) });
+  } catch (error) { fail(res, error); }
+});
+
 router.patch('/tabs/:tabId', auth, async (req, res) => {
   try {
     res.json({ tab: await boards.updateTab(req.user._id, req.params.tabId, req.body) });

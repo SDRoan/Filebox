@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import ItemActions from './ItemActions';
 import BoardDialog from './BoardDialog';
@@ -60,7 +61,8 @@ export const SavedSearchDialog: React.FC<{ initial?: BoardSavedSearch; scopeName
   };
 
   if (picking) {
-    return (
+    // Outside the board (see the preview below).
+    return createPortal(
       <FolderPickerModal title="Search one folder" confirmLabel="Use this folder" onClose={() => setPicking(false)}
         onSelect={(folderId) => {
           setPicking(false);
@@ -68,7 +70,8 @@ export const SavedSearchDialog: React.FC<{ initial?: BoardSavedSearch; scopeName
           set({ location: 'folder', folderId, teamId: null });
           setFolderName('');
           filesAPI.getFolder(folderId).then((f: any) => setFolderName(f?.name || '')).catch(() => setFolderName(''));
-        }} />
+        }} />,
+      document.body,
     );
   }
   return (
@@ -250,9 +253,11 @@ export const SavedSearchBlock: React.FC<Common & {
           // Saving always runs it again once saved (also when nothing changed, e.g. access came back).
           onSave={(next) => { setEditing(false); onEdit(next); onRefresh(); setTimeout(() => card.current?.querySelector<HTMLElement>('.board-search-refresh, .board-search-action')?.focus(), 50); }} />
       )}
-      {preview && (
+      {/* Outside the board: the board's surfaces may have their own colours (dark mode), which would contain it. */}
+      {preview && createPortal(
         <FilePreview file={{ ...preview, name: preview.originalName, access: preview.access.role } as unknown as FileItemType}
-          onClose={() => { const id = preview._id; setPreview(null); focusRow(id); }} />
+          onClose={() => { const id = preview._id; setPreview(null); focusRow(id); }} />,
+        document.body,
       )}
     </div>
   );

@@ -402,7 +402,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
   const addBlock = useCallback((type: 'label' | 'deadline' | 'link' | 'filelist' | 'search', given?: BoardContent) => {
     const { w, h } = BLOCK_SIZES[type];
     const content = given || (type === 'filelist' ? { filelist: { title: '', items: [] } }
-      : type === 'label' ? { label: { text: '', size: 'm' as const, align: 'left' as const, tone: 'default' as const } }
+      : type === 'label' ? { label: { text: '', size: 'm' as const, align: 'left' as const, tone: 'default' as const, style: 'plain' as const } }
         : { deadline: { title: '', note: '', due: null, completedAt: null } });
     const block = { id: newBlockId(), type, x: null, y: null, w, h, ...content } as BoardBlock;
     change([...blocksRef.current, block], { kind: 'add', blocks: [block] }, { debounce: true });

@@ -1,0 +1,367 @@
+/*
+ * Boards, the playground look: a canvas the person can make their own (pattern + tone, per tab), objects
+ * that feel placed on it (soft shadows, a gentle lift and set-down), styled zones and labels, paper notes.
+ * Presentation only; nothing here changes how the board works.
+ *
+ * Dark: File Box's dark mode turns the whole page around with a filter. On Boards the canvas layer, toolbar,
+ * zones, block surfaces, file and folder cards, the selection and the item toolbar turn it back
+ * (filter on themselves, never on something holding a dialog or preview, which would trap it) and use the
+ * real dark colours below. A tab with the Dark tone uses the same dark colours in light mode.
+ */
+
+/* ---- Colours: light, per tone */
+.personal-board {
+  --pb-canvas: transparent;
+  --pb-line: var(--fb-g-dfe4d8, #dfe4d8);
+  --pb-line-soft: color-mix(in srgb, var(--pb-line) 55%, transparent);
+  --pb-sel: var(--fb-g-3f6543, #3f6543);
+  --pb-surface: var(--fb-surface, #ffffff);
+  --pb-edge: var(--fb-g-e8ecdf, #e8ecdf);
+  --pb-ink: var(--text-primary, #1f2a1c);
+  --pb-ink-soft: var(--text-secondary, #5b6654);
+  --pb-shadow: 0 1px 2px rgba(35, 45, 30, 0.06), 0 2px 8px rgba(35, 45, 30, 0.05);
+  --pb-shadow-hover: 0 2px 4px rgba(35, 45, 30, 0.07), 0 10px 22px rgba(35, 45, 30, 0.09);
+  --pb-shadow-drag: 0 18px 40px rgba(35, 45, 30, 0.18), 0 4px 10px rgba(35, 45, 30, 0.08);
+}
+.personal-board.tone-warm { --pb-canvas: #fbf7ef; --pb-line: #e6dccb; }
+.personal-board.tone-blue { --pb-canvas: #f3f7fc; --pb-line: #d6e0ec; }
+.personal-board.tone-lavender { --pb-canvas: #f7f5fc; --pb-line: #e0daef; }
+.personal-board.tone-sage { --pb-canvas: #f4f8f1; --pb-line: #d8e3d1; }
+
+/* ---- Colours: dark (the app's dark mode, or a Dark tone) */
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) {
+  --pb-canvas: #1c1f24;
+  --pb-line: #343a43;
+  --pb-line-soft: #2a2f36;
+  --pb-sel: color-mix(in srgb, var(--fb-g-3f6543, #3f6543) 45%, #ffffff);
+  --pb-surface: #2a2e35;
+  --pb-edge: #3c424c;
+  --pb-ink: #eceef1;
+  --pb-ink-soft: #b9bfc8;
+  --pb-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.25);
+  --pb-shadow-hover: 0 2px 4px rgba(0, 0, 0, 0.4), 0 10px 24px rgba(0, 0, 0, 0.35);
+  --pb-shadow-drag: 0 18px 40px rgba(0, 0, 0, 0.55), 0 4px 10px rgba(0, 0, 0, 0.3);
+}
+html.fb-dark .personal-board.tone-warm { --pb-canvas: #221f1a; --pb-line: #3a352d; --pb-line-soft: #2d2923; }
+html.fb-dark .personal-board.tone-blue { --pb-canvas: #1a2029; --pb-line: #2f3a48; --pb-line-soft: #232b36; }
+html.fb-dark .personal-board.tone-lavender { --pb-canvas: #201e29; --pb-line: #393547; --pb-line-soft: #2a2735; }
+html.fb-dark .personal-board.tone-sage { --pb-canvas: #1c221d; --pb-line: #323c33; --pb-line-soft: #252d26; }
+.personal-board.tone-dark { --pb-canvas: #1b1d21; }
+
+/* Dark surfaces: the colours board blocks and File Box cards read, redefined where they are drawn. */
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) :is(.file-board-toolbar, .board-zone, .board-note-card, .board-label, .board-deadline-card, .board-link-card,
+  .board-filelist-card, .board-search-card, .board-unavailable-card, .board-item > .file-item, .board-item > .folder-item, .board-list-row > .file-item, .board-list-row > .folder-item, .board-item-toolbar, .board-list-zone-name, .boards-phone-toolbar) {
+  --text-primary: #eceef1; --text-secondary: #b9bfc8; --text-tertiary: #959ca7; --text-inverse: #16181c;
+  --bg-primary: #2a2e35; --bg-secondary: #343941; --bg-tertiary: #3c424b; --fb-surface: #2a2e35;
+  --border-light: #3c424c; --border-medium: #4b525d; --primary: var(--pb-sel); --primary-dark: var(--pb-sel); --primary-light: color-mix(in srgb, var(--pb-sel) 16%, #2a2e35);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35); --shadow-lg: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --fb-g-e8ecdf: #3c424c; --fb-g-dfe4d8: #444b55; --fb-g-dfe5d7: #444b55; --fb-g-eef0e8: #353a42; --fb-g-cfd6c6: #5a626e; --fb-g-fbfcf8: #30353c;
+  --fb-g-f6f8f2: #30353c; --fb-g-f7f9f3: #30353c; --fb-g-eef2e7: #3a4048; --fb-g-edf0e7: #353a42; --fb-g-e2e7db: #444b55;
+  --fb-g-56644c: #c3cad3; --fb-g-3f6543: var(--pb-sel); --fb-g-8f9a84: #a3aab4; --fb-g-b6c5a8: #6b7582; --fb-g-fcfdf9: #30353c;
+  --fb-g-48563f: #e6e9ed; --fb-g-89947e: #c6ccd4; --fb-g-4f6b43: var(--pb-sel); --fb-g-78856e: #aeb5bf; --fb-g-f1f4eb: #30353c; --fb-g-e3e8d9: #444b55; --fb-g-94a184: #aeb5bf; --fb-g-49613c: #e6e9ed;
+  color: var(--text-primary);
+}
+
+/* In the app's dark mode these layers turn the page's inversion back, to show the colours above as they are. */
+html.fb-dark .personal-board :is(.file-board-toolbar, .board-zone, .board-note-card, .board-label, .board-deadline-card, .board-link-card,
+  .board-filelist-card, .board-search-card, .board-unavailable-card, .board-item > .file-item, .board-item > .folder-item:not(:has(.modal-overlay)), .board-list-row > .file-item, .board-list-row > .folder-item:not(:has(.modal-overlay)), .board-item-toolbar, .board-list-zone-name, .boards-phone-toolbar),
+html.fb-dark .personal-board .file-board-canvas::before, html.fb-dark .personal-board .board-item.selected::after {
+  filter: invert(1) hue-rotate(180deg);
+}
+html.fb-dark .personal-board :is(.board-zone, .board-note-card, .board-deadline-card, .board-link-card, .board-filelist-card, .board-search-card, .board-item > .file-item, .board-item > .folder-item, .board-list-row > .file-item, .board-list-row > .folder-item) :is(img, video, canvas) { filter: none; }
+/* Where a menu reaches past the canvas, the board's own dark colour (not the page's turned-around white). */
+html.fb-dark .personal-board .file-board-scroll { background: #dee1e6; }
+/* Text areas keep File Box's own dark mode (their colours were chosen on a light page); a dark card. */
+html.fb-dark .personal-board .board-text-card { background: #d4d2ce; }
+html.fb-dark .personal-board .board-item.is-text .board-note-top { background: #cdcac4; border-color: #bdb9b1; }
+/* A Dark-tone tab in light mode shows text areas the same way (File Box's dark look for that card only;
+   not while its phone toolbar is open, which sits fixed at the bottom of the screen). */
+.personal-board.tone-dark .board-text-card:not(:has(.rt-toolbar.is-phone)) { filter: invert(1) hue-rotate(180deg); background: #d4d2ce; }
+.personal-board.tone-dark .board-item.is-text .board-note-top { background: #cdcac4; border-color: #bdb9b1; }
+
+/* ---- The canvas: a pattern and a tone, drawn on a layer under everything (CSS only, no images). */
+.personal-board .file-list.file-board-canvas { background-image: none; }
+/* The layer is the canvas's first positioned child, so zones and items paint above it. (No stacking context on
+   the canvas: a file card's preview inside it must still open above the page header.) */
+.personal-board .file-board-canvas::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-color: var(--pb-canvas);
+  background-image: radial-gradient(var(--pb-line) 1px, transparent 1.2px); background-size: 22px 22px;
+}
+.personal-board .file-board-canvas.pattern-grid::before {
+  --pb-grid: color-mix(in srgb, var(--pb-line) 32%, transparent);
+  background-image: linear-gradient(to right, var(--pb-grid) 1px, transparent 1px), linear-gradient(to bottom, var(--pb-grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+.personal-board .file-board-canvas.pattern-blank::before { background-image: none; }
+.personal-board .file-board-canvas.pattern-lines::before {
+  background-image: linear-gradient(to right, transparent 55px, color-mix(in srgb, #d88a8a 30%, transparent) 55px, color-mix(in srgb, #d88a8a 30%, transparent) 56px, transparent 56px),
+    repeating-linear-gradient(to bottom, transparent 0, transparent 31px, var(--pb-line-soft) 31px, var(--pb-line-soft) 32px);
+  background-size: 100% 100%, 100% 32px;
+}
+.personal-board .file-board-canvas.pattern-paper::before {
+  /* Nearly solid paper: the tone with one broad, barely-there wash of light (never repeated: no mesh, no moiré). */
+  background-image: radial-gradient(120% 90% at 18% 0%, rgba(255, 255, 255, 0.55), transparent 70%),
+    radial-gradient(90% 80% at 100% 100%, color-mix(in srgb, var(--pb-line) 18%, transparent), transparent 75%);
+  background-size: 100% 100%; background-repeat: no-repeat;
+}
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .file-board-canvas.pattern-paper::before {
+  background-image: radial-gradient(120% 90% at 18% 0%, rgba(255, 255, 255, 0.035), transparent 70%),
+    radial-gradient(90% 80% at 100% 100%, rgba(0, 0, 0, 0.12), transparent 75%);
+}
+/* Phone: the tone carries over (no pattern, for reading). Its rows hold dialogs, so it gets no layer of its
+   own; in the app's dark mode the colour is the one the page's inversion turns into the dark tone exactly. */
+.personal-board .board-list-phone { background: var(--pb-canvas); }
+.personal-board.tone-dark .board-list-phone { background: #1b1d21; }
+html.fb-dark .personal-board .board-list-phone { background: #dee1e6; }
+html.fb-dark .personal-board.tone-warm .board-list-phone { background: #e2dfda; }
+html.fb-dark .personal-board.tone-blue .board-list-phone { background: #dae0e9; }
+html.fb-dark .personal-board.tone-lavender .board-list-phone { background: #e1dfea; }
+html.fb-dark .personal-board.tone-sage .board-list-phone { background: #dae0db; }
+html.fb-dark .personal-board.tone-dark .board-list-phone { background: #e0e2e6; }
+
+/* ---- Toolbar: one primary (+ Add), the rest quieter */
+/* Above the canvas, so its menus (Add, Canvas) are never under the board, also when it has its own colours. */
+.personal-board .file-board-toolbar { position: relative; z-index: 20; gap: 8px 12px; padding: 10px 14px; background: var(--pb-surface); border-bottom-color: var(--pb-edge); }
+.personal-board .file-board-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.personal-board .file-board-group-end { margin-left: auto; }
+.personal-board .file-board-hint { flex: 1 1 160px; min-width: 120px; font-size: 11.5px; color: var(--text-secondary); opacity: 0.85; }
+.personal-board .file-board-toolbar .file-action-button { color: var(--text-primary); background: var(--bg-primary); border-color: var(--border-light); }
+.personal-board .file-board-toolbar .file-action-button.boards-add-button { background: var(--pb-sel); border-color: var(--pb-sel); color: #ffffff; font-weight: 600; }
+.personal-board .file-board-toolbar .file-action-button.boards-add-button:hover:not(:disabled) { background: color-mix(in srgb, var(--pb-sel), #000000 12%); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .file-board-toolbar .file-action-button.boards-add-button { color: #15181e; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .file-board-toolbar .file-action-button.boards-add-button:hover:not(:disabled) { background: color-mix(in srgb, var(--pb-sel), #ffffff 12%); }
+.personal-board .file-board-toolbar .file-board-quiet { background: transparent; border-color: transparent; color: var(--text-secondary); }
+.personal-board .file-board-toolbar .file-board-quiet:hover { color: var(--text-primary); border-color: var(--border-light); }
+.personal-board .file-board-shape { background: var(--bg-primary); border-color: var(--border-light); }
+.personal-board .file-board-shape span { border-color: var(--text-secondary); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .file-board-shape:hover { border-color: var(--pb-sel); }
+
+/* ---- Objects feel placed: soft shadows, a gentle lift, a pick-up and set-down while dragging */
+.personal-board .board-item > :is(.board-note-card, .board-deadline-card, .board-link-card, .board-filelist-card, .board-search-card, .board-text-frame) {
+  box-shadow: var(--pb-shadow); transition: box-shadow 160ms ease, transform 160ms ease;
+}
+.personal-board .board-item > .board-text-frame > .board-text-card { box-shadow: none; }
+.personal-board .board-item:hover > :is(.board-note-card, .board-deadline-card, .board-link-card, .board-filelist-card, .board-search-card, .board-text-frame) { box-shadow: var(--pb-shadow-hover); transform: translateY(-1px); }
+/* File and folder cards: the same real cards, only a placed-object shadow (no movement: their preview opens inside them). */
+.personal-board .board-item > :is(.file-item, .folder-item) { box-shadow: var(--pb-shadow); transition: box-shadow 160ms ease, transform 160ms ease, border-color 160ms ease; }
+.personal-board .board-item:hover > :is(.file-item, .folder-item) { box-shadow: var(--pb-shadow-hover); }
+.personal-board .board-item.dragging > :is(.board-note-card, .board-deadline-card, .board-link-card, .board-filelist-card, .board-search-card, .board-text-frame, .file-item, .folder-item, .board-unavailable-card) {
+  transform: scale(1.02); box-shadow: var(--pb-shadow-drag);
+}
+.personal-board .board-item.dragging > .board-label { transform: scale(1.02); }
+.personal-board .board-item > .board-label { transition: transform 160ms ease; }
+.personal-board .board-zone { transition: box-shadow 160ms ease, background-color 160ms ease; }
+
+/* ---- Selected: an outline with a gap (not colour alone), and the item comes above its neighbours */
+.personal-board .board-item.selected::after {
+  content: ''; position: absolute; inset: -5px; pointer-events: none;
+  border: 2px solid var(--pb-sel); border-radius: calc(10px * var(--fb-radius-scale, 1));
+}
+.personal-board .board-item.is-label.selected::after { inset: -4px; }
+/* Only Boards' own blocks are raised (a raised file card would hold its own preview beneath the page header). */
+.personal-board .board-item.selected:not(.is-file):not(.is-folder), .personal-board .board-item:has(.item-actions-menu[open]) { z-index: 5; }
+
+/* ---- The selected block's quick actions: above it, or below it near the top of the board */
+.personal-board .board-item > .board-item-toolbar {
+  position: absolute; bottom: calc(100% + 9px); left: 0; z-index: 6; display: flex; gap: 2px; width: auto !important; height: auto !important; padding: 3px;
+  background: var(--pb-surface); border: 1px solid var(--pb-edge); border-radius: 9px; box-shadow: var(--pb-shadow-hover);
+}
+.personal-board .board-item > .board-item-toolbar.is-below { top: calc(100% + 9px); bottom: auto; }
+.board-item-toolbar button { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; color: var(--pb-ink-soft); background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+.board-item-toolbar button:hover { color: var(--pb-ink); background: var(--bg-secondary); }
+.board-item-toolbar button:focus-visible { outline: 2px solid var(--pb-sel); outline-offset: 1px; }
+.board-item-toolbar button[data-action='remove']:hover { color: #a3392b; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-item-toolbar button[data-action='remove']:hover { color: #f19a8c; }
+
+/* ---- Zones: tint (the original look), outline, dashed, glass; an emoji before the name */
+.personal-board .board-zone.style-outline { background: color-mix(in srgb, var(--zone) 10%, transparent); border-color: color-mix(in srgb, var(--zone), #1f2a1c 22%); }
+.personal-board .board-zone.style-dashed { background: color-mix(in srgb, var(--zone) 26%, transparent); border-style: dashed; border-color: color-mix(in srgb, var(--zone), #1f2a1c 30%); }
+.personal-board .board-zone.style-glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.32)), color-mix(in srgb, var(--zone) 42%, transparent);
+  border-width: 1px; border-color: color-mix(in srgb, var(--zone), #ffffff 20%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), 0 6px 18px rgba(30, 40, 30, 0.06);
+}
+.board-zone-emoji { flex: none; font-size: 18px; line-height: 1; }
+.personal-board .board-zone.drop-target { box-shadow: 0 0 0 3px var(--pb-sel), 0 12px 30px rgba(35, 45, 30, 0.12); }
+.personal-board .board-zone.selected { box-shadow: 0 0 0 2px var(--pb-sel); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-zone {
+  background: color-mix(in srgb, var(--zone) 22%, var(--pb-canvas)); border-color: color-mix(in srgb, var(--zone) 55%, var(--pb-canvas));
+}
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-zone.style-outline { background: color-mix(in srgb, var(--zone) 7%, var(--pb-canvas)); border-color: color-mix(in srgb, var(--zone) 65%, var(--pb-canvas)); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-zone.style-dashed { background: color-mix(in srgb, var(--zone) 14%, var(--pb-canvas)); border-color: color-mix(in srgb, var(--zone) 65%, var(--pb-canvas)); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-zone.style-glass {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.03)), color-mix(in srgb, var(--zone) 16%, var(--pb-canvas));
+  border-color: rgba(255, 255, 255, 0.16); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) :is(.board-zone, .board-zone.dark) .board-zone-name { color: #f1f3f5; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-zone .board-zone-name:hover { border-color: rgba(255, 255, 255, 0.2); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-zone .board-zone-name:focus { background: rgba(0, 0, 0, 0.4); border-color: #8d95a0; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-zone :is(.board-zone-label-grip, .board-zone-count) { background: rgba(255, 255, 255, 0.12); color: #f1f3f5; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-zone-resize { filter: invert(1); }
+.personal-board .board-zone-tools { background: var(--pb-surface); border-color: var(--pb-edge); color: var(--pb-ink); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-zone-delete { color: #f19a8c; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-zone-delete:hover { background: #4a2a26; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-zone-label-reset { color: var(--text-primary); border-color: var(--border-medium); }
+/* Style and emoji choices in the zone's tools */
+.board-zone-styles { display: inline-flex; align-items: center; gap: 4px; }
+.board-zone-style { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 6px; cursor: pointer; }
+.board-zone-style span { display: block; width: 16px; height: 12px; border-radius: 3px; border: 1.6px solid var(--text-secondary); }
+.board-zone-style.look-tint span { background: color-mix(in srgb, var(--zone) 80%, transparent); border-color: var(--zone); }
+.board-zone-style.look-outline span { background: transparent; }
+.board-zone-style.look-dashed span { border-style: dashed; }
+.board-zone-style.look-glass span { background: linear-gradient(180deg, #ffffffcc, #ffffff55); border-width: 1px; }
+.board-zone-style[aria-pressed='true'], .board-zone-emoji-button[aria-expanded='true'] { border-color: var(--pb-sel); box-shadow: 0 0 0 1px var(--pb-sel); }
+.board-zone-emoji-pick { display: inline-flex; }
+.board-zone-emoji-button { display: grid; place-items: center; min-width: 28px; height: 28px; padding: 0 4px; font-size: 15px; color: var(--text-secondary); background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 6px; cursor: pointer; }
+.board-zone-emoji-grid {
+  /* Under the zone's tools (from their left edge), so it never runs off the board. */
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 8; display: grid; grid-template-columns: repeat(8, 32px); gap: 2px; padding: 6px;
+  background: var(--pb-surface); border: 1px solid var(--pb-edge); border-radius: 10px; box-shadow: var(--pb-shadow-hover);
+}
+.board-zone-emoji-grid button { width: 32px; height: 32px; padding: 0; font-size: 17px; background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+.board-zone-emoji-grid button:hover, .board-zone-emoji-grid button[aria-pressed='true'] { background: var(--bg-secondary); }
+.board-zone-emoji-grid .board-zone-emoji-none { grid-column: span 2; width: auto; font-size: 12px; color: var(--text-secondary); }
+.board-zone-tools :is(.board-zone-style, .board-zone-emoji-button, .board-zone-emoji-grid button):focus-visible { outline: 2px solid var(--pb-sel); outline-offset: 1px; }
+
+/* Phone: zone groups carry their style */
+.personal-board .board-list-zone.style-outline { background: color-mix(in srgb, var(--zone) 8%, transparent); border-color: color-mix(in srgb, var(--zone), #1f2a1c 22%); }
+.personal-board .board-list-zone.style-dashed { background: color-mix(in srgb, var(--zone) 20%, transparent); border-style: dashed; border-color: color-mix(in srgb, var(--zone), #1f2a1c 30%); }
+.personal-board .board-list-zone.style-glass { background: linear-gradient(180deg, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0.3)), color-mix(in srgb, var(--zone) 36%, transparent); border-width: 1px; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-list-zone { background: color-mix(in srgb, var(--zone) 14%, transparent); border-color: color-mix(in srgb, var(--zone) 45%, transparent); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-list-zone-name { color: #f1f3f5; }
+html.fb-dark .personal-board .board-list-zone { border-color: color-mix(in srgb, var(--zone) 40%, #000000); }
+
+/* ---- Sticky notes: paper, a soft shadow and a strip of tape */
+.personal-board .board-note-card { position: relative; background: linear-gradient(180deg, color-mix(in srgb, var(--note), #ffffff 40%) 0, var(--note) 42px); }
+.personal-board .board-note-card::before {
+  content: ''; position: absolute; top: -6px; left: 50%; width: 48px; height: 12px; margin-left: -24px; pointer-events: none;
+  background: rgba(255, 255, 255, 0.55); border: 1px solid rgba(80, 70, 40, 0.08); border-radius: 2px; transform: rotate(-1.5deg);
+}
+.personal-board .board-note-title { font-weight: 650; }
+.personal-board .board-note-body { line-height: 1.55; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-note-card { --text-primary: #f3f1ea; --text-secondary: #cdc8bb; color: #f3f1ea; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-note-card :is(.board-note-title, .board-note-body) { color: #f3f1ea; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-note-card :is(.board-note-title, .board-note-body)::placeholder { color: #b7b1a3; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-note-card::before { background: rgba(255, 255, 255, 0.14); border-color: rgba(255, 255, 255, 0.06); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) :is(.note-yellow) { --note: #3d3824; --note-edge: #5b5233; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) :is(.note-pink) { --note: #3e2a33; --note-edge: #5d3f4c; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) :is(.note-blue) { --note: #22324a; --note-edge: #364a69; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) :is(.note-green) { --note: #233a2a; --note-edge: #375a40; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) :is(.note-purple) { --note: #2f2945; --note-edge: #483f66; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) :is(.note-orange) { --note: #40301f; --note-edge: #60482e; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-note-card { background: linear-gradient(180deg, color-mix(in srgb, var(--note), #ffffff 6%) 0, var(--note) 42px); }
+
+/* ---- Labels: plain, tag, marker (a soft highlighter stroke), underline — in the label's colour */
+.board-label-fit { display: flex; flex: 1 1 auto; min-width: 0; height: 100%; }
+.board-label:not(.style-plain) .board-label-fit {
+  display: inline-grid; flex: 0 1 auto; align-items: center; max-width: 100%; height: auto;
+  font-weight: 700; letter-spacing: -0.01em; color: inherit;
+}
+/* The hidden copy of the words sizes the field (it never shows). */
+.board-label:not(.style-plain) .board-label-fit::after { content: attr(data-value) ' '; grid-area: 1 / 1; visibility: hidden; white-space: pre; padding: 0 6px; overflow: hidden; }
+.board-label:not(.style-plain) .board-label-text { grid-area: 1 / 1; width: 100%; min-width: 3ch; height: auto; }
+.board-label.size-s:not(.style-plain) .board-label-fit { font-size: 0.9rem; }
+.board-label.size-m:not(.style-plain) .board-label-fit { font-size: 1.15rem; }
+.board-label.size-l:not(.style-plain) .board-label-fit { font-size: 1.6rem; }
+.board-label:not(.style-plain).align-center { justify-content: center; }
+.board-label:not(.style-plain).align-right { justify-content: flex-end; }
+.board-label.tone-default .board-label-fit { color: var(--text-primary); }
+.board-label.tone-sage .board-label-fit { color: #3f6b3a; }
+.board-label.tone-sky .board-label-fit { color: #235f94; }
+.board-label.tone-rose .board-label-fit { color: #9c3354; }
+.board-label.tone-amber .board-label-fit { color: #855a06; }
+.board-label.tone-slate .board-label-fit { color: #47566a; }
+.board-label.style-tag .board-label-fit { padding: 2px 8px; background: color-mix(in srgb, currentColor 12%, transparent); border-radius: 999px; }
+.board-label.style-marker .board-label-fit {
+  padding: 0 2px; border-radius: 3px;
+  background: linear-gradient(180deg, transparent 58%, color-mix(in srgb, currentColor 20%, transparent) 58%, color-mix(in srgb, currentColor 20%, transparent) 88%, transparent 88%);
+}
+.board-label.style-underline .board-label-fit { padding-bottom: 1px; border-bottom: 3px solid color-mix(in srgb, currentColor 50%, transparent); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label.tone-default .board-label-text { color: #eceef1; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label.tone-sage .board-label-text { color: #a6d6a2; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label.tone-sky .board-label-text { color: #93c7f2; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label.tone-rose .board-label-text { color: #f2a9bd; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label.tone-amber .board-label-text { color: #e9c674; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label.tone-slate .board-label-text { color: #bdc8d8; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label .board-label-fit { color: inherit; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label.tone-default { color: #eceef1; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label.tone-sage { color: #a6d6a2; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label.tone-sky { color: #93c7f2; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label.tone-rose { color: #f2a9bd; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label.tone-amber { color: #e9c674; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label.tone-slate { color: #bdc8d8; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-label.style-marker .board-label-fit {
+  background: linear-gradient(180deg, transparent 58%, color-mix(in srgb, currentColor 26%, transparent) 58%, color-mix(in srgb, currentColor 26%, transparent) 88%, transparent 88%);
+}
+
+/* ---- Dark details inside blocks and menus */
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .item-actions-popover { background: #2f343c; border-color: #4b525d; color: #eceef1; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .item-actions-menu summary { color: #c8ced6; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-item-handle { background: #3a4048; color: #dfe3e8; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-item-resize { filter: invert(1); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) :is(.board-deadline-card, .board-link-card, .board-filelist-card, .board-search-card, .board-unavailable-card) { background: var(--pb-surface); border-color: var(--pb-edge); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) :is(.board-item, .board-list-row) > :is(.file-item, .folder-item) { background: var(--pb-surface); border-color: var(--pb-edge); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-item:hover > :is(.file-item, .folder-item) { background: #30353d; border-color: #5a626e; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-search-new { background: var(--pb-sel); color: #15181e; }
+/* File cards on a dark board: their details and picture captions (fixed dark text elsewhere) read clearly. */
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) :is(.board-item, .board-list-row) > :is(.file-item, .folder-item) :is(.file-meta, .folder-meta) { color: #c6ccd4; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) :is(.board-item, .board-list-row) > .file-item .image-caption-text { color: #d6dae0; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) :is(.board-item, .board-list-row) > .file-item .image-caption-tags { color: var(--pb-sel); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .boards-empty-canvas { color: #c3c9d1; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .boards-empty-canvas .boards-empty-title { color: #eef0f3; }
+
+/* ---- "+ Add": a small creative toolbox (icon, name, what it is for) */
+.file-board-toolbar .boards-add-menu, .boards-phone-toolbar .boards-add-menu { min-width: 288px; padding: 6px; }
+.boards-add-menu [role='menuitem'] { display: grid; grid-template-columns: 30px 1fr; grid-template-rows: auto auto; column-gap: 10px; align-items: center; justify-content: stretch; min-height: 46px; padding: 6px 10px; border-radius: 8px; }
+.boards-add-menu [role='menuitem'] .boards-add-icon { grid-row: span 2; display: grid; place-items: center; width: 30px; height: 30px; color: var(--primary-dark, #315536); background: var(--bg-secondary); border-radius: 8px; }
+.boards-add-menu [role='menuitem']::after { content: attr(data-help); grid-column: 2; font-size: 0.74rem; font-weight: 400; line-height: 1.3; color: var(--text-secondary); }
+.boards-add-group-name { margin: 6px 10px 2px; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .boards-add-menu { background: #2f343c; border-color: #4b525d; color: #eceef1; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .boards-add-menu [role='menuitem'] { color: #eceef1; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .boards-add-menu [role='menuitem']:is(:hover, :focus-visible) { background: #3a4048; }
+
+/* ---- Canvas: the pattern and tone chooser */
+.board-look { position: relative; display: inline-flex; }
+.board-look-panel {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 40; width: 300px; padding: 12px;
+  background: var(--pb-surface); border: 1px solid var(--pb-edge); border-radius: 12px; box-shadow: var(--pb-shadow-hover); color: var(--pb-ink);
+}
+.board-look-set { margin: 0 0 10px; padding: 0; border: 0; }
+.board-look-set legend { margin-bottom: 6px; padding: 0; font-size: 0.72rem; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-secondary); }
+.board-look-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.board-look-option { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px; border-radius: 8px; cursor: pointer; }
+.board-look-option input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.board-look-swatch { display: block; width: 100%; height: 40px; border: 1px solid var(--border-light); border-radius: 7px; background-color: #ffffff; }
+.board-look-option input:checked + .board-look-swatch { border-color: var(--pb-sel); box-shadow: 0 0 0 2px var(--pb-sel); }
+.board-look-option input:focus-visible + .board-look-swatch { outline: 2px solid var(--pb-sel); outline-offset: 3px; }
+.board-look-name { font-size: 0.74rem; color: var(--text-primary); }
+.board-look-option input:checked ~ .board-look-name { font-weight: 650; }
+.board-look-note { margin: 2px 0 0; font-size: 0.74rem; color: var(--text-secondary); }
+.board-look-swatch.tone-white { --sw: #ffffff; --swl: #d9dfd2; }
+.board-look-swatch.tone-warm { --sw: #fbf7ef; --swl: #e0d4bf; }
+.board-look-swatch.tone-blue { --sw: #f3f7fc; --swl: #cfdbea; }
+.board-look-swatch.tone-lavender { --sw: #f7f5fc; --swl: #d9d1ec; }
+.board-look-swatch.tone-sage { --sw: #f4f8f1; --swl: #d0ddc8; }
+.board-look-swatch.tone-dark { --sw: #1c1f24; --swl: #3a414b; }
+.board-look-swatch { background-color: var(--sw); }
+.board-look-swatch.pattern-dots { background-image: radial-gradient(var(--swl) 1px, transparent 1.3px); background-size: 8px 8px; }
+.board-look-swatch.pattern-grid { background-image: linear-gradient(to right, color-mix(in srgb, var(--swl) 60%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--swl) 60%, transparent) 1px, transparent 1px); background-size: 10px 10px; }
+.board-look-swatch.pattern-lines { background-image: repeating-linear-gradient(to bottom, transparent 0, transparent 9px, var(--swl) 9px, var(--swl) 10px); }
+.board-look-swatch.pattern-paper { background-image: radial-gradient(120% 90% at 18% 0%, rgba(255, 255, 255, 0.6), transparent 70%), radial-gradient(90% 80% at 100% 100%, color-mix(in srgb, var(--swl) 45%, transparent), transparent 75%); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-look-panel { background: #2a2e35; border-color: #3c424c; }
+
+/* ---- Empty board */
+.boards-empty-art { display: inline-grid; place-items: center; width: 92px; height: 72px; margin-bottom: 8px; color: var(--pb-sel); background: color-mix(in srgb, var(--pb-sel) 8%, transparent); border-radius: 18px; }
+.boards-empty-canvas .boards-empty-actions .file-action-button { display: inline-flex; align-items: center; gap: 6px; }
+.boards-empty-icon { display: inline-grid; color: var(--primary-dark, #315536); }
+.boards-empty-icon svg { width: 16px; height: 16px; }
+
+/* ---- Calm motion: nothing moves when motion is reduced (the system setting or File Box's own) */
+@media (prefers-reduced-motion: reduce) {
+  .personal-board :is(.board-item > *, .board-zone, .board-item-toolbar) { transition: none !important; }
+  .personal-board .board-item > * { transform: none !important; }
+}
+html.fb-reduce-motion .personal-board :is(.board-item > *, .board-zone, .board-item-toolbar) { transition: none !important; }
+html.fb-reduce-motion .personal-board .board-item > * { transform: none !important; }
+html.fb-reduce-motion .personal-board .board-note-card::before { transform: none; }
