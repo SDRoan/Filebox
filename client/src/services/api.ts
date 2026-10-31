@@ -612,8 +612,6 @@ export interface BoardNote { title: string; body: string; color: NoteColor }
 export interface RichTextNode { type: string; attrs?: Record<string, unknown>; content?: RichTextNode[]; text?: string; marks?: Array<{ type: string; attrs?: Record<string, unknown> }> }
 export interface BoardText { doc: RichTextNode }
 // Board-only blocks (server/services/boardBlocks.js).
-export interface BoardChecklistItem { id: string; text: string; checked: boolean }
-export interface BoardChecklist { title: string; items: BoardChecklistItem[] }
 export type LabelSize = 's' | 'm' | 'l';
 export type LabelTone = 'default' | 'sage' | 'sky' | 'rose' | 'amber' | 'slate';
 export interface BoardLabel { text: string; size: LabelSize; align: 'left' | 'center' | 'right'; tone: LabelTone }
@@ -644,7 +642,7 @@ export type SavedSearchRun =
   | { id: string; state: 'ok'; total: number; results: SavedSearchRow[]; scopeName?: string; tookMs?: number }
   | { id: string; state: 'unavailable' | 'error' };
 // The content of a block that is not a file or folder, in a field named after its type.
-export interface BoardContent { note?: BoardNote; text?: BoardText; checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink; filelist?: BoardFileList; search?: BoardSavedSearch }
+export interface BoardContent { note?: BoardNote; text?: BoardText; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink; filelist?: BoardFileList; search?: BoardSavedSearch }
 
 // A place on the free canvas in pixels; null x/y = not placed yet (the board puts it below everything).
 // Sticky notes and text areas also have a width and height.
@@ -653,7 +651,6 @@ export type BoardBlock =
   | (BoardPlace & { type: 'file' | 'folder'; ref: BoardRef })
   | (BoardPlace & { type: 'note'; note: BoardNote })
   | (BoardPlace & { type: 'text'; text: BoardText })
-  | (BoardPlace & { type: 'checklist'; checklist: BoardChecklist })
   | (BoardPlace & { type: 'label'; label: BoardLabel })
   | (BoardPlace & { type: 'deadline'; deadline: BoardDeadline })
   | (BoardPlace & { type: 'link'; link: BoardLink })
@@ -665,7 +662,7 @@ export type BoardBlock =
 export interface BoardBlockInput {
   id: string; type: BoardBlock['type']; x: number | null; y: number | null; w?: number; h?: number;
   fileId?: string; folderId?: string; note?: BoardNote; text?: BoardText;
-  checklist?: BoardChecklist; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink;
+  label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink;
   // A file list's rows: { id } for a row the server has (it keeps that row's file), { id, fileId } for a new one.
   filelist?: { title: string; items: Array<{ id: string; fileId?: string }> };
   search?: BoardSavedSearch;

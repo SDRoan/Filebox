@@ -29,7 +29,8 @@ const extensions = [
   Highlight.configure({ multicolor: true }),
   TaskList, TaskItem.configure({ nested: true }),
   Placeholder.configure({ placeholder: 'Write something…' }),
-  CharacterCount.configure({ limit: 50000 }),
+  // 51,000 characters as people see them (an emoji is one), the same count the server uses.
+  CharacterCount.configure({ limit: 51000, textCounter: (text: string) => Array.from(text).length }),
   Subscript, Superscript,
 ];
 

@@ -1,19 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import ItemActions from './ItemActions';
 import { Common, MoveItems } from './BoardNoteBlocks';
-import { BoardBlock, BoardChecklist, BoardChecklistItem, BoardDeadline, BoardLabel, LabelSize, LabelTone } from '../services/api';
+import { BoardBlock, BoardDeadline, BoardLabel, LabelSize, LabelTone } from '../services/api';
 
 /**
- * Board-only planning blocks: a checklist, a label (a plain heading for an area of the board) and a
- * deadline. Like sticky notes they move only by the canvas grip; typing, ticking or picking a date never
- * moves them. Changes go through the board's one save engine: typing is saved after a pause, a tick,
- * Complete, a reorder or a date straight away.
+ * Board-only planning blocks: a label (a plain heading for an area of the board) and a deadline. Like
+ * sticky notes they move only by the canvas grip; typing or picking a date never moves them. Changes go
+ * through the board's one save engine: typing is saved after a pause, Complete or a date straight away.
+ * (Checklists live in text areas.)
  */
 
 type Edit<T> = (content: T, now?: boolean) => void;
-const LIMIT = { title: 100, items: 100, item: 500, label: 120, deadlineTitle: 120, deadlineNote: 500 };
+const LIMIT = { label: 120, deadlineTitle: 120, deadlineNote: 500 };
 const clip = (value: string, max: number) => Array.from(value).slice(0, max).join('');
-const newItemId = () => { let id = ''; while (id.length < 8) id += Math.random().toString(36).slice(2); return id.slice(0, 8); };
 
 /** Follow the saved content (another device, a conflict, Undo) unless the person is working in this block. */
 function useSaved<T>(saved: T, card: React.RefObject<HTMLElement | null>) {
@@ -30,98 +29,6 @@ function useSaved<T>(saved: T, card: React.RefObject<HTMLElement | null>) {
 
 /** Saves when focus leaves the block (unless it moves into one of its own menus). */
 const leaveSaves = (onFlush: () => void) => (event: React.FocusEvent) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) onFlush(); };
-
-// ---- Checklist
-
-export const ChecklistBlock: React.FC<Common & { block: Extract<BoardBlock, { type: 'checklist' }>; onEdit: Edit<BoardChecklist> }> = ({ block, onEdit, onFlush, onExit, onRemove, onMove, phone, first, last }) => {
-  const card = useRef<HTMLDivElement>(null);
-  const [list, setList] = useSaved(block.checklist, card);
-  const composing = useRef(false);
-  const focusItem = (id: string, end = true) => setTimeout(() => {
-    const input = card.current?.querySelector<HTMLInputElement>(`[data-item-id="${id}"] .board-checklist-text`);
-    input?.focus();
-    if (input && end) input.setSelectionRange(input.value.length, input.value.length);
-  }, 0);
-  const send = (next: BoardChecklist, now = false) => { setList(next); if (!composing.current || now) onEdit(next, now); };
-  const setItems = (items: BoardChecklistItem[], now = true) => send({ ...list, items }, now);
-  const done = list.items.filter(i => i.checked).length;
-  const full = list.items.length >= LIMIT.items;
-
-  const addAfter = (index: number) => {
-    if (full) return;
-    const item = { id: newItemId(), text: '', checked: false };
-    setItems([...list.items.slice(0, index + 1), item, ...list.items.slice(index + 1)]);
-    focusItem(item.id);
-  };
-  const removeItem = (index: number) => {
-    const before = list.items[index - 1];
-    setItems(list.items.filter((_, i) => i !== index));
-    if (before) focusItem(before.id);
-    else setTimeout(() => card.current?.querySelector<HTMLElement>('.board-checklist-title')?.focus(), 0);
-  };
-  const moveItem = (index: number, direction: -1 | 1) => {
-    const to = index + direction;
-    if (to < 0 || to >= list.items.length) return;
-    const items = [...list.items];
-    const [item] = items.splice(index, 1);
-    items.splice(to, 0, item);
-    setItems(items);
-    focusItem(item.id, false);
-  };
-  const onItemKey = (index: number) => (event: React.KeyboardEvent<HTMLInputElement>) => {
-    const item = list.items[index];
-    if (event.key === 'Escape') { event.preventDefault(); onExit(); return; }
-    if (composing.current || event.nativeEvent.isComposing) return;
-    if (event.key === 'Enter') { event.preventDefault(); addAfter(index); return; }
-    if (event.key === 'Backspace' && item.text === '') { event.preventDefault(); removeItem(index); return; }
-    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) { event.preventDefault(); moveItem(index, event.key === 'ArrowUp' ? -1 : 1); }
-  };
-  const composition = {
-    onCompositionStart: () => { composing.current = true; },
-    onCompositionEnd: (event: React.CompositionEvent<HTMLInputElement>) => {
-      composing.current = false;
-      const input = event.target as HTMLInputElement;
-      if (input.classList.contains('board-checklist-title')) send({ ...list, title: clip(input.value, LIMIT.title) });
-      else setItems(list.items.map(i => (i.id === input.closest<HTMLElement>('[data-item-id]')?.dataset.itemId ? { ...i, text: clip(input.value, LIMIT.item) } : i)), false);
-    },
-  };
-
-  return (
-    <div ref={card} className="board-checklist-card" onBlur={leaveSaves(onFlush)}>
-      <div className="board-note-top">
-        <span className="board-note-kind">Checklist</span>
-        {list.items.length > 0 && <span className="board-checklist-count" aria-label={`${done} of ${list.items.length} done`}>{done}/{list.items.length}</span>}
-        <ItemActions className="board-block-menu" label="Options for this checklist">
-          <MoveItems phone={phone} first={first} last={last} onMove={onMove} />
-          <button type="button" onClick={onRemove}>Remove from board</button>
-        </ItemActions>
-      </div>
-      <input className="board-checklist-title" value={list.title} placeholder="Checklist title" aria-label="Checklist title" maxLength={LIMIT.title + 2}
-        onChange={e => send({ ...list, title: clip(e.target.value, LIMIT.title) })} {...composition}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') { e.preventDefault(); onExit(); }
-          else if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); if (list.items.length) focusItem(list.items[0].id); else addAfter(-1); }
-        }} />
-      <ul className="board-checklist-items" aria-label={list.title ? `${list.title} items` : 'Checklist items'}>
-        {list.items.map((item, index) => (
-          <li key={item.id} data-item-id={item.id} className={item.checked ? 'is-checked' : ''}>
-            <input type="checkbox" className="board-checklist-check" checked={item.checked} aria-label={`Done: ${item.text || 'empty item'}`}
-              onChange={() => setItems(list.items.map(i => (i.id === item.id ? { ...i, checked: !i.checked } : i)))}
-              onKeyDown={(e) => { if (e.key === 'Escape') { e.preventDefault(); onExit(); } }} />
-            <input className="board-checklist-text" value={item.text} placeholder="Item" aria-label={`Item ${index + 1} of ${list.items.length}`} maxLength={LIMIT.item + 2}
-              aria-describedby={`${block.id}-keys`}
-              onChange={e => setItems(list.items.map(i => (i.id === item.id ? { ...i, text: clip(e.target.value, LIMIT.item) } : i)), false)}
-              onKeyDown={onItemKey(index)} {...composition} />
-            <button type="button" className="board-checklist-delete" aria-label={`Delete item ${item.text || index + 1}`} title="Delete item" onClick={() => removeItem(index)}>×</button>
-          </li>
-        ))}
-      </ul>
-      <p id={`${block.id}-keys`} className="boards-visually-hidden">Enter adds an item below. Backspace in an empty item deletes it. Alt and arrow keys reorder.</p>
-      <button type="button" className="board-checklist-add" onClick={() => addAfter(list.items.length - 1)} disabled={full}
-        title={full ? `A checklist can hold up to ${LIMIT.items} items` : undefined}>+ Add item</button>
-    </div>
-  );
-};
 
 // ---- Label
 

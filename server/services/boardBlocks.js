@@ -1,5 +1,5 @@
 /**
- * Boards: the board-only block types (checklist, label, deadline, link, file list, saved search). Every value the browser sends is
+ * Boards: the board-only block types (label, deadline, link, file list, saved search). Every value the browser sends is
  * cleaned here before it is stored; anything that cannot be cleaned is refused with a clear message.
  * Lengths count characters as people see them (an emoji is one), like notes.
  */
@@ -11,7 +11,6 @@ class BlockError extends Error {
 }
 
 const LIMITS = Object.freeze({
-  checklistTitle: 100, checklistItems: 100, checklistItem: 500,
   label: 120,
   deadlineTitle: 120, deadlineNote: 500,
   linkUrl: 2000, linkTitle: 200, linkNote: 500,
@@ -32,23 +31,6 @@ const chars = (s) => Array.from(s).length;
 const oneLine = (value) => (typeof value === 'string' ? value : '').replace(/\s+/g, ' ').replace(CONTROL, '').trim();
 const lines = (value) => (typeof value === 'string' ? value : '').replace(/\r\n?/g, '\n').replace(CONTROL, '');
 const within = (text, max, what) => { if (chars(text) > max) throw new BlockError(`${what} can be up to ${max.toLocaleString('en-US')} characters.`); return text; };
-
-/** A checklist: an optional title and up to 100 items, each with its own id, words and a tick. */
-function cleanChecklist(raw) {
-  if (raw === undefined) return { title: '', items: [] };
-  if (!isObject(raw)) throw new BlockError('This checklist could not be saved.');
-  const title = within(oneLine(raw.title), LIMITS.checklistTitle, 'A checklist title');
-  const list = raw.items === undefined ? [] : raw.items;
-  if (!Array.isArray(list)) throw new BlockError('This checklist could not be saved.');
-  if (list.length > LIMITS.checklistItems) throw new BlockError(`A checklist can hold up to ${LIMITS.checklistItems} items.`);
-  const seen = new Set();
-  const items = list.map((item) => {
-    if (!isObject(item) || typeof item.id !== 'string' || !ITEM_ID.test(item.id) || seen.has(item.id)) throw new BlockError('This checklist could not be saved. Reload and try again.');
-    seen.add(item.id);
-    return { id: item.id, text: within(oneLine(item.text), LIMITS.checklistItem, 'A checklist item'), checked: item.checked === true };
-  });
-  return { title, items };
-}
 
 /** A label: one line of heading text with a size, an alignment and a subtle tone. */
 function cleanLabel(raw) {
@@ -232,6 +214,6 @@ function cleanSavedSearch(raw) {
   };
 }
 
-const CLEANERS = Object.freeze({ checklist: cleanChecklist, label: cleanLabel, deadline: cleanDeadline, link: cleanLink, filelist: cleanFileList, search: cleanSavedSearch });
+const CLEANERS = Object.freeze({ label: cleanLabel, deadline: cleanDeadline, link: cleanLink, filelist: cleanFileList, search: cleanSavedSearch });
 
-module.exports = { BlockError, LIMITS, LABEL_SIZES, LABEL_ALIGN, LABEL_TONES, CLEANERS, cleanChecklist, cleanLabel, cleanDeadline, cleanLink, linkUrl, cleanFileList, cleanSavedSearch, SEARCH };
+module.exports = { BlockError, LIMITS, LABEL_SIZES, LABEL_ALIGN, LABEL_TONES, CLEANERS, cleanLabel, cleanDeadline, cleanLink, linkUrl, cleanFileList, cleanSavedSearch, SEARCH };

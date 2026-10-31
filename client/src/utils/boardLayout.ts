@@ -17,7 +17,6 @@ export interface Spot { x: number; y: number; w?: number; h?: number }
 export const BLOCK_SIZES = {
   note: { w: 220, h: 220, minW: 160, minH: 140, maxW: 560, maxH: 560 },
   text: { w: 420, h: 300, minW: 260, minH: 160, maxW: 1200, maxH: 1200 },
-  checklist: { w: 260, h: 280, minW: 200, minH: 140, maxW: 600, maxH: 900 },
   label: { w: 280, h: 44, minW: 120, minH: 34, maxW: 1200, maxH: 60 },
   deadline: { w: 220, h: 150, minW: 180, minH: 120, maxW: 400, maxH: 300 },
   link: { w: 260, h: 116, minW: 200, minH: 96, maxW: 480, maxH: 260 },
@@ -27,7 +26,7 @@ export const BLOCK_SIZES = {
 // A label is only as tall as its heading size.
 export const LABEL_HEIGHT = { s: 34, m: 44, l: 60 } as const;
 // The block types that are content on the board (not references to files or folders).
-export const CONTENT_TYPES = ['note', 'text', 'checklist', 'label', 'deadline', 'link', 'filelist', 'search'] as const;
+export const CONTENT_TYPES = ['note', 'text', 'label', 'deadline', 'link', 'filelist', 'search'] as const;
 export type ContentType = typeof CONTENT_TYPES[number];
 export interface Size { w: number; h: number }
 

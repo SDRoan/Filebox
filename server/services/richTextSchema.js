@@ -7,10 +7,13 @@
  *    and unknown attributes are dropped.
  *  - Links keep only http:, https: and mailto: addresses; any other link loses its address but keeps its words.
  *  - Colours are hex only; headings are levels 1–3; alignment is left / center / right / justify.
- *  - Too large or too deep is refused (never silently cut): 50,000 characters, 100 KB, depth 20, 5,000 blocks.
+ *  - Too large or too deep is refused (never silently cut): 51,000 characters (as people see them: an emoji is
+ *    one, like every other Boards limit), 256 KB, depth 20, 5,000 blocks. The limits hold every checklist that
+ *    could be saved before checklists moved into text areas (a 100-character title and 100 items of 500).
  */
 
-const LIMITS = Object.freeze({ chars: 50000, bytes: 100 * 1024, depth: 20, nodes: 5000, linkLength: 2000 });
+const LIMITS = Object.freeze({ chars: 51000, bytes: 256 * 1024, depth: 20, nodes: 5000, linkLength: 2000 });
+const charCount = (text) => Array.from(text).length;
 
 class RichTextError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -100,7 +103,7 @@ function cleanDoc(input) {
       if (child.type === 'text') {
         const text = cleanText(child.text);
         if (!text) continue;
-        chars += text.length;
+        chars += charCount(text);
         count();
         const m = marks ? cleanMarks(child.marks) : undefined;
         out.push(m ? { type: 'text', text, marks: m } : { type: 'text', text });
@@ -110,7 +113,7 @@ function cleanDoc(input) {
       } else {
         // Not allowed inside a line: its words are kept as plain text.
         const text = cleanText(plainText(child, depth + 1));
-        if (text) { chars += text.length; count(); out.push({ type: 'text', text }); }
+        if (text) { chars += charCount(text); count(); out.push({ type: 'text', text }); }
       }
     }
     return out;
@@ -124,7 +127,7 @@ function cleanDoc(input) {
       // Unknown block: keep its words as a paragraph.
       const text = cleanText(plainText(node, depth + 1));
       if (!text) return null;
-      chars += text.length;
+      chars += charCount(text);
       count(); count();
       return { type: 'paragraph', content: [{ type: 'text', text }] };
     }
@@ -162,7 +165,7 @@ function cleanDoc(input) {
           // Anything else inside a list becomes an item holding its words.
           const text = cleanText(plainText(child, depth + 1));
           if (!text) continue;
-          chars += text.length;
+          chars += charCount(text);
           count(); count(); count();
           items.push({ type: rule.item, ...(rule.item === 'taskItem' ? { attrs: { checked: false } } : {}), content: [{ type: 'paragraph', content: [{ type: 'text', text }] }] });
         }

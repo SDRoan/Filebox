@@ -21,7 +21,7 @@ export type BoardChange =
   | { kind: 'remove'; id: string }
   // Places (and sizes) on the free canvas, and the tab's zones when they changed. null = not placed yet.
   | { kind: 'layout'; items: Record<string, Spot | null>; zones?: BoardZone[] }
-  // A block's content changed (a note, text area, checklist, label or deadline): its field named after its type.
+  // A block's content changed (a note, text area, label, deadline, link, file list or saved search): its field named after its type.
   | ({ kind: 'edit'; id: string } & BoardContent);
 
 export interface BoardNotice { text: string; tone?: 'info' | 'error'; undo?: () => void; removedId?: string }
@@ -396,13 +396,12 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
   }, [change]);
 
   /**
-   * A new checklist, label, deadline, link or file list, placed below everything. A link comes with its content (the
+   * A new label, deadline, link, file list or saved search, placed below everything. A link comes with its content (the
    * address is checked first). Returns its id (so it can be focused).
    */
-  const addBlock = useCallback((type: 'checklist' | 'label' | 'deadline' | 'link' | 'filelist' | 'search', given?: BoardContent) => {
+  const addBlock = useCallback((type: 'label' | 'deadline' | 'link' | 'filelist' | 'search', given?: BoardContent) => {
     const { w, h } = BLOCK_SIZES[type];
-    const content = given || (type === 'checklist' ? { checklist: { title: '', items: [] } }
-      : type === 'filelist' ? { filelist: { title: '', items: [] } }
+    const content = given || (type === 'filelist' ? { filelist: { title: '', items: [] } }
       : type === 'label' ? { label: { text: '', size: 'm' as const, align: 'left' as const, tone: 'default' as const } }
         : { deadline: { title: '', note: '', due: null, completedAt: null } });
     const block = { id: newBlockId(), type, x: null, y: null, w, h, ...content } as BoardBlock;
@@ -421,7 +420,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     setBlocks(blocksRef.current.filter(b => b.id !== block.id));
     pending.current.actions.push({ kind: 'remove', id: block.id });
     schedule(UNDO_WINDOW);
-    const CONTENT_NAMES: Record<string, string> = { note: 'The note', text: 'The text area', checklist: 'The checklist', label: 'The label', deadline: 'The deadline', link: 'The link', filelist: 'The file list', search: 'The saved search' };
+    const CONTENT_NAMES: Record<string, string> = { note: 'The note', text: 'The text area', label: 'The label', deadline: 'The deadline', link: 'The link', filelist: 'The file list', search: 'The saved search' };
     const isRef = before.type === 'file' || before.type === 'folder';
     const name = !isRef ? CONTENT_NAMES[before.type] : before.ref.available ? `“${before.ref.name}”` : 'The unavailable item';
     const where = isRef ? ' It is still in File Box.' : '';

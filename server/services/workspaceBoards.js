@@ -32,8 +32,8 @@ const LIMITS = Object.freeze({
   tabName: 40,
   noteTitle: 80,
   noteBody: 4000,
-  richTextChars: 50000,
-  richTextBytes: 100 * 1024,
+  richTextChars: 51000,
+  richTextBytes: 256 * 1024,
   tabBytes: 1024 * 1024,
   totalBytes: 10 * 1024 * 1024,
 });
@@ -47,7 +47,7 @@ class BoardInputError extends Error {
   constructor(message, status = 400, extra = {}) { super(message); this.status = status; Object.assign(this, extra); }
 }
 const BLOCK_ID = /^[a-z0-9]{10}$/;
-const BLOCK_TYPES = ['file', 'folder', 'note', 'text', 'checklist', 'label', 'deadline', 'link', 'filelist', 'search'];
+const BLOCK_TYPES = ['file', 'folder', 'note', 'text', 'label', 'deadline', 'link', 'filelist', 'search'];
 const NOTE_COLORS = Object.freeze(['yellow', 'pink', 'blue', 'green', 'purple', 'orange']);
 const REF_TYPES = ['file', 'folder'];
 const NOTE_CONTROL = new RegExp('[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]', 'g');
@@ -65,7 +65,7 @@ function cleanNote(raw) {
 
 /**
  * The content of a block that is not a file or folder, cleaned for its type. Each type keeps its content
- * in a field named after it (note, text, checklist, label, deadline).
+ * in a field named after it (note, text, label, deadline, link, file list, saved search).
  */
 function cleanContent(type, raw) {
   if (type === 'note') return cleanNote(raw);
@@ -165,9 +165,41 @@ const tabBytes = (tab) => Buffer.byteLength(JSON.stringify({ name: tab.name, ico
  * 12-column grid; those are converted the same deterministic way the migration does, without writing.
  */
 const LAYOUT_VERSION = 2;
-const canvasOf = (tab) => (tab.layoutVersion === LAYOUT_VERSION
-  ? { blocks: tab.blocks || [], zones: tab.zones || [] }
-  : { blocks: layout.fromGrid(tab.blocks || []), zones: [] });
+const canvasOf = (tab) => {
+  const canvas = tab.layoutVersion === LAYOUT_VERSION
+    ? { blocks: tab.blocks || [], zones: tab.zones || [] }
+    : { blocks: layout.fromGrid(tab.blocks || []), zones: [] };
+  return { ...canvas, blocks: canvas.blocks.map(b => (b.type === 'checklist' ? checklistAsText(b) : b)) };
+};
+
+/**
+ * Boards no longer has a separate checklist block: a text area holds checklists. A checklist saved before
+ * becomes a text area in the same place (same id), its title a heading and its items task items in order,
+ * each ticked or not as before. It is converted whenever the tab is read and stored that way on its next save.
+ */
+function checklistAsText(b) {
+  const raw = b.checklist && typeof b.checklist === 'object' ? b.checklist : {};
+  const title = typeof raw.title === 'string' ? raw.title.trim() : '';
+  const items = (Array.isArray(raw.items) ? raw.items : []).map(i => ({ text: typeof i?.text === 'string' ? i.text : '', checked: i?.checked === true }));
+  const docOf = (list) => ({
+    type: 'doc',
+    content: [
+      ...(title ? [{ type: 'heading', attrs: { level: 3 }, content: [{ type: 'text', text: title }] }] : []),
+      ...(list.length ? [{ type: 'taskList', content: list.map(i => ({ type: 'taskItem', attrs: { checked: i.checked }, content: [{ type: 'paragraph', ...(i.text ? { content: [{ type: 'text', text: i.text }] } : {}) }] })) }] : []),
+      ...(!title && !list.length ? [{ type: 'paragraph' }] : []),
+    ],
+  });
+  // The same checks as any text area. A text area's limits (51,000 characters, 256 KB) hold every checklist
+  // that could be saved, so nothing is left out; only a checklist stored beyond those old limits (which the
+  // server never accepted) would lose its last items here.
+  let doc = null;
+  for (let n = items.length; n >= 0 && !doc; n -= 1) {
+    try { doc = cleanDoc(docOf(items.slice(0, n))).doc; } catch (error) { if (!(error instanceof RichTextError)) throw error; }
+  }
+  const size = layout.SIZES.text;
+  const clamp = (v, lo, hi, d) => (Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v))) : d);
+  return { id: b.id, type: 'text', x: b.x, y: b.y, w: clamp(b.w, size.minW, size.maxW, size.w), h: clamp(b.h, size.minH, size.maxH, size.h), text: { doc: doc || { type: 'doc', content: [{ type: 'paragraph' }] } } };
+}
 
 /** What the browser is sent about a tab. */
 const publicTab = (tab) => ({

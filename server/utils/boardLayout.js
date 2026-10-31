@@ -10,7 +10,6 @@ const MAX_ZONES = 100;
 const SIZES = Object.freeze({
   note: Object.freeze({ w: 220, h: 220, minW: 160, minH: 140, maxW: 560, maxH: 560 }),
   text: Object.freeze({ w: 420, h: 300, minW: 260, minH: 160, maxW: 1200, maxH: 1200 }),
-  checklist: Object.freeze({ w: 260, h: 280, minW: 200, minH: 140, maxW: 600, maxH: 900 }),
   // A label's height follows its heading size (34, 44 or 60); only its width is chosen.
   label: Object.freeze({ w: 280, h: 44, minW: 120, minH: 34, maxW: 1200, maxH: 60 }),
   deadline: Object.freeze({ w: 220, h: 150, minW: 180, minH: 120, maxW: 400, maxH: 300 }),

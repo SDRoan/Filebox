@@ -276,31 +276,19 @@ html.fb-has-backdrop .boards-top { padding: 8px 12px 0; }
 .boards-add-group { display: flex; flex-direction: column; }
 .boards-add-group-name { margin: 4px 12px 2px; font-size: 0.7rem; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-secondary); }
 
-/* Checklist, label and deadline on the canvas: the grip is always shown (only it moves them). */
-.board-item.is-checklist .board-item-handle, .board-item.is-deadline .board-item-handle { opacity: 1; }
-.board-item:is(.is-checklist, .is-deadline, .is-label) > :not(.board-item-handle):not(.board-item-resize) { height: 100%; }
-.board-checklist-card, .board-deadline-card {
+/* Label and deadline on the canvas: the grip is always shown (only it moves them). */
+.board-item.is-deadline .board-item-handle { opacity: 1; }
+.board-item:is(.is-deadline, .is-label) > :not(.board-item-handle):not(.board-item-resize) { height: 100%; }
+.board-deadline-card {
   display: flex; flex-direction: column; gap: 4px; width: 100%; height: 100%; padding: 8px 10px 10px; overflow: hidden;
   background: var(--fb-surface, #ffffff); border: 1px solid var(--fb-g-e8ecdf, #e8ecdf); border-radius: calc(6px * var(--fb-radius-scale, 1)); box-shadow: var(--shadow-sm);
 }
-.board-checklist-count { flex: none; font-size: 0.72rem; font-weight: 600; color: var(--text-secondary); }
-.board-checklist-title, .board-checklist-text, .board-deadline-title, .board-deadline-note, .board-label-text {
+.board-deadline-title, .board-deadline-note, .board-label-text {
   min-width: 0; padding: 3px 6px; font: inherit; color: var(--text-primary); background: transparent; border: 1px solid transparent; border-radius: 5px; user-select: text;
 }
-.board-checklist-title, .board-deadline-title { flex: none; font-weight: 650; font-size: 0.92rem; }
-.board-checklist-title:focus, .board-checklist-text:focus, .board-deadline-title:focus, .board-deadline-note:focus, .board-label-text:focus { outline: none; border-color: var(--fb-g-cfd6c6, #cfd6c6); background: var(--fb-g-fbfcf8, #fbfcf8); }
-.board-checklist-items { flex: 1 1 auto; min-height: 0; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
-.board-checklist-items li { display: flex; align-items: center; gap: 4px; }
-.board-checklist-check { flex: none; width: 16px; height: 16px; margin: 0 2px 0 4px; accent-color: var(--primary); }
-.board-checklist-text { flex: 1; font-size: 0.86rem; }
-.board-checklist-items li.is-checked .board-checklist-text { color: var(--text-secondary); text-decoration: line-through; }
-.board-checklist-delete { flex: none; width: 24px; height: 24px; padding: 0; font: inherit; font-size: 1rem; color: var(--text-secondary); background: transparent; border: 0; border-radius: 5px; cursor: pointer; opacity: 0; }
-.board-checklist-items li:hover .board-checklist-delete, .board-checklist-delete:focus-visible { opacity: 1; }
-.board-checklist-delete:hover { background: var(--bg-secondary); }
-.board-checklist-add { flex: none; align-self: flex-start; min-height: 28px; padding: 0 8px; font: inherit; font-size: 0.82rem; color: var(--primary-dark); background: transparent; border: 0; border-radius: 5px; cursor: pointer; }
-.board-checklist-add:hover:not(:disabled) { background: var(--bg-secondary); }
-.board-checklist-add:disabled { color: var(--text-secondary); cursor: default; }
-.board-checklist-check:focus-visible, .board-checklist-add:focus-visible, .board-deadline-done:focus-visible, .board-deadline-card input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.board-deadline-title { flex: none; font-weight: 650; font-size: 0.92rem; }
+.board-deadline-title:focus, .board-deadline-note:focus, .board-label-text:focus { outline: none; border-color: var(--fb-g-cfd6c6, #cfd6c6); background: var(--fb-g-fbfcf8, #fbfcf8); }
+.board-deadline-done:focus-visible, .board-deadline-card input:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
 /* A label: a heading for an area of the board, with no card around it. */
 .board-label { position: relative; display: flex; align-items: center; width: 100%; height: 100%; padding-left: 26px; }
@@ -468,9 +456,7 @@ html.fb-has-backdrop .boards-top { padding: 8px 12px 0; }
   .board-color { width: 44px; height: 44px; }
   .board-block-menu .item-actions-popover .board-note-swatch { width: 44px; min-height: 44px; height: 44px; }
   .boards-menu-note { min-height: 44px; }
-  .board-checklist-check { width: 22px; height: 22px; }
-  .board-checklist-delete { width: 44px; height: 44px; opacity: 1; }
-  .board-checklist-add, .board-deadline-done, .board-deadline-when input { min-height: 44px; }
+  .board-deadline-done, .board-deadline-when input { min-height: 44px; }
   .board-link-title { display: inline-flex; align-items: center; min-height: 44px; }
   .personal-board .board-label .board-label-menu { opacity: 1; }
   html.fb-has-backdrop .boards-top { padding: 14px 12px 0; }

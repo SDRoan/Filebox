@@ -44,11 +44,11 @@ const usePhone = () => {
   return phone;
 };
 
-type AddKind = 'file' | 'folder' | 'filelist' | 'search' | 'note' | 'text' | 'checklist' | 'deadline' | 'label' | 'link';
+type AddKind = 'file' | 'folder' | 'filelist' | 'search' | 'note' | 'text' | 'deadline' | 'label' | 'link';
 // The "+ Add" menu in groups (group names are read out, not chosen).
 const ADD_GROUPS: Array<{ name: string; items: Array<[AddKind, string]> }> = [
   { name: 'Files', items: [['file', 'File'], ['folder', 'Folder'], ['filelist', 'File list'], ['search', 'Saved search']] },
-  { name: 'Notes & planning', items: [['note', 'Sticky note'], ['text', 'Text area'], ['checklist', 'Checklist'], ['deadline', 'Deadline']] },
+  { name: 'Notes & planning', items: [['note', 'Sticky note'], ['text', 'Text area'], ['deadline', 'Deadline']] },
   { name: 'Other', items: [['label', 'Label'], ['link', 'Link']] },
 ];
 
@@ -319,9 +319,9 @@ const Boards: React.FC = () => {
   };
   const addNote = () => focusNew(board.addNote(), 'note');
   const addText = () => focusNew(board.addText(), 'text');
-  // A new checklist, label or deadline: focus its first field so it can be typed into straight away.
-  const FIRST_FIELD = { checklist: '.board-checklist-title', label: '.board-label-text', deadline: '.board-deadline-title', filelist: '.board-filelist-title' };
-  const addPlanning = (type: 'checklist' | 'label' | 'deadline' | 'filelist') => {
+  // A new label, deadline or file list: focus its first field so it can be typed into straight away.
+  const FIRST_FIELD = { label: '.board-label-text', deadline: '.board-deadline-title', filelist: '.board-filelist-title' };
+  const addPlanning = (type: 'label' | 'deadline' | 'filelist') => {
     const id = board.addBlock(type);
     setTimeout(() => document.querySelector<HTMLElement>(`[data-board-key="${id}"] ${FIRST_FIELD[type]}, [data-list-id="${id}"] ${FIRST_FIELD[type]}`)?.focus(), 80);
   };
@@ -360,7 +360,7 @@ const Boards: React.FC = () => {
   const emptyBoard = (
     <div className="boards-empty-canvas">
       <p className="boards-empty-title">This board is empty.</p>
-      <p>Add files and folders you choose (they stay where they are in File Box), notes, text, checklists, deadlines, labels, links or file lists.</p>
+      <p>Add files and folders you choose (they stay where they are in File Box), notes, text (with checklists), deadlines, labels, links or file lists.</p>
       <div className="boards-empty-actions">
         <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFile' })}>Add file</button>
         <button type="button" className="file-action-button" onClick={() => setDialog({ kind: 'addFolder' })}>Add folder</button>

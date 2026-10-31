@@ -4,7 +4,7 @@ import BoardCanvas, { CanvasEntry, CanvasLayout } from './BoardCanvas';
 import FileItem from './FileItem';
 import FolderItem from './FolderItem';
 import { StickyNoteBlock, RichTextBlock } from './BoardNoteBlocks';
-import { ChecklistBlock, DeadlineBlock, LabelBlock } from './BoardPlanningBlocks';
+import { DeadlineBlock, LabelBlock } from './BoardPlanningBlocks';
 import { LinkBlock } from './BoardLinkBlock';
 import { FileListBlock } from './BoardFileListBlock';
 import { SavedSearchBlock } from './BoardSavedSearchBlock';
@@ -60,7 +60,6 @@ export const folderCard = (ref: Available, userId?: string): Folder => ({
 export const blockName = (block: BoardBlock) => {
   if (block.type === 'note') return `Sticky note${block.note.title ? `: ${block.note.title}` : ''}`;
   if (block.type === 'text') return 'Text area';
-  if (block.type === 'checklist') return `Checklist${block.checklist.title ? `: ${block.checklist.title}` : ''}`;
   if (block.type === 'label') return `Label${block.label.text ? `: ${block.label.text}` : ''}`;
   if (block.type === 'deadline') return `Deadline${block.deadline.title ? `: ${block.deadline.title}` : ''}`;
   if (block.type === 'link') return `Link: ${block.link.title || domainOf(block.link.url)}`;
@@ -110,15 +109,14 @@ export const ownSize = (b: BoardBlock) => {
 };
 
 /**
- * A checklist, label, deadline, link or file list (shared by the canvas and the phone list). Changing a label's size also
+ * A label, deadline, link, file list or saved search (shared by the canvas and the phone list). Changing a label's size also
  * keeps its height on the board in step, in the same save.
  */
-export type PlanningType = 'checklist' | 'label' | 'deadline' | 'link' | 'filelist' | 'search';
-export const isPlanning = (b: BoardBlock): b is Extract<BoardBlock, { type: PlanningType }> => ['checklist', 'label', 'deadline', 'link', 'filelist', 'search'].includes(b.type);
+export type PlanningType = 'label' | 'deadline' | 'link' | 'filelist' | 'search';
+export const isPlanning = (b: BoardBlock): b is Extract<BoardBlock, { type: PlanningType }> => ['label', 'deadline', 'link', 'filelist', 'search'].includes(b.type);
 export const planningBlock = (block: Extract<BoardBlock, { type: PlanningType }>, actions: Pick<BoardActions, 'onEdit' | 'onFlush' | 'onRemove' | 'onArrange' | 'onRemoveRow' | 'refRoom' | 'searchRuns'>,
   common: { phone: boolean; first: boolean; last: boolean; onMove: (direction: -1 | 1) => void; onExit: () => void }) => {
   const shared = { ...common, onFlush: actions.onFlush, onRemove: () => actions.onRemove(block) };
-  if (block.type === 'checklist') return <ChecklistBlock block={block} {...shared} onEdit={(checklist, now) => actions.onEdit(block.id, { checklist }, { now })} />;
   if (block.type === 'deadline') return <DeadlineBlock block={block} {...shared} onEdit={(deadline, now) => actions.onEdit(block.id, { deadline }, { now })} />;
   if (block.type === 'link') return <LinkBlock block={block} {...shared} onEdit={(link) => actions.onEdit(block.id, { link }, { now: true })} />;
   if (block.type === 'search') {
@@ -246,7 +244,7 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
     if (isPlanning(block)) {
       const size = ownSize(block);
       const limits = block.type === 'label' ? { ...BLOCK_SIZES.label, minH: size.h, maxH: size.h } : BLOCK_SIZES[block.type];
-      const firstField = { checklist: '.board-checklist-title', label: '.board-label-text', deadline: '.board-deadline-title', link: '.board-link-title', filelist: '.board-filelist-title', search: '.board-search-main, .board-search-action' }[block.type];
+      const firstField = { label: '.board-label-text', deadline: '.board-deadline-title', link: '.board-link-title', filelist: '.board-filelist-title', search: '.board-search-main, .board-search-action' }[block.type];
       return {
         key: block.id, name, className: `is-${block.type}`, handleOnly: true, size, resize: limits,
         onHandleKey: (event) => {
