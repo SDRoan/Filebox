@@ -4,7 +4,7 @@ import { TAB_EMOJI } from '../utils/boardTabs';
 import { isDark } from '../theme/appearance';
 import { PlusIcon, TrashIcon } from './Icons';
 import { CARD_WIDTH, GAP, PAD, Spot, centerOf as centerAt, fitLabel, inZone, placeMissing, tidyLayout, zoneMembers as membersOf } from '../utils/boardLayout';
-import { NO_SELECTION, Rect, Selection, boxBetween, commandKey, groupDelta, intersects, selectedCount } from '../utils/boardSelection';
+import { NO_SELECTION, Rect, Selection, boxBetween, commandKey, groupDelta, intersects, isMac, selectedCount } from '../utils/boardSelection';
 import './FileBoard.css';
 
 /**
@@ -27,6 +27,8 @@ export interface CanvasEntry {
   onHandleKey?: (event: React.KeyboardEvent) => boolean;
   // A few quick actions shown in a small toolbar while the item is selected (Boards' own blocks only).
   actions?: ItemAction[];
+  // Can be duplicated (Boards' own items; never file or folder cards).
+  copyable?: boolean;
 }
 export interface ItemAction { id: string; label: string; icon: React.ReactNode; run: () => void }
 export interface CanvasLayout { items: Record<string, Spot>; zones: BoardZone[] }
@@ -56,6 +58,8 @@ interface BoardCanvasProps {
   onRemoveItems?: (keys: string[]) => void;
   // Said by the page's live region ("3 selected", "Selection cleared").
   onAnnounce?: (text: string) => void;
+  // Copy these items (Cmd/Ctrl+D, or Duplicate in a toolbar); resolves to the copies' keys, which become the selection.
+  onDuplicateItems?: (keys: string[]) => Promise<Array<{ from: string; id: string }>>;
 }
 
 const ZONE_COLORS = ['#dbeafe', '#dcfce7', '#fef3c7', '#fce7f3', '#ede9fe', '#ffedd5', '#e0f2f1', '#e5e7eb'];
@@ -79,6 +83,9 @@ const zoom = () => Number(getComputedStyle(document.documentElement).getProperty
 
 // Inside these a press does what it always does (types, opens, follows the link), even with Shift or Cmd/Ctrl.
 const INTERACTIVE = 'button, a, input, textarea, select, summary, details, label, [role="menu"], [contenteditable="true"]';
+
+const DUPLICATE_ICON = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="11" height="11" rx="2.2" /><path d="M15.5 8.5V6.7a2.2 2.2 0 0 0-2.2-2.2H6.7a2.2 2.2 0 0 0-2.2 2.2v6.6a2.2 2.2 0 0 0 2.2 2.2h1.8" /></svg>;
+const duplicateLabel = () => `Duplicate (${isMac() ? '⌘D' : 'Ctrl+D'})`;
 
 const GRIP = <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.2" /><circle cx="9" cy="3" r="1.2" /><circle cx="3" cy="9" r="1.2" /><circle cx="9" cy="9" r="1.2" /></svg>;
 
@@ -120,7 +127,7 @@ const ItemToolbar: React.FC<{ name: string; actions: ItemAction[]; below: boolea
 const ItemBody = React.memo(({ entry }: { entry: CanvasEntry }) => <>{entry.render()}</>);
 
 /** With several items selected: how many, and Remove from board (Escape goes back to the item's grip). */
-const GroupToolbar: React.FC<{ count: number; below: boolean; onRemove: () => void }> = ({ count, below, onRemove }) => (
+const GroupToolbar: React.FC<{ count: number; below: boolean; onRemove: () => void; onDuplicate?: () => void }> = ({ count, below, onRemove, onDuplicate }) => (
   <div className={`board-item-toolbar board-group-toolbar ${below ? 'is-below' : ''}`} role="toolbar" aria-label={`${count} selected items`}
     onKeyDown={(event) => {
       if (event.key !== 'Escape') return;
@@ -128,6 +135,7 @@ const GroupToolbar: React.FC<{ count: number; below: boolean; onRemove: () => vo
       (event.currentTarget.closest('.board-item')?.querySelector('.board-item-handle') as HTMLElement | null)?.focus({ preventScroll: true });
     }}>
     <span className="board-group-count">{count} selected</span>
+    {onDuplicate && <button type="button" data-action="duplicate" onClick={onDuplicate} aria-label={`Duplicate the board items among ${count} selected`} title={duplicateLabel()}>{DUPLICATE_ICON}</button>}
     <button type="button" data-action="remove-selected" onClick={onRemove} aria-label={`Remove ${count} items from board`} title="Remove from board (files stay in File Box)">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
       Remove from board
@@ -135,7 +143,7 @@ const GroupToolbar: React.FC<{ count: number; below: boolean; onRemove: () => vo
   </div>
 );
 
-const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCommit, boardKey, status = '', hint = DEFAULT_HINT, toolbarStart, onReset, onAutoPlace, empty, toolsBelowNearTop = false, toolbarEnd, canvasClassName = '', zoneLooks = false, onRemoveItems, onAnnounce }) => {
+const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCommit, boardKey, status = '', hint = DEFAULT_HINT, toolbarStart, onReset, onAutoPlace, empty, toolsBelowNearTop = false, toolbarEnd, canvasClassName = '', zoneLooks = false, onRemoveItems, onAnnounce, onDuplicateItems }) => {
   // What is drawn: the parent's layout, or the live one while something is being dragged (only then is
   // there a copy here, so nothing typed can be overwritten by an older layout).
   const [live, setLive] = useState<CanvasLayout | null>(null);
@@ -157,6 +165,10 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
   const pressing = useRef(false);
   // The item whose next click only changed the selection (Shift or Cmd/Ctrl): that click does not also open it.
   const toggledKey = useRef<string | null>(null);
+  // Copies just made: selected (and their grip focused, if a grip had focus) once they are on the board.
+  const madeCopies = useRef<{ keys: string[]; primary: string | null; focus: boolean } | null>(null);
+  // The items on the board as last drawn (a copy may already be drawn by the time its key comes back).
+  const drawnKeys = useRef<Set<string>>(new Set());
 
   useEffect(() => { setSelectedZone(null); sel.current = NO_SELECTION; setSelectionState(NO_SELECTION); setEmojiFor(null); setLive(null); }, [boardKey]);
   const setLayout = (next: CanvasLayout | ((current: CanvasLayout) => CanvasLayout)) =>
@@ -232,9 +244,36 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     canvasRef.current?.focus({ preventScroll: true });
     onRemoveItems(list);
   };
-  // Items taken off the board leave the selection.
+  // Duplicate the selection (or just this item, when it is not selected): the copies become the selection. Only
+  // Boards' own items are copied; the parent skips file and folder cards and says so.
+  const duplicateItems = async (from?: string) => {
+    if (!onDuplicateItems) return;
+    const s = sel.current;
+    const list = from && !s.keys.has(from) ? [from] : Array.from(s.keys);
+    if (!list.length) return;
+    const focus = Boolean((document.activeElement as HTMLElement | null)?.closest('.board-item-handle, .board-item-toolbar'));
+    const primary = from && list.includes(from) ? from : s.primary;
+    const made = await onDuplicateItems(list.filter(key => byKey.has(key)));
+    if (!made.length) return;
+    // The copy of the item that carried the toolbar carries it now (or the last copy, if that item was not copied).
+    madeCopies.current = { keys: made.map(m => m.id), primary: (made.find(m => m.from === primary) || made[made.length - 1]).id, focus };
+    selectCopies();
+  };
+  // Select the copies just made, once all of them are on the board (now, or when they are drawn).
+  const selectCopies = () => {
+    const copies = madeCopies.current;
+    if (!copies || !copies.keys.every(key => drawnKeys.current.has(key))) return false;
+    madeCopies.current = null;
+    select(copies.keys, copies.primary, true);
+    // Next to what was copied, so already in view: focusing it does not scroll.
+    if (copies.focus) requestAnimationFrame(() => canvasRef.current?.querySelector<HTMLElement>(`[data-board-key="${copies.primary}"] .board-item-handle`)?.focus({ preventScroll: true }));
+    return true;
+  };
+  // Items taken off the board leave the selection; copies just made join it.
   const keyList = keys.join('\n');
   useEffect(() => {
+    drawnKeys.current = new Set(keys);
+    if (selectCopies()) return;
     const s = sel.current;
     const kept = Array.from(s.keys).filter(key => byKey.has(key));
     if (kept.length !== s.keys.size) select(kept, s.primary, s.held);
@@ -509,6 +548,15 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     move(delta[0], delta[1]);
   };
 
+  // A copyable item's quick actions: its own, then Duplicate, then Remove last.
+  const withDuplicate = (entry: CanvasEntry) => {
+    const actions = entry.actions || [];
+    if (!entry.copyable || !onDuplicateItems) return actions;
+    const duplicate: ItemAction = { id: 'duplicate', label: duplicateLabel(), icon: DUPLICATE_ICON, run: () => duplicateItems(entry.key) };
+    const at = actions.findIndex(a => a.id === 'remove');
+    return at < 0 ? [...actions, duplicate] : [...actions.slice(0, at), duplicate, ...actions.slice(at)];
+  };
+
   const height = Math.max(560, ...Object.entries(placed).map(([key, pos]) => pos.y + sizeOf(key).h + PAD * 3), ...layout.zones.map(z => z.y + z.h + PAD * 3));
   const width = Math.max(...Object.entries(placed).map(([key, pos]) => pos.x + sizeOf(key).w + PAD), ...layout.zones.map(z => z.x + z.w + PAD), 0);
 
@@ -542,6 +590,10 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
             // Only on the board itself or an item's grip: in a field, a note, a dialog or a menu these keys do their usual thing.
             if (event.defaultPrevented || (target !== event.currentTarget && !target.classList.contains('board-item-handle'))) return;
             if (commandKey(event) && !event.altKey && event.key.toLowerCase() === 'a') { event.preventDefault(); selectAll(); }
+            else if (commandKey(event) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'd' && onDuplicateItems) {
+              event.preventDefault();
+              duplicateItems(target.closest<HTMLElement>('[data-board-key]')?.dataset.boardKey);
+            }
             else if (event.key === 'Escape' && sel.current.keys.size) { event.preventDefault(); clearSelection(true); }
           }}>
           {layout.zones.map(zone => {
@@ -654,8 +706,11 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
                   }}>
                   {GRIP}
                 </button>
-                {primary && count === 1 && entry.actions?.length ? <ItemToolbar name={entry.name} actions={entry.actions} below={pos.y < 48} /> : null}
-                {primary && count > 1 && onRemoveItems ? <GroupToolbar count={count} below={pos.y < 48} onRemove={() => removeItems(Array.from(sel.current.keys))} /> : null}
+                {primary && count === 1 && entry.actions?.length ? <ItemToolbar name={entry.name} actions={withDuplicate(entry)} below={pos.y < 48} /> : null}
+                {primary && count > 1 && onRemoveItems ? (
+                  <GroupToolbar count={count} below={pos.y < 48} onRemove={() => removeItems(Array.from(sel.current.keys))}
+                    onDuplicate={onDuplicateItems && Array.from(selection.keys).some(key => byKey.get(key)?.copyable) ? () => duplicateItems() : undefined} />
+                ) : null}
                 <ItemBody entry={entry} />
                 {entry.resize && <span className="board-item-resize" onPointerDown={resizeItem(entry)} aria-hidden="true" title="Drag to resize" />}
               </div>

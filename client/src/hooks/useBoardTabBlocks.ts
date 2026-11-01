@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { workspaceBoardsAPI, AdvancedSearchResult, BoardBlock, BoardBlockInput, BoardContent, BoardFileList, BoardRef, BoardTab, BoardText, BoardZone } from '../services/api';
 import { BLOCK_SIZES, CONTENT_TYPES, ContentType, Spot } from '../utils/boardLayout';
+import { planDuplicate } from '../utils/boardDuplicate';
 
 /**
  * The blocks and zones of one Boards tab and how changes reach the account.
@@ -23,6 +24,9 @@ export type BoardChange =
   | { kind: 'layout'; items: Record<string, Spot | null>; zones?: BoardZone[] }
   // A block's content changed (a note, text area, label, deadline, link, file list or saved search): its field named after its type.
   | ({ kind: 'edit'; id: string } & BoardContent);
+
+/** The tab limits a duplicate must stay within (from the server's limits). */
+export interface DuplicateLimits { blocksPerTab: number; searchesPerTab: number; fileRefsPerTab: number }
 
 export interface BoardNotice { text: string; tone?: 'info' | 'error'; undo?: () => void; removedId?: string }
 
@@ -491,6 +495,61 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     });
   }, [schedule, onNotice]);
 
+  /**
+   * Duplicate items (Boards' own only; file and folder cards are skipped). First anything still waiting is saved on its
+   * own, so if the copies are then refused (a file or folder no longer available, too large, a limit) only the copies are
+   * undone and what was typed just before stays saved. All or nothing: if the copies would pass a limit, none are made.
+   * Returns which copy was made from which item (empty when nothing was copied); one Undo removes only the copies.
+   */
+  const duplicate = useCallback(async (ids: string[], rules: { limits: DuplicateLimits; searchUnavailable: (id: string) => boolean }): Promise<Array<{ from: string; id: string }>> => {
+    const tabAt = tabRef.current?.id;
+    await flush();
+    if (!tabAt || tabRef.current?.id !== tabAt) return [];
+    const current = blocksRef.current;
+    const plan = planDuplicate(current.filter(b => ids.includes(b.id)), new Set(current.map(b => b.id)), rules.searchUnavailable);
+    const n = plan.copies.length;
+    const { refs, rows, searches } = plan.skipped;
+    if (!n) {
+      onNotice({ tone: 'error', text: searches && !refs
+        ? `Nothing was duplicated: the saved search's folder or Team Space is no longer available.`
+        : 'Only board items can be duplicated (notes, text, labels, deadlines, links, file lists and saved searches). Files and folders were not copied.' });
+      return [];
+    }
+    const { blocksPerTab, searchesPerTab, fileRefsPerTab } = rules.limits;
+    const refsNow = current.reduce((sum, b) => sum + (b.type === 'file' ? 1 : b.type === 'filelist' ? b.filelist.items.length : 0), 0);
+    const searchesNow = current.filter(b => b.type === 'search').length;
+    const tooMany = current.length + n > blocksPerTab
+      ? `This tab can hold ${blocksPerTab} items. Duplicating ${n} would make ${current.length + n}. Nothing was duplicated.`
+      : searchesNow + plan.searches > searchesPerTab
+        ? `A tab can hold up to ${searchesPerTab} saved searches. Duplicating would make ${searchesNow + plan.searches}. Nothing was duplicated.`
+        : refsNow + plan.rows > fileRefsPerTab
+          ? `A tab can hold up to ${fileRefsPerTab.toLocaleString('en-US')} file references (file cards and file-list rows). Duplicating would make ${(refsNow + plan.rows).toLocaleString('en-US')}. Nothing was duplicated.`
+          : '';
+    if (tooMany) { onNotice({ tone: 'error', text: tooMany }); return []; }
+
+    setBlocks([...current, ...plan.copies]);
+    pending.current.actions.push({ kind: 'add', blocks: plan.copies });
+    schedule(0);
+    const copyIds = new Set(plan.copies.map(c => c.id));
+    const notes = [
+      refs ? `${refs} ${refs === 1 ? 'file or folder was' : 'files and folders were'} skipped.` : '',
+      rows ? `${rows} unavailable ${rows === 1 ? 'file' : 'files'} in a file list ${rows === 1 ? 'was' : 'were'} not copied.` : '',
+      searches ? `${searches} saved ${searches === 1 ? 'search was' : 'searches were'} not copied: ${searches === 1 ? 'its' : 'their'} folder or Team Space is no longer available.` : '',
+    ].filter(Boolean);
+    onNotice({
+      text: [`Duplicated ${n} ${n === 1 ? 'item' : 'items'}.`, ...notes].join(' '),
+      undo: () => {
+        const here = blocksRef.current.filter(b => copyIds.has(b.id));
+        if (!here.length) return;
+        here.forEach(b => pending.current.actions.push({ kind: 'remove', id: b.id }));
+        setBlocks(blocksRef.current.filter(b => !copyIds.has(b.id)));
+        schedule(0);
+        onNotice({ text: here.length === 1 ? 'The copy was removed.' : `The ${here.length} copies were removed.` });
+      },
+    });
+    return plan.copies.map((c, i) => ({ from: plan.from[i], id: c.id }));
+  }, [flush, schedule, onNotice]);
+
   /** Take every unavailable file and folder off the board at once; one Undo puts them all back (until saved). */
   const removeUnavailable = useCallback(() => {
     const gone = blocksRef.current.filter(b => (b.type === 'file' || b.type === 'folder') && !b.ref.available);
@@ -579,5 +638,5 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     return b && b.type === 'search' ? JSON.stringify(b.search) : null;
   }, []);
 
-  return { blocks, zones, loading, error, pending: pendingRefs, saveState, change, arrange, edit, flush, addFiles, addFolder, addNote, addText, addBlock, remove, removeMany, removeUnavailable, removeListRow, storedSearchKey, reload };
+  return { blocks, zones, loading, error, pending: pendingRefs, saveState, change, arrange, edit, flush, addFiles, addFolder, addNote, addText, addBlock, remove, removeMany, duplicate, removeUnavailable, removeListRow, storedSearchKey, reload };
 }

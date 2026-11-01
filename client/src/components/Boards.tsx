@@ -395,6 +395,11 @@ const Boards: React.FC = () => {
   const actions = {
     onArrange: board.arrange, onEdit: board.edit, onFlush: board.flush, onRemove: board.remove, onRemoveMany: board.removeMany, onReload: board.reload, onEditingChange: setEditingId,
     onRemoveRow: board.removeListRow, refRoom, searchRuns,
+    onDuplicate: (ids: string[]) => board.duplicate(ids, {
+      limits: { blocksPerTab: limits?.blocksPerTab || 150, searchesPerTab: limits?.searchesPerTab || 10, fileRefsPerTab: limits?.fileRefsPerTab || 1000 },
+      // A saved search whose last run here found its folder or Team Space gone is not copied.
+      searchUnavailable: (id: string) => searchRuns.state(id)?.status === 'unavailable',
+    }),
   };
   // How this tab's canvas looks (dots on white unless chosen): applied at once, saved without a revision.
   const appearance: BoardAppearance = active?.appearance || DEFAULT_APPEARANCE;

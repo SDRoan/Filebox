@@ -34,6 +34,8 @@ export interface BoardActions {
   onRemove: (block: BoardBlock) => void;
   // Several selected items at once (one Undo).
   onRemoveMany: (blocks: BoardBlock[]) => void;
+  // Copy Boards' own items (file and folder cards are skipped); which copy was made from which item.
+  onDuplicate: (ids: string[]) => Promise<Array<{ from: string; id: string }>>;
   onReload: () => void;
   onEditingChange: (id: string) => void;
   onRemoveRow: (blockId: string, rowId: string) => void;
@@ -268,7 +270,7 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
     const name = blockName(block);
     if (block.type === 'note') {
       return {
-        key: block.id, name, className: 'is-note', handleOnly: true, actions: quickFor(block),
+        key: block.id, name, className: 'is-note', handleOnly: true, actions: quickFor(block), copyable: true,
         size: { w: block.w ?? BLOCK_SIZES.note.w, h: block.h ?? BLOCK_SIZES.note.h }, resize: BLOCK_SIZES.note,
         onHandleKey: (event) => {
           if (event.key !== 'Enter') return false;
@@ -287,7 +289,7 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
       const limits = block.type === 'label' ? { ...BLOCK_SIZES.label, minH: size.h, maxH: size.h } : BLOCK_SIZES[block.type];
       const firstField = { label: '.board-label-text', deadline: '.board-deadline-title', link: '.board-link-title', filelist: '.board-filelist-title', search: '.board-search-main, .board-search-action' }[block.type];
       return {
-        key: block.id, name, className: `is-${block.type}`, handleOnly: true, size, resize: limits, actions: quickFor(block),
+        key: block.id, name, className: `is-${block.type}`, handleOnly: true, size, resize: limits, actions: quickFor(block), copyable: true,
         onHandleKey: (event) => {
           if (event.key !== 'Enter') return false;
           event.preventDefault();
@@ -299,7 +301,7 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
     }
     if (block.type === 'text') {
       return {
-        key: block.id, name, className: `is-text ${editingId === block.id ? 'is-editing' : ''}`, handleOnly: true, actions: quickFor(block),
+        key: block.id, name, className: `is-text ${editingId === block.id ? 'is-editing' : ''}`, handleOnly: true, actions: quickFor(block), copyable: true,
         size: { w: block.w ?? BLOCK_SIZES.text.w, h: block.h ?? BLOCK_SIZES.text.h }, resize: BLOCK_SIZES.text,
         onHandleKey: (event) => {
           if (event.key !== 'Enter') return false;
@@ -321,7 +323,7 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
 
   return (
     <BoardCanvas boardKey={tabId} layout={layout} entries={entries} onCommit={onCommit} toolbarStart={toolbarStart} onReset={onReset} empty={empty} toolsBelowNearTop
-      toolbarEnd={toolbarEnd} canvasClassName={canvasClassName} zoneLooks onAnnounce={onAnnounce}
+      toolbarEnd={toolbarEnd} canvasClassName={canvasClassName} zoneLooks onAnnounce={onAnnounce} onDuplicateItems={actions.onDuplicate}
       onRemoveItems={(ids) => {
         const list = blocks.filter(b => ids.includes(b.id));
         if (list.length === 1) onRemove(list[0]);
