@@ -159,6 +159,8 @@ html.fb-dark .personal-board.tone-dark .board-list-phone { background: #e0e2e6; 
   border: 2px solid var(--pb-sel); border-radius: calc(10px * var(--fb-radius-scale, 1));
 }
 .personal-board .board-item.is-label.selected::after { inset: -4px; }
+/* Of several selected, the one last chosen (it carries the toolbar) has a soft halo too. */
+.personal-board .board-item.selected.is-primary::after { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pb-sel) 24%, transparent); }
 /* Only Boards' own blocks are raised (a raised file card would hold its own preview beneath the page header). */
 .personal-board .board-item.selected:not(.is-file):not(.is-folder), .personal-board .board-item:has(.item-actions-menu[open]) { z-index: 5; }
 
@@ -172,6 +174,11 @@ html.fb-dark .personal-board.tone-dark .board-list-phone { background: #e0e2e6; 
 .board-item-toolbar button:hover { color: var(--pb-ink); background: var(--bg-secondary); }
 .board-item-toolbar button:focus-visible { outline: 2px solid var(--pb-sel); outline-offset: 1px; }
 .board-item-toolbar button[data-action='remove']:hover { color: #a3392b; }
+.board-group-toolbar { align-items: center; }
+.board-group-count { padding: 0 8px 0 7px; font-size: 0.78rem; font-weight: 650; color: var(--pb-ink); white-space: nowrap; }
+.board-item-toolbar button[data-action='remove-selected'] { display: inline-flex; gap: 6px; width: auto; padding: 0 10px 0 8px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+.board-item-toolbar button[data-action='remove-selected']:hover { color: #a3392b; }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-item-toolbar button[data-action='remove-selected']:hover { color: #f19a8c; }
 :is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-item-toolbar button[data-action='remove']:hover { color: #f19a8c; }
 
 /* ---- Zones: tint (the original look), outline, dashed, glass; an emoji before the name */

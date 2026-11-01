@@ -4,6 +4,7 @@ import { TAB_EMOJI } from '../utils/boardTabs';
 import { isDark } from '../theme/appearance';
 import { PlusIcon, TrashIcon } from './Icons';
 import { CARD_WIDTH, GAP, PAD, Spot, centerOf as centerAt, fitLabel, inZone, placeMissing, tidyLayout, zoneMembers as membersOf } from '../utils/boardLayout';
+import { NO_SELECTION, Rect, Selection, boxBetween, commandKey, groupDelta, intersects, selectedCount } from '../utils/boardSelection';
 import './FileBoard.css';
 
 /**
@@ -51,6 +52,10 @@ interface BoardCanvasProps {
   canvasClassName?: string;
   // Zones can have a style and an emoji (personal Boards).
   zoneLooks?: boolean;
+  // Take these items off the board (Delete on a selected grip, or Remove for several selected); several give one Undo.
+  onRemoveItems?: (keys: string[]) => void;
+  // Said by the page's live region ("3 selected", "Selection cleared").
+  onAnnounce?: (text: string) => void;
 }
 
 const ZONE_COLORS = ['#dbeafe', '#dcfce7', '#fef3c7', '#fce7f3', '#ede9fe', '#ffedd5', '#e0f2f1', '#e5e7eb'];
@@ -71,6 +76,9 @@ const DEFAULT_HINT = 'Drag files and folders anywhere. Drop them in a zone to gr
 const newId = () => Math.random().toString(36).slice(2, 12);
 // File Box zooms the workspace for Settings > Customize > Text size; pointer moves are in screen pixels.
 const zoom = () => Number(getComputedStyle(document.documentElement).getPropertyValue('--fb-zoom')) || 1;
+
+// Inside these a press does what it always does (types, opens, follows the link), even with Shift or Cmd/Ctrl.
+const INTERACTIVE = 'button, a, input, textarea, select, summary, details, label, [role="menu"], [contenteditable="true"]';
 
 const GRIP = <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.2" /><circle cx="9" cy="3" r="1.2" /><circle cx="3" cy="9" r="1.2" /><circle cx="9" cy="9" r="1.2" /></svg>;
 
@@ -105,23 +113,52 @@ const ItemToolbar: React.FC<{ name: string; actions: ItemAction[]; below: boolea
   );
 };
 
-const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCommit, boardKey, status = '', hint = DEFAULT_HINT, toolbarStart, onReset, onAutoPlace, empty, toolsBelowNearTop = false, toolbarEnd, canvasClassName = '', zoneLooks = false }) => {
+/**
+ * What an item shows. Drawn again only when the parent gives the board new entries, not on every frame of a move or
+ * a drag box (which only change places and outlines here).
+ */
+const ItemBody = React.memo(({ entry }: { entry: CanvasEntry }) => <>{entry.render()}</>);
+
+/** With several items selected: how many, and Remove from board (Escape goes back to the item's grip). */
+const GroupToolbar: React.FC<{ count: number; below: boolean; onRemove: () => void }> = ({ count, below, onRemove }) => (
+  <div className={`board-item-toolbar board-group-toolbar ${below ? 'is-below' : ''}`} role="toolbar" aria-label={`${count} selected items`}
+    onKeyDown={(event) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      (event.currentTarget.closest('.board-item')?.querySelector('.board-item-handle') as HTMLElement | null)?.focus({ preventScroll: true });
+    }}>
+    <span className="board-group-count">{count} selected</span>
+    <button type="button" data-action="remove-selected" onClick={onRemove} aria-label={`Remove ${count} items from board`} title="Remove from board (files stay in File Box)">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+      Remove from board
+    </button>
+  </div>
+);
+
+const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCommit, boardKey, status = '', hint = DEFAULT_HINT, toolbarStart, onReset, onAutoPlace, empty, toolsBelowNearTop = false, toolbarEnd, canvasClassName = '', zoneLooks = false, onRemoveItems, onAnnounce }) => {
   // What is drawn: the parent's layout, or the live one while something is being dragged (only then is
   // there a copy here, so nothing typed can be overwritten by an older layout).
   const [live, setLive] = useState<CanvasLayout | null>(null);
   const layout = live || given;
   const [selectedZone, setSelectedZone] = useState<string | null>(null);
   const [dropZone, setDropZone] = useState<string | null>(null);
-  const [draggingKey, setDraggingKey] = useState<string | null>(null);
-  // The item last clicked or focused (shows a selected outline, and its quick actions if it has any).
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [draggingKeys, setDraggingKeys] = useState<string[]>([]);
+  // The selected items (outlined; one alone shows its quick actions, several show how many and Remove). Page state only.
+  const [selection, setSelectionState] = useState<Selection>(NO_SELECTION);
+  const sel = useRef(selection);
+  // The box being dragged out on empty board to select what it touches.
+  const [marquee, setMarquee] = useState<Rect | null>(null);
   const [emojiFor, setEmojiFor] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const sizes = useRef<Record<string, { w: number; h: number }>>({});
   const latest = useRef(layout);
   latest.current = layout;
+  // A pointer is pressing an item (the press itself sets the selection, not the focus that follows it).
+  const pressing = useRef(false);
+  // The item whose next click only changed the selection (Shift or Cmd/Ctrl): that click does not also open it.
+  const toggledKey = useRef<string | null>(null);
 
-  useEffect(() => { setSelectedZone(null); setSelectedKey(null); setEmojiFor(null); setLive(null); }, [boardKey]);
+  useEffect(() => { setSelectedZone(null); sel.current = NO_SELECTION; setSelectionState(NO_SELECTION); setEmojiFor(null); setLive(null); }, [boardKey]);
   const setLayout = (next: CanvasLayout | ((current: CanvasLayout) => CanvasLayout)) =>
     setLive(current => (typeof next === 'function' ? next(current || latest.current) : next));
 
@@ -157,9 +194,139 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
   });
 
   const zoneMembers = (zone: BoardZone, items = placed) => membersOf(zone, keys, items, sizeOf);
+  const rectOf = (key: string): Rect => ({ x: placed[key].x, y: placed[key].y, w: placed[key].w ?? sizeOf(key).w, h: placed[key].h ?? sizeOf(key).h });
+
+  // ---- Selection (items only: a selected zone and selected items never mix)
+  const select = (list: Iterable<string>, primary: string | null, held: boolean, announce = false) => {
+    const chosen = new Set(list);
+    const next: Selection = { keys: chosen, primary: primary && chosen.has(primary) ? primary : Array.from(chosen).pop() ?? null, held: held && chosen.size > 0 };
+    sel.current = next;
+    setSelectionState(next);
+    if (chosen.size) { setSelectedZone(null); setEmojiFor(null); }
+    if (announce) onAnnounce?.(selectedCount(chosen.size));
+  };
+  const selectOnly = (key: string) => {
+    const s = sel.current;
+    if (s.keys.size === 1 && s.primary === key && !s.held) return;
+    select([key], key, false);
+  };
+  const clearSelection = (announce: boolean) => {
+    const had = sel.current.keys.size;
+    if (!had) return;
+    select([], null, false);
+    if (announce) onAnnounce?.(selectedCount(0));
+  };
+  // Shift or Cmd/Ctrl+click: add the item to the selection, or take it away.
+  const toggle = (key: string) => {
+    const next = new Set(sel.current.keys);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    select(next, next.has(key) ? key : sel.current.primary, true, true);
+  };
+  // Shift+Space on a grip. Focusing an item already selects it on its own, so the first press keeps it (now on purpose).
+  const toggleFromKeys = (key: string) => (sel.current.held ? toggle(key) : select([key], key, true, true));
+  const selectAll = () => select(keys.filter(key => placed[key]), sel.current.primary, true, true);
+  const removeItems = (list: string[]) => {
+    if (!onRemoveItems || !list.length) return;
+    select([], null, false);
+    // Their grips are gone: stay on the board (Undo is in the notice above it).
+    canvasRef.current?.focus({ preventScroll: true });
+    onRemoveItems(list);
+  };
+  // Items taken off the board leave the selection.
+  const keyList = keys.join('\n');
+  useEffect(() => {
+    const s = sel.current;
+    const kept = Array.from(s.keys).filter(key => byKey.has(key));
+    if (kept.length !== s.keys.size) select(kept, s.primary, s.held);
+    // Only when the items on the board change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [keyList]);
+
+  // Pressing an item selects it. Shift or Cmd/Ctrl adds it or takes it away, but only on its grip or plain surface:
+  // in a field, text, a link, a button, a menu or the resize corner the press does what it always does.
+  const pressItem = (key: string) => (event: React.PointerEvent) => {
+    pressing.current = true;
+    toggledKey.current = null;
+    const done = () => { pressing.current = false; window.removeEventListener('pointerup', done); window.removeEventListener('pointercancel', done); };
+    window.addEventListener('pointerup', done);
+    window.addEventListener('pointercancel', done);
+    const target = event.target as HTMLElement;
+    if (target.closest('.board-item-toolbar')) return;
+    const onGrip = Boolean(target.closest('.board-item-handle'));
+    const inContent = !onGrip && Boolean(target.closest(`${INTERACTIVE}, .board-item-resize`));
+    if (event.shiftKey || commandKey(event)) {
+      if (inContent) return;
+      toggle(key);
+      toggledKey.current = key;
+      return;
+    }
+    // One of several selected: this may start moving them all (a click without moving then selects just this one).
+    const s = sel.current;
+    if (event.button === 0 && s.keys.size > 1 && s.keys.has(key) && !inContent && (onGrip || !byKey.get(key)?.handleOnly)) return;
+    selectOnly(key);
+  };
+
+  // Dragging out a box on empty board selects every item it touches (Shift or Cmd/Ctrl adds to the selection).
+  const pressCanvas = (event: React.PointerEvent) => {
+    const target = event.target as HTMLElement;
+    if (target !== event.currentTarget && !target.classList.contains('file-board-canvas')) return;
+    const additive = event.shiftKey || commandKey(event);
+    toggledKey.current = null;
+    setSelectedZone(null);
+    setEmojiFor(null);
+    if (!additive) clearSelection(sel.current.keys.size > 1);
+    canvasRef.current?.focus({ preventScroll: true });
+    // A finger scrolls the page as always.
+    if (event.button !== 0 || event.pointerType === 'touch') return;
+    const scale = zoom();
+    const toBoard = (x: number, y: number) => {
+      const r = canvasRef.current!.getBoundingClientRect();
+      return { x: (x - r.left) / scale, y: (y - r.top) / scale };
+    };
+    const start = toBoard(event.clientX, event.clientY);
+    const base = additive ? Array.from(sel.current.keys) : [];
+    const basePrimary = sel.current.primary;
+    const from = { x: event.clientX, y: event.clientY };
+    let at = from;
+    let drawing = false;
+    let frame = 0;
+    const draw = () => {
+      frame = 0;
+      const now = toBoard(at.x, at.y);
+      const box = boxBetween(start.x, start.y, now.x, now.y);
+      setMarquee(box);
+      const hits = keys.filter(key => placed[key] && intersects(box, rectOf(key)));
+      select([...base, ...hits], basePrimary && base.includes(basePrimary) ? basePrimary : hits[hits.length - 1] ?? null, true);
+    };
+    const later = () => { if (!frame) frame = requestAnimationFrame(draw); };
+    const move = (e: PointerEvent) => {
+      at = { x: e.clientX, y: e.clientY };
+      if (!drawing && Math.hypot(at.x - from.x, at.y - from.y) / scale < 5) return;
+      if (!drawing) { drawing = true; document.body.classList.add('board-selecting'); window.getSelection()?.removeAllRanges(); }
+      later();
+    };
+    // Scrolling while the box is out grows it with the page.
+    const scrolled = () => { if (drawing) later(); };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      window.removeEventListener('scroll', scrolled, true);
+      if (!drawing) return;
+      if (frame) cancelAnimationFrame(frame);
+      draw();
+      document.body.classList.remove('board-selecting');
+      setMarquee(null);
+      onAnnounce?.(selectedCount(sel.current.keys.size));
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    window.addEventListener('scroll', scrolled, true);
+  };
 
   // Dragging: anywhere on a card or zone except its own buttons and fields. A click that did not move still opens things.
-  const startDrag = (event: React.PointerEvent, onMove: (dx: number, dy: number) => void, onEnd: () => void) => {
+  const startDrag = (event: React.PointerEvent, onMove: (dx: number, dy: number) => void, onEnd: () => void, onTap?: () => void) => {
     if (event.button !== 0) return;
     const target = event.target as HTMLElement;
     const onHandle = target.closest('.board-item-handle, .board-zone-label-grip, .board-item-resize');
@@ -169,19 +336,25 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     const startY = event.clientY;
     const scale = zoom();
     let dragging = false;
+    // At most one update a frame; the last one is applied before the move ends.
+    let frame = 0;
+    let last: [number, number] = [0, 0];
+    const flush = () => { frame = 0; onMove(last[0], last[1]); };
     const move = (e: PointerEvent) => {
       const dx = (e.clientX - startX) / scale;
       const dy = (e.clientY - startY) / scale;
       if (!dragging && Math.hypot(dx, dy) < 5) return;
       dragging = true;
       document.body.classList.add('board-dragging');
-      onMove(dx, dy);
+      last = [dx, dy];
+      if (!frame) frame = requestAnimationFrame(flush);
     };
     const up = () => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       document.body.classList.remove('board-dragging');
-      if (!dragging) return;
+      if (!dragging) { onTap?.(); return; }
+      if (frame) { cancelAnimationFrame(frame); flush(); }
       // The click that ends a drag should not also open the file.
       window.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); }, { capture: true, once: true });
       onEnd();
@@ -190,23 +363,35 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     window.addEventListener('pointerup', up);
   };
 
+  // Moving an item, or all the selected ones when it is one of them: the same distance for each, so their spacing
+  // stays exact (none goes past the left or top edge). One commit at the end.
+  const moveBy = (group: string[], dx: number, dy: number) => {
+    const d = groupDelta(group.map(key => placed[key]), dx, dy);
+    return Object.fromEntries(group.map(key => [key, { ...placed[key], x: placed[key].x + d.dx, y: placed[key].y + d.dy }]));
+  };
+  const groupOf = (key: string) => {
+    const s = sel.current;
+    return s.keys.size > 1 && s.keys.has(key) ? Array.from(s.keys).filter(k => placed[k]) : [key];
+  };
   const dragItem = (key: string) => (event: React.PointerEvent) => {
     const target = event.target as HTMLElement;
     if (byKey.get(key)?.handleOnly && !target.closest('.board-item-handle')) return;
-    if (target.closest('.board-item-resize')) return;
-    const start = placed[key];
-    let pos = start;
+    if (target.closest('.board-item-resize, .board-item-toolbar')) return;
+    // Shift or Cmd/Ctrl changes the selection; it never starts a move.
+    if (event.shiftKey || commandKey(event)) return;
+    const group = groupOf(key);
+    let moved: Record<string, Spot> = {};
     startDrag(event, (dx, dy) => {
-      pos = { ...start, x: Math.max(0, start.x + dx), y: Math.max(0, start.y + dy) };
-      setDraggingKey(key);
-      const center = centerOf(key, pos);
+      moved = moveBy(group, dx, dy);
+      setDraggingKeys(group);
+      const center = centerOf(key, moved[key]);
       setDropZone([...layout.zones].reverse().find(zone => inZone(zone, center.x, center.y))?.id || null);
-      setLayout(current => ({ ...current, items: { ...placed, ...current.items, [key]: pos } }));
+      setLayout(current => ({ ...current, items: { ...placed, ...current.items, ...moved } }));
     }, () => {
       setDropZone(null);
-      setDraggingKey(null);
-      commit({ ...latest.current, items: { ...placed, ...latest.current.items, [key]: pos } });
-    });
+      setDraggingKeys([]);
+      commit({ ...latest.current, items: { ...placed, ...latest.current.items, ...moved } });
+    }, group.length > 1 ? () => selectOnly(key) : undefined);
   };
 
   // Sticky notes and text areas: drag the corner to resize, within their limits.
@@ -218,17 +403,17 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     let pos = start;
     startDrag(event, (dx, dy) => {
       pos = { ...start, w: Math.round(Math.min(limits.maxW, Math.max(limits.minW, base.w + dx))), h: Math.round(Math.min(limits.maxH, Math.max(limits.minH, base.h + dy))) };
-      setDraggingKey(entry.key);
+      setDraggingKeys([entry.key]);
       setLayout(current => ({ ...current, items: { ...placed, ...current.items, [entry.key]: pos } }));
     }, () => {
-      setDraggingKey(null);
+      setDraggingKeys([]);
       commit({ ...latest.current, items: { ...placed, ...latest.current.items, [entry.key]: pos } });
     });
   };
 
   const dragZone = (zone: BoardZone) => (event: React.PointerEvent) => {
+    select([], null, false);
     setSelectedZone(zone.id);
-    setSelectedKey(null);
     const members = zoneMembers(zone);
     const startItems = { ...placed };
     let next = latest.current;
@@ -254,6 +439,7 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
   // The zone's name tag: drag it anywhere inside the zone (kept within its outline).
   const dragLabel = (zone: BoardZone) => (event: React.PointerEvent) => {
     event.stopPropagation();
+    select([], null, false);
     setSelectedZone(zone.id);
     const label = (event.currentTarget as HTMLElement).closest<HTMLElement>('.board-zone-header');
     if (!label) return;
@@ -347,8 +533,17 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
       </div>
       {status && <p className="file-board-status" role="status">{status}</p>}
 
-      <div className="file-board-scroll" onPointerDown={(event) => { if (event.target === event.currentTarget || (event.target as HTMLElement).classList.contains('file-board-canvas')) { setSelectedZone(null); setSelectedKey(null); setEmojiFor(null); } }}>
-        <div ref={canvasRef} className={`file-list file-board-canvas${canvasClassName ? ` ${canvasClassName}` : ''}`} style={{ height, minWidth: width }}>
+      <div className="file-board-scroll" onPointerDown={pressCanvas}>
+        {/* Focusable by clicking empty board (not a tab stop): then Cmd/Ctrl+A selects every item and Escape clears. */}
+        <div ref={canvasRef} className={`file-list file-board-canvas${canvasClassName ? ` ${canvasClassName}` : ''}`} style={{ height, minWidth: width }}
+          tabIndex={-1} role="group" aria-label="Board"
+          onKeyDown={(event) => {
+            const target = event.target as HTMLElement;
+            // Only on the board itself or an item's grip: in a field, a note, a dialog or a menu these keys do their usual thing.
+            if (event.defaultPrevented || (target !== event.currentTarget && !target.classList.contains('board-item-handle'))) return;
+            if (commandKey(event) && !event.altKey && event.key.toLowerCase() === 'a') { event.preventDefault(); selectAll(); }
+            else if (event.key === 'Escape' && sel.current.keys.size) { event.preventDefault(); clearSelection(true); }
+          }}>
           {layout.zones.map(zone => {
             const count = zoneMembers(zone).length;
             const selected = selectedZone === zone.id;
@@ -360,13 +555,13 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
                 <header className={`board-zone-header ${zone.labelX !== undefined ? 'placed' : ''}`}
                   style={zone.labelX !== undefined ? { left: zone.labelX, top: zone.labelY } : undefined}>
                   <button className="board-zone-label-grip" aria-label={`Move the name of ${zone.name || 'this zone'} inside the zone. Arrow keys move it.`} title="Drag to move the name inside the zone"
-                    onFocus={() => setSelectedZone(zone.id)} onPointerDown={dragLabel(zone)}
+                    onFocus={() => { select([], null, false); setSelectedZone(zone.id); }} onPointerDown={dragLabel(zone)}
                     onKeyDown={(event) => nudge(event, (dx, dy) => nudgeLabel(zone, (event.currentTarget as HTMLElement).closest('.board-zone-header'), dx, dy))}>
                     {GRIP}
                   </button>
                   {zone.emoji && <span className="board-zone-emoji" aria-hidden="true">{zone.emoji}</span>}
                   <input className="board-zone-name" value={zone.name} maxLength={60} placeholder="Name this zone" aria-label="Zone name"
-                    onFocus={() => { setSelectedZone(zone.id); setSelectedKey(null); }} onChange={(event) => updateZone(zone.id, { name: event.target.value })} />
+                    onFocus={() => { select([], null, false); setSelectedZone(zone.id); }} onChange={(event) => updateZone(zone.id, { name: event.target.value })} />
                   <span className="board-zone-count">{count}</span>
                 </header>
                 {selected && (
@@ -435,22 +630,38 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
           {entries.map(entry => {
             const pos = placed[entry.key];
             const sized = entry.size ? { width: pos.w ?? entry.size.w, height: pos.h ?? entry.size.h } : { width: CARD_WIDTH };
+            const selected = selection.keys.has(entry.key);
+            const count = selection.keys.size;
+            const primary = selected && selection.primary === entry.key;
             return (
-              <div key={entry.key} data-board-key={entry.key} className={`board-item ${draggingKey === entry.key ? 'dragging' : ''}${selectedKey === entry.key ? ' selected' : ''}${entry.className ? ` ${entry.className}` : ''}`} style={{ left: pos.x, top: pos.y, ...sized }}
-                onPointerDown={dragItem(entry.key)} onPointerDownCapture={() => setSelectedKey(entry.key)} onFocusCapture={() => setSelectedKey(entry.key)}>
-                <button className="board-item-handle" aria-label={`Move ${entry.name}. Arrow keys move it.`} title="Drag to move; arrow keys work too"
+              <div key={entry.key} data-board-key={entry.key} className={`board-item ${draggingKeys.includes(entry.key) ? 'dragging' : ''}${selected ? ' selected' : ''}${primary && count > 1 ? ' is-primary' : ''}${entry.className ? ` ${entry.className}` : ''}`} style={{ left: pos.x, top: pos.y, ...sized }}
+                onPointerDown={dragItem(entry.key)} onPointerDownCapture={pressItem(entry.key)}
+                onClickCapture={(event) => { if (toggledKey.current !== entry.key) return; toggledKey.current = null; event.stopPropagation(); event.preventDefault(); }}
+                onKeyDownCapture={() => { toggledKey.current = null; }}
+                onFocusCapture={() => { if (!pressing.current && !sel.current.held) selectOnly(entry.key); }}>
+                <button className="board-item-handle" title="Drag to move; arrow keys work too"
+                  aria-label={selected && count > 1 ? `Move ${entry.name}, selected with ${count - 1} other ${count === 2 ? 'item' : 'items'}. Arrow keys move them all.` : `Move ${entry.name}. Arrow keys move it.`}
                   onKeyDown={(event) => {
+                    // Shift+Space adds this item to the selection or takes it away; Delete takes the selection off the board.
+                    if (event.key === ' ' && event.shiftKey) { event.preventDefault(); toggleFromKeys(entry.key); return; }
+                    if ((event.key === 'Delete' || event.key === 'Backspace') && onRemoveItems) {
+                      event.preventDefault();
+                      removeItems(selected ? Array.from(sel.current.keys) : [entry.key]);
+                      return;
+                    }
                     if (entry.onHandleKey?.(event)) return;
-                    nudge(event, (dx, dy) => commit({ ...latest.current, items: { ...placed, [entry.key]: { ...pos, x: Math.max(0, pos.x + dx), y: Math.max(0, pos.y + dy) } } }));
+                    nudge(event, (dx, dy) => commit({ ...latest.current, items: { ...placed, ...moveBy(groupOf(entry.key), dx, dy) } }));
                   }}>
                   {GRIP}
                 </button>
-                {selectedKey === entry.key && entry.actions?.length ? <ItemToolbar name={entry.name} actions={entry.actions} below={pos.y < 48} /> : null}
-                {entry.render()}
+                {primary && count === 1 && entry.actions?.length ? <ItemToolbar name={entry.name} actions={entry.actions} below={pos.y < 48} /> : null}
+                {primary && count > 1 && onRemoveItems ? <GroupToolbar count={count} below={pos.y < 48} onRemove={() => removeItems(Array.from(sel.current.keys))} /> : null}
+                <ItemBody entry={entry} />
                 {entry.resize && <span className="board-item-resize" onPointerDown={resizeItem(entry)} aria-hidden="true" title="Drag to resize" />}
               </div>
             );
           })}
+          {marquee && <div className="board-marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} aria-hidden="true" />}
           {!entries.length && !layout.zones.length && empty}
         </div>
       </div>

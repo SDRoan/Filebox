@@ -393,7 +393,7 @@ const Boards: React.FC = () => {
     showNotice({ text: 'The board was reset: zones removed and everything arranged in rows. Nothing in File Box changed.', undo: () => { board.arrange(before, zonesBefore); showNotice({ text: 'The board is back as it was.' }); } });
   };
   const actions = {
-    onArrange: board.arrange, onEdit: board.edit, onFlush: board.flush, onRemove: board.remove, onReload: board.reload, onEditingChange: setEditingId,
+    onArrange: board.arrange, onEdit: board.edit, onFlush: board.flush, onRemove: board.remove, onRemoveMany: board.removeMany, onReload: board.reload, onEditingChange: setEditingId,
     onRemoveRow: board.removeListRow, refRoom, searchRuns,
   };
   // How this tab's canvas looks (dots on white unless chosen): applied at once, saved without a revision.
@@ -509,7 +509,7 @@ const Boards: React.FC = () => {
             ) : (
               <PersonalBoard tabId={active.id} blocks={board.blocks} zones={board.zones} saveState={board.saveState} editingId={editingId}
                 toolbarStart={<AddMenu disabled={room <= 0} onAdd={onAdd} />} toolbarEnd={look} canvasClassName={`pattern-${appearance.pattern}`}
-                onReset={() => setResetOpen(true)} empty={emptyBoard} {...actions} />
+                onReset={() => setResetOpen(true)} empty={emptyBoard} onAnnounce={setAnnouncement} {...actions} />
             ))}
           </div>
         </div>

@@ -447,6 +447,50 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     });
   }, [schedule, onNotice]);
 
+  /**
+   * Take several selected items off the board at once (files and folders only leave this board). One Undo puts every
+   * one back where it was, with its content and its place in the board's order; an unavailable file or folder only
+   * until the removal is saved, as with one item.
+   */
+  const removeMany = useCallback((list: BoardBlock[]) => {
+    const order = blocksRef.current;
+    const gone = order.map((b, index) => ({ b, index })).filter(({ b }) => list.some(x => x.id === b.id));
+    if (!gone.length) return;
+    const ids = new Set(gone.map(({ b }) => b.id));
+    const unavailable = (b: BoardBlock) => (b.type === 'file' || b.type === 'folder') && !b.ref.available;
+    gone.forEach(({ b }) => {
+      if (unavailable(b)) removedUnavailable.current.add(b.id);
+      pending.current.newRefs.delete(b.id);
+      pending.current.actions.push({ kind: 'remove', id: b.id });
+    });
+    syncPending();
+    setBlocks(order.filter(b => !ids.has(b.id)));
+    schedule(UNDO_WINDOW);
+    const refs = gone.some(({ b }) => b.type === 'file' || b.type === 'folder');
+    onNotice({
+      text: `${gone.length} items removed.${refs ? ' Files and folders are still in File Box.' : ''}`,
+      undo: () => {
+        // An unavailable item can only come back before its removal was saved.
+        const lost = gone.filter(({ b }) => unavailable(b) && !removedUnavailable.current.has(b.id));
+        const back = gone.filter(g => !lost.includes(g) && !blocksRef.current.some(x => x.id === g.b.id));
+        if (!back.length) { onNotice({ tone: 'error', text: 'Those items can no longer be put back: they are not available to you.' }); return; }
+        const next = [...blocksRef.current];
+        back.forEach(({ b, index }) => next.splice(Math.min(index, next.length), 0, b));
+        const added = back.map(({ b }) => {
+          const refId = refIdOf(b);
+          if (refId && (b.type === 'file' || b.type === 'folder') && !serverBlocks.current.some(s => s.id === b.id)) pending.current.newRefs.set(b.id, { type: b.type, refId });
+          return { ...b, refId };
+        });
+        syncPending();
+        setBlocks(next);
+        pending.current.actions.push({ kind: 'add', blocks: added });
+        schedule(0);
+        const missing = lost.length ? ` ${lost.length} unavailable ${lost.length === 1 ? 'item' : 'items'} could not be put back.` : '';
+        onNotice({ text: `${back.length} items are back on this board.${missing}` });
+      },
+    });
+  }, [schedule, onNotice]);
+
   /** Take every unavailable file and folder off the board at once; one Undo puts them all back (until saved). */
   const removeUnavailable = useCallback(() => {
     const gone = blocksRef.current.filter(b => (b.type === 'file' || b.type === 'folder') && !b.ref.available);
@@ -535,5 +579,5 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     return b && b.type === 'search' ? JSON.stringify(b.search) : null;
   }, []);
 
-  return { blocks, zones, loading, error, pending: pendingRefs, saveState, change, arrange, edit, flush, addFiles, addFolder, addNote, addText, addBlock, remove, removeUnavailable, removeListRow, storedSearchKey, reload };
+  return { blocks, zones, loading, error, pending: pendingRefs, saveState, change, arrange, edit, flush, addFiles, addFolder, addNote, addText, addBlock, remove, removeMany, removeUnavailable, removeListRow, storedSearchKey, reload };
 }

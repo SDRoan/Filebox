@@ -32,6 +32,8 @@ export interface BoardActions {
   onEdit: (id: string, content: BoardContent, options?: { now?: boolean }) => void;
   onFlush: () => void;
   onRemove: (block: BoardBlock) => void;
+  // Several selected items at once (one Undo).
+  onRemoveMany: (blocks: BoardBlock[]) => void;
   onReload: () => void;
   onEditingChange: (id: string) => void;
   onRemoveRow: (blockId: string, rowId: string) => void;
@@ -185,6 +187,8 @@ interface PersonalBoardProps extends BoardActions {
   // The canvas pattern (a class) and tools at the end of the toolbar (the Canvas look control).
   canvasClassName?: string;
   toolbarEnd?: React.ReactNode;
+  // The page's live region (how many items are selected).
+  onAnnounce?: (text: string) => void;
 }
 
 const ICON = {
@@ -196,7 +200,7 @@ const EDIT_NAMES: Record<string, string> = { note: 'Edit sticky note', text: 'Ed
 
 const sameSpot = (a: Spot | undefined, b: Spot) => Boolean(a) && a!.x === b.x && a!.y === b.y && a!.w === b.w && a!.h === b.h;
 
-const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, saveState, editingId, toolbarStart, onReset, empty, canvasClassName, toolbarEnd, ...actions }) => {
+const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, saveState, editingId, toolbarStart, onReset, empty, canvasClassName, toolbarEnd, onAnnounce, ...actions }) => {
   const { onArrange, onEdit, onFlush, onRemove, onEditingChange } = actions;
   const refCard = useRefCard(actions);
   const editingRef = useRef(editingId);
@@ -317,7 +321,12 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
 
   return (
     <BoardCanvas boardKey={tabId} layout={layout} entries={entries} onCommit={onCommit} toolbarStart={toolbarStart} onReset={onReset} empty={empty} toolsBelowNearTop
-      toolbarEnd={toolbarEnd} canvasClassName={canvasClassName} zoneLooks
+      toolbarEnd={toolbarEnd} canvasClassName={canvasClassName} zoneLooks onAnnounce={onAnnounce}
+      onRemoveItems={(ids) => {
+        const list = blocks.filter(b => ids.includes(b.id));
+        if (list.length === 1) onRemove(list[0]);
+        else if (list.length) actions.onRemoveMany(list);
+      }}
       hint="Drag anything anywhere. Moving a zone moves what’s in it."
       onAutoPlace={(items) => onArrange(Object.fromEntries(Object.entries(items).map(([id, spot]) => {
         const b = blocks.find(x => x.id === id);

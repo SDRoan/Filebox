@@ -25,6 +25,11 @@
 .board-item:hover .board-item-handle, .board-item-handle:focus-visible { opacity: 1; }
 .board-item:hover > .file-item, .board-item:hover > .folder-item { cursor: grab; }
 body.board-dragging, body.board-dragging * { cursor: grabbing !important; user-select: none; }
+/* Selecting with a box dragged out on empty board: a light fill and a thin outline, nothing moves. */
+.board-marquee { position: absolute; z-index: 7; pointer-events: none; border: 1px solid var(--pb-sel, #3f6543); border-radius: 2px;
+  background: color-mix(in srgb, var(--pb-sel, #3f6543) 10%, transparent); }
+body.board-selecting, body.board-selecting * { user-select: none; }
+.file-board-canvas:focus { outline: none; }
 
 .board-zone { position: absolute; border: 2px solid; touch-action: none; cursor: grab; transition: box-shadow 120ms;
   /* The zone's colour (set on the zone as --zone): the original tinted look. */
