@@ -54,7 +54,7 @@ class BoardInputError extends Error {
   constructor(message, status = 400, extra = {}) { super(message); this.status = status; Object.assign(this, extra); }
 }
 const BLOCK_ID = /^[a-z0-9]{10}$/;
-const BLOCK_TYPES = ['file', 'folder', 'note', 'text', 'label', 'deadline', 'link', 'filelist', 'search'];
+const BLOCK_TYPES = ['file', 'folder', 'note', 'text', 'label', 'deadline', 'link', 'filelist', 'search', 'sticker', 'shape'];
 const NOTE_COLORS = Object.freeze(['yellow', 'pink', 'blue', 'green', 'purple', 'orange']);
 const REF_TYPES = ['file', 'folder'];
 const NOTE_CONTROL = new RegExp('[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]', 'g');

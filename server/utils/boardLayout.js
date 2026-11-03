@@ -24,6 +24,9 @@ const SIZES = Object.freeze({
   link: Object.freeze({ w: 260, h: 116, minW: 200, minH: 96, maxW: 480, maxH: 260 }),
   filelist: Object.freeze({ w: 300, h: 320, minW: 240, minH: 180, maxW: 600, maxH: 900 }),
   search: Object.freeze({ w: 300, h: 300, minW: 240, minH: 200, maxW: 600, maxH: 720 }),
+  // A sticker is always square (its width is used for both sides); a shape's box can be any size in its range.
+  sticker: Object.freeze({ w: 96, h: 96, minW: 48, minH: 48, maxW: 320, maxH: 320, square: true }),
+  shape: Object.freeze({ w: 200, h: 140, minW: 16, minH: 16, maxW: 2000, maxH: 2000 }),
 });
 
 const coordinate = (value, max = CANVAS) => (typeof value === 'number' && Number.isFinite(value) ? Math.round(Math.min(max, Math.max(0, value))) : null);
@@ -62,7 +65,8 @@ function cleanPlace(raw, type) {
   const size = SIZES[type];
   if (!size) return place;
   const dim = (value, min, max, fallback) => (typeof value === 'number' && Number.isFinite(value) ? Math.round(Math.min(max, Math.max(min, value))) : fallback);
-  return { ...place, w: dim(raw?.w, size.minW, size.maxW, size.w), h: dim(raw?.h, size.minH, size.maxH, size.h) };
+  const w = dim(raw?.w, size.minW, size.maxW, size.w);
+  return { ...place, w, h: size.square ? w : dim(raw?.h, size.minH, size.maxH, size.h) };
 }
 
 // ---- From the earlier 12-column grid (Boards before the free canvas): deterministic, no content changes.
@@ -98,4 +102,4 @@ function fromGrid(blocks) {
   return converted;
 }
 
-module.exports = { SHAPES, CANVAS, MAX_ZONES, SIZES, GRID, coordinate, cleanZone, cleanZones, cleanPlace, fromGrid };
+module.exports = { SHAPES, CANVAS, MAX_ZONES, SIZES, GRID, coordinate, cleanZone, cleanZones, cleanPlace, fromGrid, oneEmoji };

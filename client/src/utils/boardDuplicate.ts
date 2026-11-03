@@ -6,7 +6,7 @@ import { BLOCK_SIZES } from './boardLayout';
  * copied; file and folder cards are references to real files, so they are never copied.
  */
 
-export const COPYABLE = ['note', 'text', 'label', 'deadline', 'link', 'filelist', 'search'] as const;
+export const COPYABLE = ['note', 'text', 'label', 'deadline', 'link', 'filelist', 'search', 'sticker', 'shape'] as const;
 export const isCopyable = (type: string) => (COPYABLE as readonly string[]).includes(type);
 
 // The server keeps places within 0–20,000 px; copies sit one step down and to the right of what they copy.

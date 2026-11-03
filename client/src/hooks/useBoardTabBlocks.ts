@@ -403,8 +403,8 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
    * A new label, deadline, link, file list or saved search, placed below everything. A link comes with its content (the
    * address is checked first). Returns its id (so it can be focused).
    */
-  const addBlock = useCallback((type: 'label' | 'deadline' | 'link' | 'filelist' | 'search', given?: BoardContent) => {
-    const { w, h } = BLOCK_SIZES[type];
+  const addBlock = useCallback((type: 'label' | 'deadline' | 'link' | 'filelist' | 'search' | 'sticker' | 'shape', given?: BoardContent, size?: { w: number; h: number }) => {
+    const { w, h } = size || BLOCK_SIZES[type];
     const content = given || (type === 'filelist' ? { filelist: { title: '', items: [] } }
       : type === 'label' ? { label: { text: '', size: 'm' as const, align: 'left' as const, tone: 'default' as const, style: 'plain' as const } }
         : { deadline: { title: '', note: '', due: null, completedAt: null } });

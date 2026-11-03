@@ -8,6 +8,8 @@ import { DeadlineBlock, LabelBlock } from './BoardPlanningBlocks';
 import { LinkBlock } from './BoardLinkBlock';
 import { FileListBlock } from './BoardFileListBlock';
 import { SavedSearchBlock } from './BoardSavedSearchBlock';
+import { ShapeBlock, StickerBlock, isLineLike, shapeName } from './BoardDecorBlocks';
+import { Rect, boxTouchesEllipse, boxTouchesSegment, lineEnds } from '../utils/boardSelection';
 import { SavedSearchRuns } from '../hooks/useSavedSearchRuns';
 import { titleOf } from '../utils/savedSearch';
 import { domainOf } from '../utils/boardLinks';
@@ -69,6 +71,8 @@ export const blockName = (block: BoardBlock) => {
   if (block.type === 'link') return `Link: ${block.link.title || domainOf(block.link.url)}`;
   if (block.type === 'filelist') return `File list${block.filelist.title ? `: ${block.filelist.title}` : ''}`;
   if (block.type === 'search') return `Saved search: ${titleOf(block.search)}`;
+  if (block.type === 'sticker') return `Sticker ${block.sticker.emoji}`;
+  if (block.type === 'shape') return shapeName(block.shape.kind);
   return block.ref.available ? block.ref.name : block.type === 'file' ? 'Unavailable file' : 'Unavailable folder';
 };
 
@@ -250,9 +254,10 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
   };
   const menuItem = (id: string, label: string) => () => Array.from(document.querySelectorAll<HTMLButtonElement>(`[data-board-key="${id}"] .item-actions-popover button`)).find(b => b.textContent === label)?.click();
   const focusIn = (id: string, sel: string) => () => inItem(id, sel)?.focus();
-  const quick = (block: BoardBlock, edit: () => void, style?: () => void): ItemAction[] => [
-    { id: 'edit', label: EDIT_NAMES[block.type], icon: ICON.edit, run: edit },
-    ...(style ? [{ id: 'style', label: 'Style', icon: ICON.style, run: style }] : []),
+  const quick = (block: BoardBlock, edit: (() => void) | null, style?: () => void, styleLabel = 'Style'): ItemAction[] => [
+    // Stickers and shapes have nothing to edit, only their look.
+    ...(edit ? [{ id: 'edit', label: EDIT_NAMES[block.type], icon: ICON.edit, run: edit }] : []),
+    ...(style ? [{ id: 'style', label: styleLabel, icon: ICON.style, run: style }] : []),
     { id: 'remove', label: 'Remove from board', icon: ICON.remove, run: () => onRemove(block) },
   ];
   const quickFor = (block: BoardBlock): ItemAction[] | undefined => {
@@ -263,6 +268,8 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
     if (block.type === 'link') return quick(block, menuItem(block.id, 'Edit link…'));
     if (block.type === 'filelist') return quick(block, focusIn(block.id, '.board-filelist-title'));
     if (block.type === 'search') return quick(block, menuItem(block.id, 'Edit search…'));
+    if (block.type === 'sticker') return quick(block, null, () => openMenu(block.id, '.board-decor-menu'), 'Change emoji');
+    if (block.type === 'shape') return quick(block, null, () => openMenu(block.id, '.board-decor-menu'));
     return undefined;
   };
 
@@ -299,6 +306,23 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
         render: () => planningBlock(block, actions, { phone: false, first: false, last: false, onMove: () => {}, onExit: () => stopEditing(block.id) }),
       };
     }
+    // Decorations: drawn straight on the board, shapes under everything else and stickers over it; Tidy up leaves them be.
+    if (block.type === 'sticker' || block.type === 'shape') {
+      const size = ownSize(block);
+      const lineLike = block.type === 'shape' && isLineLike(block.shape.kind);
+      // A drag box selects a line by the line itself and a circle by its outline (not their empty corners).
+      const touches = block.type !== 'shape' ? undefined
+        : lineLike ? (box: Rect, at: Rect) => { const { a, b } = lineEnds(at, block.shape.flip); return boxTouchesSegment(box, a, b); }
+          : block.shape.kind === 'circle' ? (box: Rect, at: Rect) => boxTouchesEllipse(box, at) : undefined;
+      return {
+        key: block.id, name, className: `is-${block.type}${block.type === 'shape' ? ` is-shape-${lineLike ? 'line' : 'box'}` : ''}`,
+        size, resize: block.type === 'sticker' ? { ...BLOCK_SIZES.sticker, square: true } : BLOCK_SIZES.shape,
+        actions: quickFor(block), copyable: true, decorative: true, layer: block.type === 'shape' ? 'back' : 'front', touches,
+        render: () => (block.type === 'sticker'
+          ? <StickerBlock block={block} phone={false} first={false} last={false} onMove={() => {}} onRemove={() => onRemove(block)} onEdit={(sticker) => onEdit(block.id, { sticker }, { now: true })} />
+          : <ShapeBlock block={block} w={size.w} h={size.h} onEdit={(shape) => onEdit(block.id, { shape }, { now: true })} />),
+      };
+    }
     if (block.type === 'text') {
       return {
         key: block.id, name, className: `is-text ${editingId === block.id ? 'is-editing' : ''}`, handleOnly: true, actions: quickFor(block), copyable: true,
@@ -318,7 +342,8 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
         ),
       };
     }
-    return { key: block.id, name, className: `is-${block.type}${block.ref.available ? '' : ' is-unavailable'}`, render: () => refCard(block) };
+    const ref = block as Extract<BoardBlock, { type: 'file' | 'folder' }>;
+    return { key: block.id, name, className: `is-${block.type}${ref.ref.available ? '' : ' is-unavailable'}`, render: () => refCard(ref) };
   });
 
   return (

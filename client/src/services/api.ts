@@ -649,7 +649,15 @@ export type SavedSearchRun =
   | { id: string; state: 'ok'; total: number; results: SavedSearchRow[]; scopeName?: string; tookMs?: number }
   | { id: string; state: 'unavailable' | 'error' };
 // The content of a block that is not a file or folder, in a field named after its type.
-export interface BoardContent { note?: BoardNote; text?: BoardText; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink; filelist?: BoardFileList; search?: BoardSavedSearch }
+// A sticker: one emoji, drawn as large as its (square) box. Decorative: Tidy up leaves it where it is.
+export interface BoardSticker { emoji: string }
+// A shape: a kind, colours by palette name (never colour values), a stroke width; a line or arrow runs corner to
+// corner of its box, the way `flip` says (h mirrors left–right, v top–bottom). Decorative, like stickers.
+export type BoardShapeKind = 'rect' | 'rounded' | 'circle' | 'line' | 'arrow';
+export type BoardShapeColor = 'none' | 'sage' | 'sky' | 'lavender' | 'rose' | 'amber' | 'slate' | 'ink';
+export type BoardShapeFlip = 'none' | 'h' | 'v' | 'both';
+export interface BoardShape { kind: BoardShapeKind; fill: BoardShapeColor; stroke: BoardShapeColor; strokeWidth: 1 | 2 | 3 | 4 | 6; flip: BoardShapeFlip }
+export interface BoardContent { note?: BoardNote; text?: BoardText; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink; filelist?: BoardFileList; search?: BoardSavedSearch; sticker?: BoardSticker; shape?: BoardShape }
 
 // A place on the free canvas in pixels; null x/y = not placed yet (the board puts it below everything).
 // Sticky notes and text areas also have a width and height.
@@ -662,7 +670,9 @@ export type BoardBlock =
   | (BoardPlace & { type: 'deadline'; deadline: BoardDeadline })
   | (BoardPlace & { type: 'link'; link: BoardLink })
   | (BoardPlace & { type: 'filelist'; filelist: BoardFileList })
-  | (BoardPlace & { type: 'search'; search: BoardSavedSearch });
+  | (BoardPlace & { type: 'search'; search: BoardSavedSearch })
+  | (BoardPlace & { type: 'sticker'; sticker: BoardSticker })
+  | (BoardPlace & { type: 'shape'; shape: BoardShape });
 
 // What a save sends: positions for every block; a file/folder id only for blocks added since the last save;
 // a note's or text area's words only when they changed (the server keeps the stored ones otherwise).
@@ -673,6 +683,7 @@ export interface BoardBlockInput {
   // A file list's rows: { id } for a row the server has (it keeps that row's file), { id, fileId } for a new one.
   filelist?: { title: string; items: Array<{ id: string; fileId?: string }> };
   search?: BoardSavedSearch;
+  sticker?: BoardSticker; shape?: BoardShape;
 }
 
 export interface BoardLimits { tabs: number; blocksPerTab: number; fileRefsPerTab: number; searchesPerTab: number; tabName: number; noteTitle: number; noteBody: number; richTextChars: number; richTextBytes: number; tabBytes: number; totalBytes: number }

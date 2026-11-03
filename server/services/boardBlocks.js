@@ -5,6 +5,7 @@
  */
 
 const { TAXONOMY, CATEGORIES } = require('./fileClassifier');
+const { oneEmoji } = require('../utils/boardLayout');
 
 class BlockError extends Error {
   constructor(message, status = 400) { super(message); this.status = status; }
@@ -217,6 +218,44 @@ function cleanSavedSearch(raw) {
   };
 }
 
-const CLEANERS = Object.freeze({ label: cleanLabel, deadline: cleanDeadline, link: cleanLink, filelist: cleanFileList, search: cleanSavedSearch });
+/** Only these fields, or the whole value is refused (stickers and shapes are strict: nothing else is ever stored). */
+const onlyFields = (raw, allowed, what) => {
+  if (!isObject(raw) || Object.keys(raw).some(k => !allowed.includes(k))) throw new BlockError(`This ${what} could not be saved.`);
+};
 
-module.exports = { BlockError, LIMITS, LABEL_SIZES, LABEL_ALIGN, LABEL_TONES, LABEL_STYLES, CLEANERS, cleanLabel, cleanDeadline, cleanLink, linkUrl, cleanFileList, cleanSavedSearch, SEARCH };
+/** A sticker: exactly one emoji (the rule zone and tab icons use). Its square size is kept with its place. */
+function cleanSticker(raw) {
+  onlyFields(raw, ['emoji'], 'sticker');
+  const emoji = oneEmoji(raw.emoji);
+  if (!emoji || emoji !== raw.emoji) throw new BlockError('Choose one emoji for this sticker.');
+  return { emoji };
+}
+
+/**
+ * A shape: a kind, colours from one small palette (names, never colour values), a stroke width and, for lines and
+ * arrows, which way the corner-to-corner line runs (flip). A line or arrow has no fill and always a stroke; a box or
+ * circle must show at least a fill or a stroke.
+ */
+const SHAPE = Object.freeze({
+  kinds: ['rect', 'rounded', 'circle', 'line', 'arrow'],
+  colors: ['none', 'sage', 'sky', 'lavender', 'rose', 'amber', 'slate', 'ink'],
+  widths: [1, 2, 3, 4, 6],
+  flips: ['none', 'h', 'v', 'both'],
+});
+function cleanShape(raw) {
+  onlyFields(raw, ['kind', 'fill', 'stroke', 'strokeWidth', 'flip'], 'shape');
+  const bad = () => { throw new BlockError('This shape could not be saved.'); };
+  if (!SHAPE.kinds.includes(raw.kind) || !SHAPE.colors.includes(raw.stroke) || !SHAPE.widths.includes(raw.strokeWidth)) bad();
+  const flip = raw.flip === undefined ? 'none' : raw.flip;
+  if (!SHAPE.flips.includes(flip)) bad();
+  const lineLike = raw.kind === 'line' || raw.kind === 'arrow';
+  const fill = lineLike ? 'none' : raw.fill;
+  if (!lineLike && !SHAPE.colors.includes(fill)) bad();
+  if (lineLike && raw.fill !== undefined && !SHAPE.colors.includes(raw.fill)) bad();
+  if (lineLike ? raw.stroke === 'none' : fill === 'none' && raw.stroke === 'none') throw new BlockError('A shape needs a fill or a line colour.');
+  return { kind: raw.kind, fill, stroke: raw.stroke, strokeWidth: raw.strokeWidth, flip: lineLike ? flip : 'none' };
+}
+
+const CLEANERS = Object.freeze({ label: cleanLabel, deadline: cleanDeadline, link: cleanLink, filelist: cleanFileList, search: cleanSavedSearch, sticker: cleanSticker, shape: cleanShape });
+
+module.exports = { BlockError, LIMITS, LABEL_SIZES, LABEL_ALIGN, LABEL_TONES, LABEL_STYLES, CLEANERS, cleanLabel, cleanDeadline, cleanLink, linkUrl, cleanFileList, cleanSavedSearch, cleanSticker, cleanShape, SHAPE, SEARCH };

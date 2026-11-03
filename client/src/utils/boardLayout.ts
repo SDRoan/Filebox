@@ -22,11 +22,16 @@ export const BLOCK_SIZES = {
   link: { w: 260, h: 116, minW: 200, minH: 96, maxW: 480, maxH: 260 },
   filelist: { w: 300, h: 320, minW: 240, minH: 180, maxW: 600, maxH: 900 },
   search: { w: 300, h: 300, minW: 240, minH: 200, maxW: 600, maxH: 720 },
+  // Always square (resizing keeps it so).
+  sticker: { w: 96, h: 96, minW: 48, minH: 48, maxW: 320, maxH: 320 },
+  shape: { w: 200, h: 140, minW: 16, minH: 16, maxW: 2000, maxH: 2000 },
 } as const;
 // A label is only as tall as its heading size.
 export const LABEL_HEIGHT = { s: 34, m: 44, l: 60 } as const;
 // The block types that are content on the board (not references to files or folders).
-export const CONTENT_TYPES = ['note', 'text', 'label', 'deadline', 'link', 'filelist', 'search'] as const;
+export const CONTENT_TYPES = ['note', 'text', 'label', 'deadline', 'link', 'filelist', 'search', 'sticker', 'shape'] as const;
+// Drawings and decorations: Tidy up leaves them where they are.
+export const DECORATIVE_TYPES = ['sticker', 'shape'] as const;
 export type ContentType = typeof CONTENT_TYPES[number];
 export interface Size { w: number; h: number }
 

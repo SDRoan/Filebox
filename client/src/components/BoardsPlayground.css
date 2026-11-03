@@ -64,7 +64,8 @@ html.fb-dark .personal-board.tone-sage { --pb-canvas: #1c221d; --pb-line: #323c3
 
 /* In the app's dark mode these layers turn the page's inversion back, to show the colours above as they are. */
 html.fb-dark .personal-board :is(.file-board-toolbar, .board-zone, .board-note-card, .board-label, .board-deadline-card, .board-link-card,
-  .board-filelist-card, .board-search-card, .board-unavailable-card, .board-item > .file-item, .board-item > .folder-item:not(:has(.modal-overlay)), .board-list-row > .file-item, .board-list-row > .folder-item:not(:has(.modal-overlay)), .board-item-toolbar, .board-list-zone-name, .boards-phone-toolbar),
+  .board-filelist-card, .board-search-card, .board-unavailable-card, .board-item > .file-item, .board-item > .folder-item:not(:has(.modal-overlay)), .board-list-row > .file-item, .board-list-row > .folder-item:not(:has(.modal-overlay)), .board-item-toolbar, .board-list-zone-name, .boards-phone-toolbar,
+  .board-item > .board-shape, .board-item > .board-sticker, .board-sticker-row),
 html.fb-dark .personal-board .file-board-canvas::before, html.fb-dark .personal-board .board-item.selected::after {
   filter: invert(1) hue-rotate(180deg);
 }
@@ -372,3 +373,77 @@ html.fb-dark .personal-board .board-list-zone { border-color: color-mix(in srgb,
 html.fb-reduce-motion .personal-board :is(.board-item > *, .board-zone, .board-item-toolbar) { transition: none !important; }
 html.fb-reduce-motion .personal-board .board-item > * { transform: none !important; }
 html.fb-reduce-motion .personal-board .board-note-card::before { transform: none; }
+
+/* ---- Stickers: one emoji straight on the board (no card, border or shadow), as large as its square box */
+.board-item.is-sticker > .board-sticker { display: grid; place-items: center; width: 100%; height: 100%; container-type: size; background: none; border: 0; box-shadow: none; }
+.board-sticker-emoji { font-size: 78cqh; line-height: 1; user-select: none; pointer-events: none; }
+.board-item.is-sticker { cursor: grab; }
+
+/* ---- Shapes: drawn in SVG from palette names; a line or arrow takes the pointer only on itself (and 12 px around it) */
+.board-item.is-shape > .board-shape { width: 100%; height: 100%; background: none; }
+.board-shape-svg { display: block; overflow: visible; }
+.board-item.is-shape-box { cursor: grab; }
+.board-item.is-shape-line, .board-item.is-shape-line .board-shape, .board-item.is-shape-line .board-shape-svg { pointer-events: none; }
+.board-item.is-shape-line :is(.board-shape-hit, .board-item-handle, .board-item-resize, .board-item-toolbar, .board-decor-menu) { pointer-events: auto; }
+.board-shape-hit { fill: none; stroke: transparent; pointer-events: stroke; cursor: grab; }
+.board-item:is(.is-shape, .is-sticker).dragging > * { box-shadow: none !important; transform: none !important; }
+.personal-board {
+  --sh-sage: #dce8d3; --sh-sage-line: #5f8a52; --sh-sky: #d6e6f5; --sh-sky-line: #4f7fae; --sh-lavender: #e5def5; --sh-lavender-line: #7a64b4;
+  --sh-rose: #f6dbe0; --sh-rose-line: #b45566; --sh-amber: #f7e4bd; --sh-amber-line: #a8761a; --sh-slate: #e1e5ea; --sh-slate-line: #5f6b78;
+  --sh-ink: #3a4048; --sh-ink-line: #23282e;
+}
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) {
+  --sh-sage: #2f3d2b; --sh-sage-line: #9cc58e; --sh-sky: #253545; --sh-sky-line: #8db8e3; --sh-lavender: #352d48; --sh-lavender-line: #b7a6e6;
+  --sh-rose: #452a30; --sh-rose-line: #e79aa7; --sh-amber: #463a20; --sh-amber-line: #e2bc6b; --sh-slate: #353b43; --sh-slate-line: #aab4bf;
+  --sh-ink: #d7dce2; --sh-ink-line: #eef1f4;
+}
+.board-shape .fill-none { fill: none; }
+.board-shape .stroke-none { stroke: none; }
+.board-shape .fill-sage { fill: var(--sh-sage); } .board-shape .stroke-sage { stroke: var(--sh-sage-line); } .board-shape .head-sage { fill: var(--sh-sage-line); }
+.board-shape .fill-sky { fill: var(--sh-sky); } .board-shape .stroke-sky { stroke: var(--sh-sky-line); } .board-shape .head-sky { fill: var(--sh-sky-line); }
+.board-shape .fill-lavender { fill: var(--sh-lavender); } .board-shape .stroke-lavender { stroke: var(--sh-lavender-line); } .board-shape .head-lavender { fill: var(--sh-lavender-line); }
+.board-shape .fill-rose { fill: var(--sh-rose); } .board-shape .stroke-rose { stroke: var(--sh-rose-line); } .board-shape .head-rose { fill: var(--sh-rose-line); }
+.board-shape .fill-amber { fill: var(--sh-amber); } .board-shape .stroke-amber { stroke: var(--sh-amber-line); } .board-shape .head-amber { fill: var(--sh-amber-line); }
+.board-shape .fill-slate { fill: var(--sh-slate); } .board-shape .stroke-slate { stroke: var(--sh-slate-line); } .board-shape .head-slate { fill: var(--sh-slate-line); }
+.board-shape .fill-ink { fill: var(--sh-ink); } .board-shape .stroke-ink { stroke: var(--sh-ink-line); } .board-shape .head-ink { fill: var(--sh-ink-line); }
+
+/* ---- Their style menu: opened from the toolbar (its own summary is hidden), compact rows of choices */
+/* Next to the item's toolbar: above the item (opening upwards), or below it when the toolbar is below (near the top). */
+.board-decor-menu { position: absolute; left: 0; bottom: calc(100% + 52px); z-index: 7; width: 0; height: 0; }
+.board-item:has(> .board-item-toolbar.is-below) .board-decor-menu { top: calc(100% + 52px); bottom: auto; }
+.board-decor-menu > summary { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); list-style: none; }
+.board-decor-menu > summary::-webkit-details-marker { display: none; }
+.board-item:has(> .board-item-toolbar.is-below) .board-decor-menu .item-actions-popover { top: 0; bottom: auto; }
+.file-browser .board-decor-menu .item-actions-popover, .board-decor-menu .item-actions-popover { top: auto; bottom: 0; left: 0; right: auto; display: flex; flex-direction: column; gap: 6px; min-width: 0; width: max-content; max-width: 320px; max-height: none; padding: 8px 10px; }
+.board-decor-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; }
+.board-decor-label { width: 44px; font-size: 0.68rem; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-secondary); }
+.board-decor-choices button { display: grid; place-items: center; min-width: 28px; height: 28px; padding: 0 5px; font: inherit; font-size: 0.78rem; color: var(--pb-ink, var(--text-primary)); background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+.board-decor-choices button:hover { background: var(--bg-secondary); }
+.board-decor-choices button[aria-pressed='true'] { border-color: var(--pb-sel); box-shadow: inset 0 0 0 1px var(--pb-sel); }
+.board-decor-choices button:focus-visible { outline: 2px solid var(--pb-sel); outline-offset: 1px; }
+.board-decor-swatch { display: block; width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--pb-edge, #d8ddd3); }
+.board-decor-swatch.fill-swatch-none, .board-decor-swatch.line-swatch-none { background: linear-gradient(135deg, transparent 45%, #b45566 45%, #b45566 55%, transparent 55%); }
+.fill-swatch-sage { background: var(--sh-sage); } .fill-swatch-sky { background: var(--sh-sky); } .fill-swatch-lavender { background: var(--sh-lavender); } .fill-swatch-rose { background: var(--sh-rose); }
+.fill-swatch-amber { background: var(--sh-amber); } .fill-swatch-slate { background: var(--sh-slate); } .fill-swatch-ink { background: var(--sh-ink); }
+.line-swatch-sage { background: var(--sh-sage-line); } .line-swatch-sky { background: var(--sh-sky-line); } .line-swatch-lavender { background: var(--sh-lavender-line); } .line-swatch-rose { background: var(--sh-rose-line); }
+.line-swatch-amber { background: var(--sh-amber-line); } .line-swatch-slate { background: var(--sh-slate-line); } .line-swatch-ink { background: var(--sh-ink-line); }
+.board-decor-width { display: block; width: 18px; background: currentColor; border-radius: 3px; }
+.board-decor-emoji { display: grid; grid-template-columns: repeat(8, 30px); gap: 2px; }
+.board-decor-emoji button { width: 30px; height: 30px; padding: 0; font-size: 18px; line-height: 1; background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer; }
+.board-decor-emoji button[aria-pressed='true'] { border-color: var(--pb-sel); }
+.board-decor-emoji button:focus-visible { outline: 2px solid var(--pb-sel); outline-offset: 1px; }
+
+/* ---- Add > Sticker / Shape: a small chooser in the menu */
+.boards-add-menu .boards-add-chooser { display: flex; flex-direction: column; gap: 6px; padding: 2px; }
+.boards-add-menu [role='menuitem'].boards-add-back { display: flex; min-height: 34px; padding: 4px 8px; font-weight: 600; }
+.boards-add-menu [role='menuitem'].boards-add-back::after, .boards-add-options [role='menuitem']::after { content: none; }
+.boards-add-options { display: grid; gap: 2px; padding: 0 4px 4px; }
+.boards-add-options.is-sticker { grid-template-columns: repeat(8, 32px); }
+.boards-add-options.is-shape { grid-template-columns: repeat(5, 44px); }
+.boards-add-menu .boards-add-options [role='menuitem'] { display: grid; place-items: center; min-height: 0; height: 32px; padding: 0; font-size: 19px; line-height: 1; border-radius: 7px; }
+.boards-add-menu .boards-add-options.is-shape [role='menuitem'] { height: 40px; }
+
+/* ---- Phone: a sticker is a simple row; shapes are summed up in one line */
+.board-sticker-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 10px 6px 14px; }
+.board-sticker-row-emoji { font-size: 40px; line-height: 1.1; }
+.board-list-shapes { margin: 12px 14px 4px; font-size: 0.84rem; color: var(--text-secondary); }

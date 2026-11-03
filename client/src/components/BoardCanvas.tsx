@@ -19,7 +19,8 @@ export interface CanvasEntry {
   render: () => React.ReactNode;
   // Items with their own size (sticky notes, text areas); cards are CARD_WIDTH wide and as tall as they are.
   size?: { w: number; h: number };
-  resize?: { minW: number; minH: number; maxW: number; maxH: number };
+  // `square`: both sides change together (a sticker).
+  resize?: { minW: number; minH: number; maxW: number; maxH: number; square?: boolean };
   // Only the grip moves it, so typing or selecting text inside never does.
   handleOnly?: boolean;
   className?: string;
@@ -29,6 +30,12 @@ export interface CanvasEntry {
   actions?: ItemAction[];
   // Can be duplicated (Boards' own items; never file or folder cards).
   copyable?: boolean;
+  // A drawing or decoration (shape, sticker): Tidy up leaves it where it is.
+  decorative?: boolean;
+  // Drawn under everything else (shapes) or over it (stickers); file and folder cards never get a z-index of their own.
+  layer?: 'back' | 'front';
+  // Whether a drag box (board pixels) touches it, given its own box: a line by the line, a circle by its outline.
+  touches?: (box: Rect, at: Rect) => boolean;
 }
 export interface ItemAction { id: string; label: string; icon: React.ReactNode; run: () => void }
 export interface CanvasLayout { items: Record<string, Spot>; zones: BoardZone[] }
@@ -334,7 +341,12 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
       const now = toBoard(at.x, at.y);
       const box = boxBetween(start.x, start.y, now.x, now.y);
       setMarquee(box);
-      const hits = keys.filter(key => placed[key] && intersects(box, rectOf(key)));
+      const hits = keys.filter((key) => {
+        if (!placed[key]) return false;
+        const at = rectOf(key);
+        const touches = byKey.get(key)?.touches;
+        return intersects(box, at) && (!touches || touches(box, at));
+      });
       select([...base, ...hits], basePrimary && base.includes(basePrimary) ? basePrimary : hits[hits.length - 1] ?? null, true);
     };
     const later = () => { if (!frame) frame = requestAnimationFrame(draw); };
@@ -441,7 +453,9 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     const base = sizeOf(entry.key);
     let pos = start;
     startDrag(event, (dx, dy) => {
-      pos = { ...start, w: Math.round(Math.min(limits.maxW, Math.max(limits.minW, base.w + dx))), h: Math.round(Math.min(limits.maxH, Math.max(limits.minH, base.h + dy))) };
+      // A square item follows the larger of the two movements on both sides.
+      const side = limits.square ? Math.max(dx, dy) : 0;
+      pos = { ...start, w: Math.round(Math.min(limits.maxW, Math.max(limits.minW, base.w + (limits.square ? side : dx)))), h: Math.round(Math.min(limits.maxH, Math.max(limits.minH, base.h + (limits.square ? side : dy)))) };
       setDraggingKeys([entry.key]);
       setLayout(current => ({ ...current, items: { ...placed, ...current.items, [entry.key]: pos } }));
     }, () => {
@@ -530,7 +544,13 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     setSelectedZone(null);
   };
 
-  const tidy = () => commit(tidyLayout(keys, placed, latest.current.zones, sizeOf, ownHeight, canvasWidth()));
+  // Tidy up arranges the content; drawings and decorations stay exactly where they are (and do not size zones).
+  const tidy = () => {
+    const content = keys.filter(key => !byKey.get(key)?.decorative);
+    const next = tidyLayout(content, placed, latest.current.zones, sizeOf, ownHeight, canvasWidth());
+    const kept = Object.fromEntries(keys.filter(key => byKey.get(key)?.decorative).map(key => [key, placed[key]]));
+    commit({ ...next, items: { ...kept, ...next.items } });
+  };
 
   const resetBoard = () => {
     if (onReset) { onReset(); return; }
@@ -679,7 +699,7 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
             );
           })}
 
-          {entries.map(entry => {
+          {[...entries.filter(e => e.layer === 'back'), ...entries.filter(e => !e.layer), ...entries.filter(e => e.layer === 'front')].map(entry => {
             const pos = placed[entry.key];
             const sized = entry.size ? { width: pos.w ?? entry.size.w, height: pos.h ?? entry.size.h } : { width: CARD_WIDTH };
             const selected = selection.keys.has(entry.key);

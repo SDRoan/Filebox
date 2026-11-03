@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { BoardBlock, BoardZone } from '../services/api';
 import { StickyNoteBlock, RichTextBlock } from './BoardNoteBlocks';
+import { StickerBlock } from './BoardDecorBlocks';
 import { BoardActions, TextFrame, blockName, hasOwnSize, isPlanning, ownSize, planningBlock, useRefCard } from './PersonalBoard';
 import { CARD_WIDTH, Spot, zoneMembers } from '../utils/boardLayout';
 
@@ -17,7 +18,9 @@ const BoardList: React.FC<BoardActions & { blocks: BoardBlock[]; zones: BoardZon
   const refCard = useRefCard(actions);
   const editingRef = useRef(editingId);
   editingRef.current = editingId;
-  const ordered = [...blocks].sort((a, b) => placeOf(a).y - placeOf(b).y || placeOf(a).x - placeOf(b).x || (a.id < b.id ? -1 : 1));
+  // Shapes are drawings: not listed here (one line says how many), and not part of the order Move up/down swaps in.
+  const shapes = blocks.filter(b => b.type === 'shape').length;
+  const ordered = blocks.filter(b => b.type !== 'shape').sort((a, b) => placeOf(a).y - placeOf(b).y || placeOf(a).x - placeOf(b).x || (a.id < b.id ? -1 : 1));
   const byId = new Map(blocks.map(b => [b.id, b]));
   const items = Object.fromEntries(blocks.map(b => [b.id, placeOf(b)]));
   const used = new Set<string>();
@@ -56,6 +59,10 @@ const BoardList: React.FC<BoardActions & { blocks: BoardBlock[]; zones: BoardZon
       );
     } else if (isPlanning(block)) {
       content = planningBlock(block, actions, { phone: true, first, last, onMove: (d) => move(block, d), onExit: exit });
+    } else if (block.type === 'sticker') {
+      content = <StickerBlock block={block} phone first={first} last={last} onMove={(d) => move(block, d)} onRemove={() => onRemove(block)} onEdit={(sticker) => onEdit(block.id, { sticker }, { now: true })} />;
+    } else if (block.type === 'shape') {
+      return null;
     } else {
       content = refCard(block, (
         <>
@@ -72,6 +79,9 @@ const BoardList: React.FC<BoardActions & { blocks: BoardBlock[]; zones: BoardZon
   };
 
   if (!blocks.length) return <div className="board-list-empty">{empty}</div>;
+  const shapesNote = shapes > 0 && (
+    <p className="board-list-shapes" role="note">{shapes === 1 ? 'This board has 1 shape.' : `This board has ${shapes} shapes.`} Open it on a larger screen to view {shapes === 1 ? 'it' : 'them'}.</p>
+  );
   return (
     <div className="board-list-phone">
       {groups.map(({ zone, list }) => (
@@ -86,6 +96,7 @@ const BoardList: React.FC<BoardActions & { blocks: BoardBlock[]; zones: BoardZon
           <ol className="board-list file-list list-view">{loose.map(row)}</ol>
         </section>
       )}
+      {shapesNote}
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { workspaceBoardsAPI, BoardAppearance, BoardTab, BoardLimits } from '../services/api';
+import { workspaceBoardsAPI, BoardAppearance, BoardShapeKind, BoardTab, BoardLimits } from '../services/api';
 import ItemActions from './ItemActions';
 import BoardDialog from './BoardDialog';
 import BoardTabDialog, { TabLook } from './BoardTabDialog';
@@ -15,7 +15,9 @@ import BoardAddFileDialog from './BoardAddFileDialog';
 import FolderPickerModal from './FolderPickerModal';
 import { PlusIcon } from './Icons';
 import { useBoardTabBlocks, BoardNotice } from '../hooks/useBoardTabBlocks';
-import { readOpenTab, writeOpenTab, tabAccent, DEFAULT_APPEARANCE } from '../utils/boardTabs';
+import { readOpenTab, writeOpenTab, tabAccent, DEFAULT_APPEARANCE, TAB_EMOJI } from '../utils/boardTabs';
+import { BLOCK_SIZES } from '../utils/boardLayout';
+import { KIND_ICONS, SHAPE_KINDS, newShape } from './BoardDecorBlocks';
 import './FileBrowser.css';
 import './FileBoard.css';
 import './Boards.css';
@@ -46,9 +48,10 @@ const usePhone = () => {
   return phone;
 };
 
-type AddKind = 'file' | 'folder' | 'filelist' | 'search' | 'note' | 'text' | 'deadline' | 'label' | 'link';
+type AddKind = 'sticker' | 'shape' | 'file' | 'folder' | 'filelist' | 'search' | 'note' | 'text' | 'deadline' | 'label' | 'link';
 // The "+ Add" menu in groups (group names are read out, not chosen).
 const ADD_GROUPS: Array<{ name: string; items: Array<[AddKind, string]> }> = [
+  { name: 'Create', items: [['sticker', 'Sticker'], ['shape', 'Shape']] },
   { name: 'Files', items: [['file', 'File'], ['folder', 'Folder'], ['filelist', 'File list'], ['search', 'Saved search']] },
   { name: 'Notes & planning', items: [['note', 'Sticky note'], ['text', 'Text area'], ['deadline', 'Deadline']] },
   { name: 'Other', items: [['label', 'Label'], ['link', 'Link']] },
@@ -56,12 +59,15 @@ const ADD_GROUPS: Array<{ name: string; items: Array<[AddKind, string]> }> = [
 
 // What each kind of block is for (shown under its name) and its icon.
 const ADD_HELP: Record<AddKind, string> = {
+  sticker: 'An emoji to decorate the board', shape: 'Box, circle, line or arrow',
   file: 'Add a file from File Box', folder: 'Pin a folder you use often', filelist: 'A titled group of files', search: 'Live group of matching files',
   note: 'Quick thought or reminder', text: 'Notes, headings and checklists', deadline: 'A date to keep in sight',
   label: 'A heading for part of the board', link: 'A web page to come back to',
 };
 const icon = (paths: React.ReactNode) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths}</svg>;
 const ADD_ICONS: Record<AddKind, React.ReactNode> = {
+  sticker: icon(<><circle cx="12" cy="12" r="8.5" /><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0" /><path d="M9.2 9.5h.01M14.8 9.5h.01" /></>),
+  shape: icon(<><rect x="3.5" y="3.5" width="10" height="10" rx="1.5" /><circle cx="15.5" cy="15.5" r="5" /></>),
   file: icon(<><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></>),
   folder: icon(<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />),
   filelist: icon(<><path d="M9 6h11M9 12h11M9 18h11" /><rect x="3.5" y="4.5" width="3" height="3" rx="0.6" /><rect x="3.5" y="10.5" width="3" height="3" rx="0.6" /><rect x="3.5" y="16.5" width="3" height="3" rx="0.6" /></>),
@@ -73,20 +79,30 @@ const ADD_ICONS: Record<AddKind, React.ReactNode> = {
   link: icon(<><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></>),
 };
 
-/** "+ Add": a grouped menu, usable with the keyboard (arrows move between items, Enter, Escape). */
-const AddMenu: React.FC<{ disabled: boolean; onAdd: (kind: AddKind) => void }> = ({ disabled, onAdd }) => {
+/**
+ * "+ Add": a grouped menu, usable with the keyboard (arrows move between items, Enter, Escape). Sticker and Shape open a
+ * small chooser in the menu itself (an emoji; a kind of shape); Escape goes back to the list.
+ */
+const AddMenu: React.FC<{ disabled: boolean; onAdd: (kind: AddKind, choice?: string) => void }> = ({ disabled, onAdd }) => {
   const [open, setOpen] = useState(false);
+  const [choosing, setChoosing] = useState<'sticker' | 'shape' | null>(null);
   const button = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   const items = () => Array.from(menu.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') || []);
-  useEffect(() => { if (open) items()[0]?.focus(); }, [open]);
-  const close = (focusButton = true) => { setOpen(false); if (focusButton) button.current?.focus({ preventScroll: true }); };
+  // Opening the menu, a chooser or going back from one: focus its first item (or the item the chooser came from).
+  const back = useRef<AddKind | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const from = back.current && !choosing ? menu.current?.querySelector<HTMLElement>(`[data-kind="${back.current}"]`) : null;
+    (from || items()[0])?.focus();
+  }, [open, choosing]);
+  const close = (focusButton = true) => { setOpen(false); setChoosing(null); back.current = null; if (focusButton) button.current?.focus({ preventScroll: true }); };
   // Focus goes back to "+ Add" first, so a dialog opened from the menu returns there when it closes.
   const choose = (run: () => void) => { close(); run(); };
   const onMenuKey = (event: React.KeyboardEvent) => {
     const list = items();
     const i = list.indexOf(document.activeElement as HTMLElement);
-    if (event.key === 'Escape') { event.preventDefault(); close(); }
+    if (event.key === 'Escape') { event.preventDefault(); if (choosing) { back.current = choosing; setChoosing(null); } else close(); }
     else if (event.key === 'ArrowDown') { event.preventDefault(); list[(i + 1) % list.length]?.focus(); }
     else if (event.key === 'ArrowUp') { event.preventDefault(); list[(i - 1 + list.length) % list.length]?.focus(); }
     else if (event.key === 'Tab') close(false);
@@ -95,18 +111,44 @@ const AddMenu: React.FC<{ disabled: boolean; onAdd: (kind: AddKind) => void }> =
     <div className="boards-add" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false); }}>
       <button ref={button} type="button" className="file-action-button boards-add-button" aria-haspopup="menu" aria-expanded={open} disabled={disabled}
         title={disabled ? 'This tab is full (150 items)' : undefined}
-        onClick={() => setOpen(o => !o)} onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); } }}>
+        onClick={() => { setOpen(o => !o); setChoosing(null); }} onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); } }}>
         <PlusIcon size={15} />Add
       </button>
       {open && (
-        <div ref={menu} className="boards-add-menu" role="menu" aria-label="Add to this board" onKeyDown={onMenuKey}>
-          {ADD_GROUPS.map((group, g) => (
+        <div ref={menu} className={`boards-add-menu${choosing ? ' is-choosing' : ''}`} role="menu" aria-label={choosing === 'sticker' ? 'Choose a sticker' : choosing === 'shape' ? 'Choose a shape' : 'Add to this board'} onKeyDown={onMenuKey}>
+          {choosing && (
+            <div className="boards-add-chooser">
+              <button type="button" role="menuitem" className="boards-add-back" onClick={() => { back.current = choosing; setChoosing(null); }}>
+                <span aria-hidden="true">‹</span> {choosing === 'sticker' ? 'Sticker' : 'Shape'}
+              </button>
+              <div className={`boards-add-options is-${choosing}`} role="group" aria-label={choosing === 'sticker' ? 'Emoji' : 'Kind of shape'}
+                onKeyDown={(event) => {
+                  // Left and right move along the grid too (up and down already move through the menu).
+                  const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+                  if (!step) return;
+                  const list = items();
+                  const i = list.indexOf(document.activeElement as HTMLElement);
+                  event.preventDefault();
+                  list[(i + step + list.length) % list.length]?.focus();
+                }}>
+                {choosing === 'sticker'
+                  ? TAB_EMOJI.map(([emoji, name]) => <button key={emoji} type="button" role="menuitem" aria-label={name} title={name} onClick={() => choose(() => onAdd('sticker', emoji))}>{emoji}</button>)
+                  : SHAPE_KINDS.map(([kind, name]) => (
+                    <button key={kind} type="button" role="menuitem" aria-label={name} title={name} onClick={() => choose(() => onAdd('shape', kind))}>
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{KIND_ICONS[kind]}</svg>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
+          {!choosing && ADD_GROUPS.map((group, g) => (
             <div key={group.name} role="group" aria-labelledby={`boards-add-group-${g}`} className="boards-add-group">
               <p id={`boards-add-group-${g}`} className="boards-add-group-name" role="presentation">{group.name}</p>
               {group.items.map(([kind, label]) => (
                 // The name is the item's name; what it is for is its description (shown under it).
-                <button key={kind} type="button" role="menuitem" aria-label={label} aria-describedby={`boards-add-help-${kind}`} data-help={ADD_HELP[kind]}
-                  onClick={() => choose(() => onAdd(kind))}>
+                <button key={kind} type="button" role="menuitem" aria-label={label} aria-describedby={`boards-add-help-${kind}`} data-help={ADD_HELP[kind]} data-kind={kind}
+                  aria-haspopup={kind === 'sticker' || kind === 'shape' ? 'menu' : undefined}
+                  onClick={() => (kind === 'sticker' || kind === 'shape' ? setChoosing(kind) : choose(() => onAdd(kind)))}>
                   <span className="boards-add-icon">{ADD_ICONS[kind]}</span>{label}
                 </button>
               ))}
@@ -364,8 +406,10 @@ const Boards: React.FC = () => {
     const id = board.addBlock(type);
     setTimeout(() => document.querySelector<HTMLElement>(`[data-board-key="${id}"] ${FIRST_FIELD[type]}, [data-list-id="${id}"] ${FIRST_FIELD[type]}`)?.focus(), 80);
   };
-  const onAdd = (kind: AddKind) => {
-    if (kind === 'file') setDialog({ kind: 'addFile' });
+  const onAdd = (kind: AddKind, choice?: string) => {
+    if (kind === 'sticker') board.addBlock('sticker', { sticker: { emoji: choice || '⭐' } }, BLOCK_SIZES.sticker);
+    else if (kind === 'shape') { const made = newShape((choice || 'rect') as BoardShapeKind); board.addBlock('shape', { shape: made.shape }, made); }
+    else if (kind === 'file') setDialog({ kind: 'addFile' });
     else if (kind === 'folder') setDialog({ kind: 'addFolder' });
     else if (kind === 'note') addNote();
     else if (kind === 'text') addText();
