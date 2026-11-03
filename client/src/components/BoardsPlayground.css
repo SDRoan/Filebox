@@ -65,7 +65,7 @@ html.fb-dark .personal-board.tone-sage { --pb-canvas: #1c221d; --pb-line: #323c3
 /* In the app's dark mode these layers turn the page's inversion back, to show the colours above as they are. */
 html.fb-dark .personal-board :is(.file-board-toolbar, .board-zone, .board-note-card, .board-label, .board-deadline-card, .board-link-card,
   .board-filelist-card, .board-search-card, .board-unavailable-card, .board-item > .file-item, .board-item > .folder-item:not(:has(.modal-overlay)), .board-list-row > .file-item, .board-list-row > .folder-item:not(:has(.modal-overlay)), .board-item-toolbar, .board-list-zone-name, .boards-phone-toolbar,
-  .board-item > .board-shape, .board-item > .board-sticker, .board-sticker-row),
+  .board-item > .board-shape, .board-item > .board-sticker, .board-sticker-row, .board-connectors),
 html.fb-dark .personal-board .file-board-canvas::before, html.fb-dark .personal-board .board-item.selected::after {
   filter: invert(1) hue-rotate(180deg);
 }
@@ -447,3 +447,38 @@ html.fb-reduce-motion .personal-board .board-note-card::before { transform: none
 .board-sticker-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 10px 6px 14px; }
 .board-sticker-row-emoji { font-size: 40px; line-height: 1.1; }
 .board-list-shapes { margin: 12px 14px 4px; font-size: 0.84rem; color: var(--text-secondary); }
+
+/* ---- Connectors: one SVG layer over shapes and under content; only each line's 12 px hit stroke takes the pointer */
+.personal-board { --conn: #6b7a8c; --conn-sel: var(--pb-sel); }
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) { --conn: #aab4bf; }
+.board-connectors { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.board-connector-line { stroke: var(--conn); stroke-width: 2; stroke-linecap: round; fill: none; }
+.board-connector-head { fill: var(--conn); }
+.board-connector-hit { stroke: transparent; stroke-width: 12; stroke-linecap: round; fill: none; pointer-events: stroke; cursor: pointer; }
+.board-connector.is-selected .board-connector-line, .board-connector.is-focused .board-connector-line { stroke: var(--conn-sel); stroke-width: 3; }
+.board-connector.is-selected .board-connector-head, .board-connector.is-focused .board-connector-head { fill: var(--conn-sel); }
+.board-connector-halo { stroke: color-mix(in srgb, var(--conn-sel) 22%, transparent); stroke-width: 10; stroke-linecap: round; }
+.board-connector-hidden { stroke: var(--conn-sel); stroke-width: 2; stroke-dasharray: 4 5; opacity: 0.8; }
+.board-connector-preview { stroke: var(--conn-sel); stroke-width: 2; stroke-dasharray: 6 5; stroke-linecap: round; }
+.personal-board .file-board-canvas > .board-connector-toolbar { position: absolute; z-index: 8; display: flex; gap: 2px; padding: 3px; transform: translate(-50%, calc(-100% - 10px));
+  background: var(--pb-surface); border: 1px solid var(--pb-edge); border-radius: 9px; box-shadow: var(--pb-shadow-hover); }
+.board-connector-toolbar button[aria-pressed='true'] { color: var(--pb-ink); background: var(--bg-secondary); box-shadow: inset 0 0 0 1px var(--pb-sel); }
+.board-connector-keys { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* The connect handle: a small dot on the middle of the right edge (clear of the grip, the resize corner and file menus). */
+.board-item > .board-connect-handle { position: absolute; top: 50%; right: -7px; z-index: 4; width: 12px; height: 12px; margin-top: -6px; border-radius: 50%;
+  background: var(--pb-surface, #ffffff); border: 2px solid var(--conn-sel, #3f6543); cursor: crosshair; opacity: 0; transition: opacity 120ms; touch-action: none; pointer-events: auto; }
+/* On the item under the pointer, or the one item selected (not on each of several selected). */
+.board-item:hover > .board-connect-handle, .board-item.is-only > .board-connect-handle, .board-item.connect-source > .board-connect-handle { opacity: 1; }
+body.board-connecting, body.board-connecting * { cursor: crosshair !important; user-select: none; }
+.personal-board .board-item.connect-target::after { content: ''; position: absolute; inset: -6px; pointer-events: none; border: 2px dashed var(--conn-sel); border-radius: calc(10px * var(--fb-radius-scale, 1)); }
+:is(html.fb-reduce-motion) .board-connect-handle { transition: none; }
+@media (prefers-reduced-motion: reduce) { .board-connect-handle { transition: none; } }
+/* Connect to…: a filter field and the items, one per row */
+.board-connect-help { margin: 0 0 10px; font-size: 0.85rem; color: var(--text-secondary); }
+.board-connect-filter { width: 100%; box-sizing: border-box; margin-bottom: 8px; padding: 8px 10px; font: inherit; border: 1px solid var(--border-light); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); }
+.board-connect-list { display: flex; flex-direction: column; gap: 2px; max-height: 300px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.board-connect-list button { width: 100%; padding: 8px 10px; font: inherit; text-align: left; color: var(--text-primary); background: transparent; border: 0; border-radius: 6px; cursor: pointer; }
+.board-connect-list button:hover:not(:disabled), .board-connect-list button:focus-visible { background: var(--bg-secondary); outline: 2px solid var(--primary); outline-offset: -2px; }
+.board-connect-list button:disabled { color: var(--text-secondary); cursor: default; }
+.board-connect-taken { font-size: 0.8rem; }
+.board-connect-none { padding: 8px 10px; color: var(--text-secondary); }

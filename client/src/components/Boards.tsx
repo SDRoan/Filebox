@@ -439,8 +439,11 @@ const Boards: React.FC = () => {
   const actions = {
     onArrange: board.arrange, onEdit: board.edit, onFlush: board.flush, onRemove: board.remove, onRemoveMany: board.removeMany, onReload: board.reload, onEditingChange: setEditingId,
     onRemoveRow: board.removeListRow, refRoom, searchRuns,
+    connectors: board.connectors,
+    onConnect: (fromId: string, toId: string) => board.connect(fromId, toId, 'arrow', limits?.connectorsPerTab || 300),
+    onDisconnect: board.disconnect, onRestyle: board.restyle,
     onDuplicate: (ids: string[]) => board.duplicate(ids, {
-      limits: { blocksPerTab: limits?.blocksPerTab || 150, searchesPerTab: limits?.searchesPerTab || 10, fileRefsPerTab: limits?.fileRefsPerTab || 1000 },
+      limits: { blocksPerTab: limits?.blocksPerTab || 150, searchesPerTab: limits?.searchesPerTab || 10, fileRefsPerTab: limits?.fileRefsPerTab || 1000, connectorsPerTab: limits?.connectorsPerTab || 300 },
       // A saved search whose last run here found its folder or Team Space gone is not copied.
       searchUnavailable: (id: string) => searchRuns.state(id)?.status === 'unavailable',
     }),

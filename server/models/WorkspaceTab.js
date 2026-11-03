@@ -20,6 +20,8 @@ const workspaceTabSchema = new mongoose.Schema({
   blocks: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // Zones drawn on this tab's board (same shape as My Files > Board zones).
   zones: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  // Lines and arrows between two of this tab's items: { id, fromId, toId, style } (see utils/boardConnectors.js).
+  connectors: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 2 = free canvas in pixels. Older tabs (a 12-column grid) are converted when read (utils/boardLayout.js).
   layoutVersion: { type: Number },
   // How the board's canvas looks: { pattern, tone }. Left out (every tab made before) means dots on white.

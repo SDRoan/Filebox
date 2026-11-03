@@ -79,8 +79,11 @@ const BoardList: React.FC<BoardActions & { blocks: BoardBlock[]; zones: BoardZon
   };
 
   if (!blocks.length) return <div className="board-list-empty">{empty}</div>;
-  const shapesNote = shapes > 0 && (
-    <p className="board-list-shapes" role="note">{shapes === 1 ? 'This board has 1 shape.' : `This board has ${shapes} shapes.`} Open it on a larger screen to view {shapes === 1 ? 'it' : 'them'}.</p>
+  // Shapes and connectors are not listed: one line says how many there are.
+  const lines = actions.connectors.length;
+  const parts = [shapes ? `${shapes} ${shapes === 1 ? 'shape' : 'shapes'}` : '', lines ? `${lines} ${lines === 1 ? 'connector' : 'connectors'}` : ''].filter(Boolean);
+  const shapesNote = parts.length > 0 && (
+    <p className="board-list-shapes" role="note">This board {ordered.length ? 'also has' : 'has'} {parts.join(' and ')}. Open it on a larger screen to view {shapes + lines === 1 ? 'it' : 'them'}.</p>
   );
   return (
     <div className="board-list-phone">

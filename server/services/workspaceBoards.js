@@ -11,6 +11,7 @@ const { effectiveClassification } = require('./fileClassifier');
 const { technicalType } = require('./advancedSearch');
 const { cleanDoc, RichTextError } = require('./richTextSchema');
 const { CLEANERS: BLOCK_CLEANERS, BlockError } = require('./boardBlocks');
+const connectorRules = require('../utils/boardConnectors');
 const savedSearch = require('./savedSearch');
 
 /**
@@ -29,6 +30,8 @@ const LIMITS = Object.freeze({
   // Stored file references on one tab: file cards plus every row of every file list (the same file twice counts twice).
   fileRefsPerTab: 1000,
   searchesPerTab: 10,
+  // Lines and arrows between items (not items themselves: they do not count toward blocksPerTab, but do toward bytes).
+  connectorsPerTab: connectorRules.MAX_CONNECTORS,
   tabName: 40,
   noteTitle: 80,
   noteBody: 4000,
@@ -165,7 +168,7 @@ function cleanColor(value) {
   return value;
 }
 
-const tabBytes = (tab) => Buffer.byteLength(JSON.stringify({ name: tab.name, icon: tab.icon, color: tab.color, blocks: tab.blocks || [], zones: tab.zones || [] }), 'utf8');
+const tabBytes = (tab) => Buffer.byteLength(JSON.stringify({ name: tab.name, icon: tab.icon, color: tab.color, blocks: tab.blocks || [], zones: tab.zones || [], ...(tab.connectors?.length ? { connectors: tab.connectors } : {}) }), 'utf8');
 
 /**
  * A tab's layout on the free canvas (pixel positions and zones). Tabs saved before the canvas used a
@@ -174,8 +177,8 @@ const tabBytes = (tab) => Buffer.byteLength(JSON.stringify({ name: tab.name, ico
 const LAYOUT_VERSION = 2;
 const canvasOf = (tab) => {
   const canvas = tab.layoutVersion === LAYOUT_VERSION
-    ? { blocks: tab.blocks || [], zones: tab.zones || [] }
-    : { blocks: layout.fromGrid(tab.blocks || []), zones: [] };
+    ? { blocks: tab.blocks || [], zones: tab.zones || [], connectors: tab.connectors || [] }
+    : { blocks: layout.fromGrid(tab.blocks || []), zones: [], connectors: [] };
   return { ...canvas, blocks: canvas.blocks.map(b => (b.type === 'checklist' ? checklistAsText(b) : b)) };
 };
 
@@ -235,9 +238,9 @@ async function settleDefault(userId, tabs) {
   return tabs.map(t => ({ ...t, isDefault: t.tabId === keep.tabId }));
 }
 
-async function createTabRecord(userId, { name, icon = '', color = '', isDefault = false, blocks = [], zones = [], appearance = null }, existing) {
+async function createTabRecord(userId, { name, icon = '', color = '', isDefault = false, blocks = [], zones = [], connectors = [], appearance = null }, existing) {
   const order = existing.length ? Math.max(...existing.map(t => t.order)) + 1 : 0;
-  const record = { user: userId, tabId: newTabId(), name, icon, color, order, isDefault, rev: 0, blocks, zones, layoutVersion: LAYOUT_VERSION, ...(appearance ? { appearance } : {}) };
+  const record = { user: userId, tabId: newTabId(), name, icon, color, order, isDefault, rev: 0, blocks, zones, ...(connectors.length ? { connectors } : {}), layoutVersion: LAYOUT_VERSION, ...(appearance ? { appearance } : {}) };
   record.bytes = tabBytes(record);
   const total = existing.reduce((sum, t) => sum + (t.bytes || 0), 0);
   if (total + record.bytes > LIMITS.totalBytes) throw new BoardInputError('Your Boards are full. Remove something to add more.', 413);
@@ -466,8 +469,8 @@ async function getTab(userId, tabId) {
   if (!TAB_ID.test(tabId || '')) throw new BoardInputError('Tab not found.', 404);
   const tab = await WorkspaceTab.findOne({ user: userId, tabId }).lean();
   if (!tab) throw new BoardInputError('Tab not found.', 404);
-  const { blocks, zones } = canvasOf(tab);
-  return { tab: publicTab(tab), blocks: await resolveBlocks(userId, blocks), zones };
+  const { blocks, zones, connectors } = canvasOf(tab);
+  return { tab: publicTab(tab), blocks: await resolveBlocks(userId, blocks), zones, connectors: connectorRules.keepValid(connectors, new Set(blocks.map(b => b.id))) };
 }
 
 /**
@@ -536,6 +539,15 @@ async function saveBlocks(userId, tabId, body = {}) {
     return { ...content, ...layout.cleanPlace(raw, base.type) };
   });
   const zones = body.zones === undefined ? canvas.zones : layout.cleanZones(body.zones);
+  // Connectors only between items of this save (left out: the stored ones, still only between items that remain).
+  const blockIds = new Set(next.map(b => b.id));
+  let connectors;
+  try {
+    connectors = body.connectors === undefined ? connectorRules.keepValid(canvas.connectors, blockIds) : connectorRules.cleanConnectors(body.connectors, blockIds);
+  } catch (error) {
+    if (error instanceof connectorRules.ConnectorError) throw new BoardInputError(error.message);
+    throw error;
+  }
 
   const searches = searchCount(next);
   if (searches > LIMITS.searchesPerTab && searches > searchCount(canvas.blocks)) throw new BoardInputError(TOO_MANY_SEARCHES);
@@ -554,15 +566,15 @@ async function saveBlocks(userId, tabId, body = {}) {
   }
 
   const blocks = storedBlocks(next);
-  const bytes = await checkSize(userId, current, blocks, zones);
+  const bytes = await checkSize(userId, current, blocks, zones, connectors);
 
   const updated = await WorkspaceTab.findOneAndUpdate(
     { user: userId, tabId, rev: body.rev },
-    { $set: { blocks, zones, bytes, layoutVersion: LAYOUT_VERSION }, $inc: { rev: 1 } },
+    { $set: { blocks, zones, connectors, bytes, layoutVersion: LAYOUT_VERSION }, $inc: { rev: 1 } },
     { new: true }
   ).lean();
   if (!updated) throw await conflict(userId, tabId);
-  return { tab: publicTab(updated), blocks: await resolveBlocks(userId, updated.blocks), zones: updated.zones };
+  return { tab: publicTab(updated), blocks: await resolveBlocks(userId, updated.blocks), zones: updated.zones, connectors: updated.connectors || [] };
 }
 
 /** Blocks as they are stored: pixel place (and size for notes and text), with only the fields each type keeps. */
@@ -572,8 +584,8 @@ const storedBlocks = (list) => list.map(b => ({
 }));
 
 /** The tab's new size in bytes, if it fits within the tab and per-person limits. */
-async function checkSize(userId, current, blocks, zones = current.zones || []) {
-  const bytes = tabBytes({ ...current, blocks, zones });
+async function checkSize(userId, current, blocks, zones = current.zones || [], connectors = current.connectors || []) {
+  const bytes = tabBytes({ ...current, blocks, zones, connectors });
   if (bytes > LIMITS.tabBytes) throw new BoardInputError('This tab is too large to save.', 413);
   const others = await WorkspaceTab.aggregate([
     { $match: { user: new mongoose.Types.ObjectId(idOf(userId)), tabId: { $ne: current.tabId } } },
@@ -613,7 +625,7 @@ async function duplicateTab(userId, tabId) {
   if (!source) throw new BoardInputError('Tab not found.', 404);
   const existing = await WorkspaceTab.find({ user: userId }).select('tabId name order bytes').sort({ order: 1, createdAt: 1 }).lean();
   if (existing.length >= LIMITS.tabs) throw new BoardInputError(`You can have up to ${LIMITS.tabs} tabs.`, 409);
-  const { blocks: srcBlocks, zones } = canvasOf(source);
+  const { blocks: srcBlocks, zones, connectors: srcConnectors } = canvasOf(source);
   const { files, folders } = await resolveRefs(userId,
     [...srcBlocks.filter(b => b.type === 'file').map(b => idOf(b.fileId)), ...srcBlocks.flatMap(listFileIds)],
     srcBlocks.filter(b => b.type === 'folder').map(b => idOf(b.folderId)), { withDetails: false });
@@ -628,8 +640,11 @@ async function duplicateTab(userId, tabId) {
     skippedRows += b.filelist.items.length - items.length;
     return { ...b, filelist: { title: b.filelist.title, items: items.map(r => ({ id: r.id, fileId: idOf(r.fileId) })) } };
   });
-  const blocks = storedBlocks(copied.map(b => ({ ...b, id: freshId() })));
-  const record = await createTabRecord(userId, { name: copyName(source.name, new Set(existing.map(t => t.name))), icon: source.icon || '', color: source.color || '', blocks, zones, appearance: source.appearance ? appearanceOf(source) : null }, existing);
+  const idMap = new Map(copied.map(b => [b.id, freshId()]));
+  const blocks = storedBlocks(copied.map(b => ({ ...b, id: idMap.get(b.id) })));
+  // Connectors come along between copied items (one to an item that could not be copied is left out).
+  const connectors = connectorRules.remapConnectors(srcConnectors, idMap, freshId);
+  const record = await createTabRecord(userId, { name: copyName(source.name, new Set(existing.map(t => t.name))), icon: source.icon || '', color: source.color || '', blocks, zones, connectors, appearance: source.appearance ? appearanceOf(source) : null }, existing);
   const order = existing.map(t => t.tabId);
   order.splice(order.indexOf(tabId) + 1, 0, record.tabId);
   await writeOrder(userId, order, [...existing, record]);
@@ -752,8 +767,8 @@ async function addSearch(userId, tabId, body = {}) {
 async function conflict(userId, tabId) {
   const latest = await WorkspaceTab.findOne({ user: userId, tabId }).lean();
   if (!latest) return new BoardInputError('Tab not found.', 404);
-  const { blocks, zones } = canvasOf(latest);
-  return new BoardInputError('This board was changed somewhere else.', 409, { tab: publicTab(latest), blocks: await resolveBlocks(userId, blocks), zones });
+  const { blocks, zones, connectors } = canvasOf(latest);
+  return new BoardInputError('This board was changed somewhere else.', 409, { tab: publicTab(latest), blocks: await resolveBlocks(userId, blocks), zones, connectors: connectorRules.keepValid(connectors, new Set(blocks.map(b => b.id))) });
 }
 
 module.exports = {

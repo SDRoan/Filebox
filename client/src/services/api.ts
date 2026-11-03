@@ -657,6 +657,8 @@ export type BoardShapeKind = 'rect' | 'rounded' | 'circle' | 'line' | 'arrow';
 export type BoardShapeColor = 'none' | 'sage' | 'sky' | 'lavender' | 'rose' | 'amber' | 'slate' | 'ink';
 export type BoardShapeFlip = 'none' | 'h' | 'v' | 'both';
 export interface BoardShape { kind: BoardShapeKind; fill: BoardShapeColor; stroke: BoardShapeColor; strokeWidth: 1 | 2 | 3 | 4 | 6; flip: BoardShapeFlip }
+// A line or an arrow between two items of a tab. No position of its own: it is drawn from where its items are.
+export interface BoardConnector { id: string; fromId: string; toId: string; style: 'line' | 'arrow' }
 export interface BoardContent { note?: BoardNote; text?: BoardText; label?: BoardLabel; deadline?: BoardDeadline; link?: BoardLink; filelist?: BoardFileList; search?: BoardSavedSearch; sticker?: BoardSticker; shape?: BoardShape }
 
 // A place on the free canvas in pixels; null x/y = not placed yet (the board puts it below everything).
@@ -686,7 +688,7 @@ export interface BoardBlockInput {
   sticker?: BoardSticker; shape?: BoardShape;
 }
 
-export interface BoardLimits { tabs: number; blocksPerTab: number; fileRefsPerTab: number; searchesPerTab: number; tabName: number; noteTitle: number; noteBody: number; richTextChars: number; richTextBytes: number; tabBytes: number; totalBytes: number }
+export interface BoardLimits { tabs: number; blocksPerTab: number; fileRefsPerTab: number; searchesPerTab: number; connectorsPerTab: number; tabName: number; noteTitle: number; noteBody: number; richTextChars: number; richTextBytes: number; tabBytes: number; totalBytes: number }
 
 export const workspaceBoardsAPI = {
   list: async (): Promise<{ tabs: BoardTab[]; limits: BoardLimits; colors: string[] }> => {
@@ -744,22 +746,22 @@ export const workspaceBoardsAPI = {
     const response = await api.post(`/workspace-boards/tabs/${tabId}/searches`, { search });
     return response.data;
   },
-  getTab: async (tabId: string): Promise<{ tab: BoardTab; blocks: BoardBlock[]; zones: BoardZone[] }> => {
+  getTab: async (tabId: string): Promise<{ tab: BoardTab; blocks: BoardBlock[]; zones: BoardZone[]; connectors?: BoardConnector[] }> => {
     const response = await api.get(`/workspace-boards/tabs/${tabId}`);
     return response.data;
   },
-  // A 409 carries the latest { tab, blocks, zones } (changed on another device).
-  saveBlocks: async (tabId: string, rev: number, blocks: BoardBlockInput[], zones: BoardZone[]): Promise<{ tab: BoardTab; blocks: BoardBlock[]; zones: BoardZone[] }> => {
-    const response = await api.put(`/workspace-boards/tabs/${tabId}/blocks`, { rev, blocks, zones });
+  // A 409 carries the latest { tab, blocks, zones, connectors } (changed on another device).
+  saveBlocks: async (tabId: string, rev: number, blocks: BoardBlockInput[], zones: BoardZone[], connectors: BoardConnector[]): Promise<{ tab: BoardTab; blocks: BoardBlock[]; zones: BoardZone[]; connectors: BoardConnector[] }> => {
+    const response = await api.put(`/workspace-boards/tabs/${tabId}/blocks`, { rev, blocks, zones, connectors });
     return response.data;
   },
   /**
    * Best-effort save while the page is being hidden or closed (fetch keepalive, which browsers limit to about
    * 64 KB). Not guaranteed to finish; returns false when it could not even be sent.
    */
-  saveBlocksOnLeave: (tabId: string, rev: number, blocks: BoardBlockInput[], zones: BoardZone[]): boolean => {
+  saveBlocksOnLeave: (tabId: string, rev: number, blocks: BoardBlockInput[], zones: BoardZone[], connectors: BoardConnector[]): boolean => {
     const token = LOCAL_PREVIEW_ENABLED ? sessionStorage.getItem('filebox-local-token') : localStorage.getItem('token');
-    const body = JSON.stringify({ rev, blocks, zones });
+    const body = JSON.stringify({ rev, blocks, zones, connectors });
     if (!token || body.length > 60000) return false;
     try {
       fetch(`${API_URL}/workspace-boards/tabs/${tabId}/blocks`, { method: 'PUT', keepalive: true, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body }).catch(() => {});

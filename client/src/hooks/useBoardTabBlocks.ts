@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { workspaceBoardsAPI, AdvancedSearchResult, BoardBlock, BoardBlockInput, BoardContent, BoardFileList, BoardRef, BoardTab, BoardText, BoardZone } from '../services/api';
+import { workspaceBoardsAPI, AdvancedSearchResult, BoardBlock, BoardBlockInput, BoardConnector, BoardContent, BoardFileList, BoardRef, BoardTab, BoardText, BoardZone } from '../services/api';
 import { BLOCK_SIZES, CONTENT_TYPES, ContentType, Spot } from '../utils/boardLayout';
-import { planDuplicate } from '../utils/boardDuplicate';
+import { freshId, planDuplicate } from '../utils/boardDuplicate';
+import { pairKey } from '../utils/boardConnectors';
 
 /**
  * The blocks and zones of one Boards tab and how changes reach the account.
@@ -23,10 +24,14 @@ export type BoardChange =
   // Places (and sizes) on the free canvas, and the tab's zones when they changed. null = not placed yet.
   | { kind: 'layout'; items: Record<string, Spot | null>; zones?: BoardZone[] }
   // A block's content changed (a note, text area, label, deadline, link, file list or saved search): its field named after its type.
-  | ({ kind: 'edit'; id: string } & BoardContent);
+  | ({ kind: 'edit'; id: string } & BoardContent)
+  // Connectors: one added, one taken away, or one changed between line and arrow.
+  | { kind: 'connect'; connector: BoardConnector }
+  | { kind: 'disconnect'; id: string }
+  | { kind: 'restyle'; id: string; style: BoardConnector['style'] };
 
 /** The tab limits a duplicate must stay within (from the server's limits). */
-export interface DuplicateLimits { blocksPerTab: number; searchesPerTab: number; fileRefsPerTab: number }
+export interface DuplicateLimits { blocksPerTab: number; searchesPerTab: number; fileRefsPerTab: number; connectorsPerTab: number }
 
 export interface BoardNotice { text: string; tone?: 'info' | 'error'; undo?: () => void; removedId?: string }
 
@@ -52,6 +57,7 @@ const refIdOf = (b: BoardBlock) => (b.type === 'file' || b.type === 'folder' ? (
 
 /** One action applied to a layout (used both live and when replaying onto a newer version). */
 function apply(blocks: BoardBlock[], change: BoardChange): BoardBlock[] {
+  if (change.kind === 'connect' || change.kind === 'disconnect' || change.kind === 'restyle') return blocks;
   if (change.kind === 'remove') return blocks.filter(b => b.id !== change.id);
   if (change.kind === 'edit') {
     return blocks.map((b) => {
@@ -77,9 +83,20 @@ function apply(blocks: BoardBlock[], change: BoardChange): BoardBlock[] {
   });
 }
 const applyZones = (zones: BoardZone[], change: BoardChange) => (change.kind === 'layout' && change.zones ? change.zones : zones);
+/** One action applied to the connectors (taking an item off the board takes its connectors with it). */
+function applyConnectors(list: BoardConnector[], change: BoardChange): BoardConnector[] {
+  if (change.kind === 'connect') return list.some(c => c.id === change.connector.id || pairKey(c) === pairKey(change.connector)) ? list : [...list, change.connector];
+  if (change.kind === 'disconnect') return list.filter(c => c.id !== change.id);
+  if (change.kind === 'restyle') return list.map(c => (c.id === change.id ? { ...c, style: change.style } : c));
+  if (change.kind === 'remove') return list.filter(c => c.fromId !== change.id && c.toId !== change.id);
+  return list;
+}
+/** Only connectors whose two items are both on the board (what a save sends; the server checks the same). */
+const onBoard = (list: BoardConnector[], blocks: BoardBlock[]) => { const ids = new Set(blocks.map(b => b.id)); return list.filter(c => ids.has(c.fromId) && ids.has(c.toId)); };
+const touching = (c: BoardConnector, ids: Set<string>) => ids.has(c.fromId) || ids.has(c.toId);
 
 interface Pending { actions: BoardChange[]; newRefs: Map<string, { type: 'file' | 'folder'; refId: string }>; dirty: Set<string> }
-interface Snapshot extends Pending { tabId: string; blocks: BoardBlock[]; zones: BoardZone[]; serverIds: Set<string> }
+interface Snapshot extends Pending { tabId: string; blocks: BoardBlock[]; zones: BoardZone[]; connectors: BoardConnector[]; serverIds: Set<string>; lostConnectors?: number }
 const emptyPending = (): Pending => ({ actions: [], newRefs: new Map(), dirty: new Set() });
 
 /** What a save sends: positions for all blocks, ids for new references, words only for new or edited notes/text. */
@@ -98,6 +115,7 @@ function payloadOf(snap: Snapshot): BoardBlockInput[] {
 export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; onTab: (tab: BoardTab) => void; onNotice: (notice: BoardNotice | null) => void }) {
   const [blocks, setBlocksState] = useState<BoardBlock[]>([]);
   const [zones, setZonesState] = useState<BoardZone[]>([]);
+  const [connectors, setConnectorsState] = useState<BoardConnector[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [pendingRefs, setPendingRefs] = useState<Set<string>>(new Set());
@@ -109,6 +127,8 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
   const serverBlocks = useRef<BoardBlock[]>([]);
   const zonesRef = useRef<BoardZone[]>([]);
   const serverZones = useRef<BoardZone[]>([]);
+  const connectorsRef = useRef<BoardConnector[]>([]);
+  const serverConnectors = useRef<BoardConnector[]>([]);
   const pending = useRef<Pending>(emptyPending());
   const queue = useRef<Promise<void>>(Promise.resolve());
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -121,13 +141,14 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
 
   const setBlocks = (next: BoardBlock[]) => { blocksRef.current = next; setBlocksState(next); };
   const setZones = (next: BoardZone[]) => { zonesRef.current = next; setZonesState(next); };
+  const setConnectors = (next: BoardConnector[]) => { connectorsRef.current = next; setConnectorsState(next); };
   const syncPending = () => setPendingRefs(new Set(pending.current.newRefs.keys()));
 
   /** Take everything not yet sent for the open tab (so a later save cannot send it again). */
   const takeSnapshot = (): Snapshot | null => {
     const current = tabRef.current;
     if (!current || !pending.current.actions.length) return null;
-    const snap: Snapshot = { tabId: current.id, blocks: blocksRef.current, zones: zonesRef.current, serverIds: new Set(serverBlocks.current.map(b => b.id)), ...pending.current };
+    const snap: Snapshot = { tabId: current.id, blocks: blocksRef.current, zones: zonesRef.current, connectors: connectorsRef.current, serverIds: new Set(serverBlocks.current.map(b => b.id)), ...pending.current };
     pending.current = emptyPending();
     return snap;
   };
@@ -138,16 +159,17 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     inFlight.current += 1;
     if (isOpen()) setSaveState('saving');
     try {
-      const result = await workspaceBoardsAPI.saveBlocks(snap.tabId, rev, payloadOf(snap), snap.zones);
+      const result = await workspaceBoardsAPI.saveBlocks(snap.tabId, rev, payloadOf(snap), snap.zones, onBoard(snap.connectors, snap.blocks));
       revs.current.set(snap.tabId, result.tab.rev);
       onTab(result.tab);
       if (isOpen()) {
         serverBlocks.current = result.blocks;
         serverZones.current = result.zones;
+        serverConnectors.current = result.connectors || [];
         snap.newRefs.forEach((_, id) => pending.current.newRefs.delete(id));
         syncPending();
         // Changes made while this was saving stay on screen; the server's view fills in names and counts.
-        if (!pending.current.actions.length) { setBlocks(result.blocks); setZones(result.zones); }
+        if (!pending.current.actions.length) { setBlocks(result.blocks); setZones(result.zones); setConnectors(result.connectors || []); }
         else {
           const fresh = new Map(result.blocks.map(b => [b.id, b]));
           setBlocks(blocksRef.current.map((b) => {
@@ -161,7 +183,9 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
           }));
         }
         setSaveState(pending.current.actions.length ? 'waiting' : 'saved');
-        if (retried) {
+        if (retried && snap.lostConnectors) {
+          onNotice({ tone: 'error', text: snap.lostConnectors === 1 ? 'The connector was not kept: one of its items was removed on another device.' : `${snap.lostConnectors} connectors were not kept: their items were removed on another device.` });
+        } else if (retried) {
           const edited = snap.actions.some(a => a.kind === 'edit');
           onNotice({ text: `This board was changed on another device. ${edited ? 'Your latest text was kept and' : 'Your changes were'} added to the latest version.` });
         }
@@ -177,13 +201,19 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
           // First conflict: replay this person's changes on the latest version, then try once more.
           const replayed = snap.actions.reduce(apply, data.blocks as BoardBlock[]);
           const replayedZones = snap.actions.reduce(applyZones, (data.zones || []) as BoardZone[]);
+          // A connector made here to an item removed on the other device is not kept (and never sent).
+          const replayedConnectors = onBoard(snap.actions.reduce(applyConnectors, (data.connectors || []) as BoardConnector[]), replayed);
+          const lostConnectors = snap.actions.filter(a => a.kind === 'connect' && !replayedConnectors.some(c => c.id === a.connector.id)).length;
           if (isOpen()) {
             serverBlocks.current = data.blocks;
             serverZones.current = data.zones || [];
-            setBlocks(pending.current.actions.reduce(apply, replayed));
+            serverConnectors.current = data.connectors || [];
+            const nowBlocks = pending.current.actions.reduce(apply, replayed);
+            setBlocks(nowBlocks);
             setZones(pending.current.actions.reduce(applyZones, replayedZones));
+            setConnectors(onBoard(pending.current.actions.reduce(applyConnectors, replayedConnectors), nowBlocks));
           }
-          await send({ ...snap, blocks: replayed, zones: replayedZones, serverIds: new Set((data.blocks as BoardBlock[]).map(b => b.id)) }, true);
+          await send({ ...snap, blocks: replayed, zones: replayedZones, connectors: replayedConnectors, lostConnectors, serverIds: new Set((data.blocks as BoardBlock[]).map(b => b.id)) }, true);
           return;
         }
         // Second conflict: stop. Show the latest version and say what was not kept.
@@ -193,8 +223,10 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
           syncPending();
           serverBlocks.current = data.blocks;
           serverZones.current = data.zones || [];
+          serverConnectors.current = data.connectors || [];
           setBlocks(data.blocks);
           setZones(data.zones || []);
+          setConnectors(data.connectors || []);
           setSaveState('failed');
         }
         onNotice({ tone: 'error', text: `This board keeps changing on another device, so ${edited ? 'your latest text was not kept' : 'your last changes were not kept'}. Showing the latest version.` });
@@ -204,6 +236,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
         syncPending();
         setBlocks(serverBlocks.current);
         setZones(serverZones.current);
+        setConnectors(serverConnectors.current);
         setSaveState('failed');
         onNotice({ tone: 'error', text: data?.message || "Couldn't save the board. Your last change was undone." });
       }
@@ -252,6 +285,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     setError('');
     setBlocks([]);
     setZones([]);
+    setConnectors([]);
     setSaveState('idle');
     workspaceBoardsAPI.getTab(tabId)
       .then((data) => {
@@ -261,8 +295,10 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
         onTab(data.tab);
         serverBlocks.current = data.blocks;
         serverZones.current = data.zones || [];
+        serverConnectors.current = data.connectors || [];
         setBlocks(data.blocks);
         setZones(data.zones || []);
+        setConnectors(data.connectors || []);
         setLoading(false);
       })
       .catch((err) => { if (!cancelled) { setError(err?.response?.data?.message || "Couldn't open this tab."); setLoading(false); } });
@@ -287,7 +323,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
       if (!snap) return;
       const rev = revs.current.get(snap.tabId) ?? 0;
       // While another save is still running its revision would be stale; then the normal queue sends it.
-      if (inFlight.current || !workspaceBoardsAPI.saveBlocksOnLeave(snap.tabId, rev, payloadOf(snap), snap.zones)) {
+      if (inFlight.current || !workspaceBoardsAPI.saveBlocksOnLeave(snap.tabId, rev, payloadOf(snap), snap.zones, onBoard(snap.connectors, snap.blocks))) {
         queue.current = queue.current.then(() => send(snap));
         return;
       }
@@ -300,8 +336,8 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
           revs.current.set(snap.tabId, latest.tab.rev);
           onTab(latest.tab);
           if (tabRef.current?.id === snap.tabId && !pending.current.actions.length) {
-            serverBlocks.current = latest.blocks; serverZones.current = latest.zones || [];
-            setBlocks(latest.blocks); setZones(latest.zones || []); setSaveState('saved');
+            serverBlocks.current = latest.blocks; serverZones.current = latest.zones || []; serverConnectors.current = latest.connectors || [];
+            setBlocks(latest.blocks); setZones(latest.zones || []); setConnectors(latest.connectors || []); setSaveState('saved');
           }
         } catch { /* offline or closed: nothing more to do */ }
       });
@@ -413,6 +449,20 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     return block.id;
   }, [change]);
 
+  // Taking items off the board takes their connectors too (in the same save); Undo puts back those whose other item is still there.
+  const dropConnectorsOf = useCallback((ids: Set<string>) => {
+    const gone = connectorsRef.current.filter(c => touching(c, ids));
+    if (gone.length) setConnectors(connectorsRef.current.filter(c => !touching(c, ids)));
+    return gone;
+  }, []);
+  const restoreConnectors = useCallback((gone: BoardConnector[]) => {
+    const ids = new Set(blocksRef.current.map(b => b.id));
+    const back = gone.filter(c => ids.has(c.fromId) && ids.has(c.toId) && !connectorsRef.current.some(x => x.id === c.id || pairKey(x) === pairKey(c)));
+    if (!back.length) return;
+    setConnectors([...connectorsRef.current, ...back]);
+    back.forEach(c => pending.current.actions.push({ kind: 'connect', connector: c }));
+  }, []);
+
   /** Take a block off the board (never touches a file or folder). Undo puts the block back. */
   const remove = useCallback((block: BoardBlock) => {
     const before = blocksRef.current.find(b => b.id === block.id);
@@ -422,6 +472,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     pending.current.newRefs.delete(block.id);
     syncPending();
     setBlocks(blocksRef.current.filter(b => b.id !== block.id));
+    const goneConnectors = dropConnectorsOf(new Set([block.id]));
     pending.current.actions.push({ kind: 'remove', id: block.id });
     schedule(UNDO_WINDOW);
     const CONTENT_NAMES: Record<string, string> = { note: 'The note', text: 'The text area', label: 'The label', deadline: 'The deadline', link: 'The link', filelist: 'The file list', search: 'The saved search' };
@@ -445,11 +496,12 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
         syncPending();
         setBlocks([...blocksRef.current, before]);
         pending.current.actions.push({ kind: 'add', blocks: [{ ...before, refId }] });
+        restoreConnectors(goneConnectors);
         schedule(0);
         onNotice({ text: `${name} is back on this board.` });
       },
     });
-  }, [schedule, onNotice]);
+  }, [schedule, onNotice, dropConnectorsOf, restoreConnectors]);
 
   /**
    * Take several selected items off the board at once (files and folders only leave this board). One Undo puts every
@@ -469,6 +521,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     });
     syncPending();
     setBlocks(order.filter(b => !ids.has(b.id)));
+    const goneConnectors = dropConnectorsOf(ids);
     schedule(UNDO_WINDOW);
     const refs = gone.some(({ b }) => b.type === 'file' || b.type === 'folder');
     onNotice({
@@ -488,12 +541,13 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
         syncPending();
         setBlocks(next);
         pending.current.actions.push({ kind: 'add', blocks: added });
+        restoreConnectors(goneConnectors);
         schedule(0);
         const missing = lost.length ? ` ${lost.length} unavailable ${lost.length === 1 ? 'item' : 'items'} could not be put back.` : '';
         onNotice({ text: `${back.length} items are back on this board.${missing}` });
       },
     });
-  }, [schedule, onNotice]);
+  }, [schedule, onNotice, dropConnectorsOf, restoreConnectors]);
 
   /**
    * Duplicate items (Boards' own only; file and folder cards are skipped). First anything still waiting is saved on its
@@ -515,7 +569,12 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
         : 'Only board items can be duplicated (notes, text, labels, deadlines, links, file lists and saved searches). Files and folders were not copied.' });
       return [];
     }
-    const { blocksPerTab, searchesPerTab, fileRefsPerTab } = rules.limits;
+    const { blocksPerTab, searchesPerTab, fileRefsPerTab, connectorsPerTab } = rules.limits;
+    // Connectors come along only between two items that were both copied (never to an item outside the copy).
+    const copyOf = new Map(plan.from.map((src, i) => [src, plan.copies[i].id]));
+    const takenConnectors = new Set(connectorsRef.current.map(c => c.id));
+    const connectorCopies: BoardConnector[] = connectorsRef.current.filter(c => copyOf.has(c.fromId) && copyOf.has(c.toId))
+      .map(c => ({ id: freshId(10, takenConnectors), fromId: copyOf.get(c.fromId)!, toId: copyOf.get(c.toId)!, style: c.style }));
     const refsNow = current.reduce((sum, b) => sum + (b.type === 'file' ? 1 : b.type === 'filelist' ? b.filelist.items.length : 0), 0);
     const searchesNow = current.filter(b => b.type === 'search').length;
     const tooMany = current.length + n > blocksPerTab
@@ -524,11 +583,17 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
         ? `A tab can hold up to ${searchesPerTab} saved searches. Duplicating would make ${searchesNow + plan.searches}. Nothing was duplicated.`
         : refsNow + plan.rows > fileRefsPerTab
           ? `A tab can hold up to ${fileRefsPerTab.toLocaleString('en-US')} file references (file cards and file-list rows). Duplicating would make ${(refsNow + plan.rows).toLocaleString('en-US')}. Nothing was duplicated.`
-          : '';
+          : connectorsRef.current.length + connectorCopies.length > connectorsPerTab
+            ? `A tab can hold up to ${connectorsPerTab} connectors. Duplicating would make ${connectorsRef.current.length + connectorCopies.length}. Nothing was duplicated.`
+            : '';
     if (tooMany) { onNotice({ tone: 'error', text: tooMany }); return []; }
 
     setBlocks([...current, ...plan.copies]);
     pending.current.actions.push({ kind: 'add', blocks: plan.copies });
+    if (connectorCopies.length) {
+      setConnectors([...connectorsRef.current, ...connectorCopies]);
+      connectorCopies.forEach(c => pending.current.actions.push({ kind: 'connect', connector: c }));
+    }
     schedule(0);
     const copyIds = new Set(plan.copies.map(c => c.id));
     const notes = [
@@ -543,12 +608,65 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
         if (!here.length) return;
         here.forEach(b => pending.current.actions.push({ kind: 'remove', id: b.id }));
         setBlocks(blocksRef.current.filter(b => !copyIds.has(b.id)));
+        dropConnectorsOf(copyIds);
         schedule(0);
         onNotice({ text: here.length === 1 ? 'The copy was removed.' : `The ${here.length} copies were removed.` });
       },
     });
     return plan.copies.map((c, i) => ({ from: plan.from[i], id: c.id }));
-  }, [flush, schedule, onNotice]);
+  }, [flush, schedule, onNotice, dropConnectorsOf]);
+
+  /**
+   * A new connector (an arrow unless asked otherwise) between two items. All or nothing: if either item is gone, the two are
+   * already connected that way, or the tab is full, nothing is made and the notice says why. Returns the new id (or null).
+   */
+  const connect = useCallback((fromId: string, toId: string, style: BoardConnector['style'] = 'arrow', limit = 300): string | null => {
+    const ids = new Set(blocksRef.current.map(b => b.id));
+    const refuse = (text: string) => { onNotice({ tone: 'error', text }); return null; };
+    if (fromId === toId || !ids.has(fromId) || !ids.has(toId)) return refuse('Those items can’t be connected: one of them is no longer on this board.');
+    const connector: BoardConnector = { id: freshId(10, new Set(connectorsRef.current.map(c => c.id))), fromId, toId, style };
+    if (connectorsRef.current.some(c => pairKey(c) === pairKey(connector))) return refuse(style === 'arrow' ? 'There is already an arrow between those two this way.' : 'Those two already have a line between them.');
+    if (connectorsRef.current.length >= limit) return refuse(`A tab can hold up to ${limit} connectors.`);
+    setConnectors([...connectorsRef.current, connector]);
+    pending.current.actions.push({ kind: 'connect', connector });
+    schedule(0);
+    return connector.id;
+  }, [schedule, onNotice]);
+
+  /** Take a connector away (Undo puts exactly that one back, while both of its items are still there). */
+  const disconnect = useCallback((id: string) => {
+    const gone = connectorsRef.current.find(c => c.id === id);
+    if (!gone) return;
+    setConnectors(connectorsRef.current.filter(c => c.id !== id));
+    pending.current.actions.push({ kind: 'disconnect', id });
+    schedule(0);
+    onNotice({
+      text: 'Connector removed.',
+      undo: () => {
+        const ids = new Set(blocksRef.current.map(b => b.id));
+        if (!ids.has(gone.fromId) || !ids.has(gone.toId)) { onNotice({ tone: 'error', text: 'That connector can no longer be put back: one of its items is gone.' }); return; }
+        if (connectorsRef.current.some(c => c.id === gone.id || pairKey(c) === pairKey(gone))) return;
+        setConnectors([...connectorsRef.current, gone]);
+        pending.current.actions.push({ kind: 'connect', connector: gone });
+        schedule(0);
+        onNotice({ text: 'The connector is back.' });
+      },
+    });
+  }, [schedule, onNotice]);
+
+  /** A connector becomes a line or an arrow (not if that relationship already exists). */
+  const restyle = useCallback((id: string, style: BoardConnector['style']) => {
+    const c = connectorsRef.current.find(x => x.id === id);
+    if (!c || c.style === style) return;
+    const next = { ...c, style };
+    if (connectorsRef.current.some(x => x.id !== id && pairKey(x) === pairKey(next))) {
+      onNotice({ tone: 'error', text: style === 'line' ? 'Those two already have a line between them.' : 'There is already an arrow between those two this way.' });
+      return;
+    }
+    setConnectors(connectorsRef.current.map(x => (x.id === id ? next : x)));
+    pending.current.actions.push({ kind: 'restyle', id, style });
+    schedule(0);
+  }, [schedule, onNotice]);
 
   /** Take every unavailable file and folder off the board at once; one Undo puts them all back (until saved). */
   const removeUnavailable = useCallback(() => {
@@ -562,6 +680,7 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     });
     syncPending();
     setBlocks(blocksRef.current.filter(b => !ids.has(b.id)));
+    const goneConnectors = dropConnectorsOf(ids);
     schedule(UNDO_WINDOW);
     const count = `${gone.length} unavailable ${gone.length === 1 ? 'item' : 'items'}`;
     onNotice({
@@ -575,12 +694,13 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
         const back = gone.filter(b => !blocksRef.current.some(x => x.id === b.id));
         setBlocks([...blocksRef.current, ...back]);
         pending.current.actions.push({ kind: 'add', blocks: back });
+        restoreConnectors(goneConnectors);
         schedule(0);
         onNotice({ text: `Put back ${count}.` });
       },
     });
     return gone.length;
-  }, [schedule, onNotice]);
+  }, [schedule, onNotice, dropConnectorsOf, restoreConnectors]);
 
   /** Load the tab again from the server (after a real file action such as rename, move or trash). */
   const reload = useCallback(async () => {
@@ -594,8 +714,10 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
       onTab(data.tab);
       serverBlocks.current = data.blocks;
       serverZones.current = data.zones || [];
+      serverConnectors.current = data.connectors || [];
       setBlocks(data.blocks);
       setZones(data.zones || []);
+      setConnectors(data.connectors || []);
     } catch { /* the next load shows it */ }
   }, [onTab]);
 
@@ -638,5 +760,5 @@ export function useBoardTabBlocks({ tab, onTab, onNotice }: { tab?: BoardTab; on
     return b && b.type === 'search' ? JSON.stringify(b.search) : null;
   }, []);
 
-  return { blocks, zones, loading, error, pending: pendingRefs, saveState, change, arrange, edit, flush, addFiles, addFolder, addNote, addText, addBlock, remove, removeMany, duplicate, removeUnavailable, removeListRow, storedSearchKey, reload };
+  return { blocks, zones, connectors, connect, disconnect, restyle, loading, error, pending: pendingRefs, saveState, change, arrange, edit, flush, addFiles, addFolder, addNote, addText, addBlock, remove, removeMany, duplicate, removeUnavailable, removeListRow, storedSearchKey, reload };
 }

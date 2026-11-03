@@ -10,12 +10,13 @@ import { FileListBlock } from './BoardFileListBlock';
 import { SavedSearchBlock } from './BoardSavedSearchBlock';
 import { ShapeBlock, StickerBlock, isLineLike, shapeName } from './BoardDecorBlocks';
 import { Rect, boxTouchesEllipse, boxTouchesSegment, lineEnds } from '../utils/boardSelection';
+import { Outline, itemNames } from '../utils/boardConnectors';
 import { SavedSearchRuns } from '../hooks/useSavedSearchRuns';
 import { titleOf } from '../utils/savedSearch';
 import { domainOf } from '../utils/boardLinks';
 import { DocumentIcon, FolderIcon } from './Icons';
 import { useAuth } from '../context/AuthContext';
-import { filesAPI, BoardBlock, BoardContent, BoardZone } from '../services/api';
+import { filesAPI, BoardBlock, BoardConnector, BoardContent, BoardZone } from '../services/api';
 import { FileItem as FileItemType, Folder } from '../types';
 import { pagePath } from '../config/workspaceNavigation';
 import { BLOCK_SIZES, CONTENT_TYPES, LABEL_HEIGHT, Spot } from '../utils/boardLayout';
@@ -38,6 +39,11 @@ export interface BoardActions {
   onRemoveMany: (blocks: BoardBlock[]) => void;
   // Copy Boards' own items (file and folder cards are skipped); which copy was made from which item.
   onDuplicate: (ids: string[]) => Promise<Array<{ from: string; id: string }>>;
+  // Lines and arrows between items, and changing them.
+  connectors: BoardConnector[];
+  onConnect: (fromId: string, toId: string) => string | null;
+  onDisconnect: (id: string) => void;
+  onRestyle: (id: string, style: BoardConnector['style']) => void;
   onReload: () => void;
   onEditingChange: (id: string) => void;
   onRemoveRow: (blockId: string, rowId: string) => void;
@@ -273,7 +279,15 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
     return undefined;
   };
 
-  const entries: CanvasEntry[] = blocks.map((block) => {
+  // Short names for connectors and Connect to… (told apart when they repeat), and what a connector meets on each item.
+  const shortNames = useMemo(() => itemNames(blocks), [blocks]);
+  const outlineOf = (b: BoardBlock): Outline => {
+    if (b.type === 'sticker') return 'inset';
+    if (b.type !== 'shape') return 'box';
+    if (isLineLike(b.shape.kind)) { const flip = b.shape.flip; return (at: Rect) => lineEnds(at, flip); }
+    return b.shape.kind === 'circle' ? 'ellipse' : 'box';
+  };
+  const entries: CanvasEntry[] = blocks.map((block): CanvasEntry => {
     const name = blockName(block);
     if (block.type === 'note') {
       return {
@@ -344,11 +358,12 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
     }
     const ref = block as Extract<BoardBlock, { type: 'file' | 'folder' }>;
     return { key: block.id, name, className: `is-${block.type}${ref.ref.available ? '' : ' is-unavailable'}`, render: () => refCard(ref) };
-  });
+  }).map((entry, i) => ({ ...entry, shortName: shortNames.get(entry.key), outline: outlineOf(blocks[i]) }));
 
   return (
     <BoardCanvas boardKey={tabId} layout={layout} entries={entries} onCommit={onCommit} toolbarStart={toolbarStart} onReset={onReset} empty={empty} toolsBelowNearTop
       toolbarEnd={toolbarEnd} canvasClassName={canvasClassName} zoneLooks onAnnounce={onAnnounce} onDuplicateItems={actions.onDuplicate}
+      connectors={actions.connectors} onConnect={actions.onConnect} onDisconnect={actions.onDisconnect} onRestyle={actions.onRestyle}
       onRemoveItems={(ids) => {
         const list = blocks.filter(b => ids.includes(b.id));
         if (list.length === 1) onRemove(list[0]);

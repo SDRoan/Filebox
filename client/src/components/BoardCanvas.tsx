@@ -1,10 +1,12 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { BoardZone, BoardZoneShape, BoardZoneStyle } from '../services/api';
+import { BoardConnector, BoardZone, BoardZoneShape, BoardZoneStyle } from '../services/api';
 import { TAB_EMOJI } from '../utils/boardTabs';
 import { isDark } from '../theme/appearance';
 import { PlusIcon, TrashIcon } from './Icons';
 import { CARD_WIDTH, GAP, PAD, Spot, centerOf as centerAt, fitLabel, inZone, placeMissing, tidyLayout, zoneMembers as membersOf } from '../utils/boardLayout';
 import { NO_SELECTION, Rect, Selection, boxBetween, commandKey, groupDelta, intersects, isMac, selectedCount } from '../utils/boardSelection';
+import { ConnectChooser, ConnectorKeys, ConnectorLayer, ConnectorToolbar, DrawnConnector } from './BoardConnectors';
+import { Outline, anchorOf, connectorLabel, connectorShape, edgePoint, pairKey } from '../utils/boardConnectors';
 import './FileBoard.css';
 
 /**
@@ -36,6 +38,10 @@ export interface CanvasEntry {
   layer?: 'back' | 'front';
   // Whether a drag box (board pixels) touches it, given its own box: a line by the line, a circle by its outline.
   touches?: (box: Rect, at: Rect) => boolean;
+  // What a connector meets on it (its box unless said: an ellipse, a sticker's emoji, a line shape's segment).
+  outline?: Outline;
+  // Its short name in connector labels and Connect to… ("Essay.pdf", "Deadline: CS project", "💡 sticker").
+  shortName?: string;
 }
 export interface ItemAction { id: string; label: string; icon: React.ReactNode; run: () => void }
 export interface CanvasLayout { items: Record<string, Spot>; zones: BoardZone[] }
@@ -67,6 +73,11 @@ interface BoardCanvasProps {
   onAnnounce?: (text: string) => void;
   // Copy these items (Cmd/Ctrl+D, or Duplicate in a toolbar); resolves to the copies' keys, which become the selection.
   onDuplicateItems?: (keys: string[]) => Promise<Array<{ from: string; id: string }>>;
+  // Lines and arrows between items, and changing them (connect returns the new connector's id, or null if refused).
+  connectors?: BoardConnector[];
+  onConnect?: (fromKey: string, toKey: string) => string | null;
+  onDisconnect?: (id: string) => void;
+  onRestyle?: (id: string, style: BoardConnector['style']) => void;
 }
 
 const ZONE_COLORS = ['#dbeafe', '#dcfce7', '#fef3c7', '#fce7f3', '#ede9fe', '#ffedd5', '#e0f2f1', '#e5e7eb'];
@@ -92,6 +103,7 @@ const zoom = () => Number(getComputedStyle(document.documentElement).getProperty
 const INTERACTIVE = 'button, a, input, textarea, select, summary, details, label, [role="menu"], [contenteditable="true"]';
 
 const DUPLICATE_ICON = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" aria-hidden="true"><rect x="8.5" y="8.5" width="11" height="11" rx="2.2" /><path d="M15.5 8.5V6.7a2.2 2.2 0 0 0-2.2-2.2H6.7a2.2 2.2 0 0 0-2.2 2.2v6.6a2.2 2.2 0 0 0 2.2 2.2h1.8" /></svg>;
+const CONNECT_ICON = <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="5.5" r="2.5" /><path d="M7.5 16.5L16.5 7.5" /></svg>;
 const duplicateLabel = () => `Duplicate (${isMac() ? '⌘D' : 'Ctrl+D'})`;
 
 const GRIP = <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><circle cx="3" cy="3" r="1.2" /><circle cx="9" cy="3" r="1.2" /><circle cx="3" cy="9" r="1.2" /><circle cx="9" cy="9" r="1.2" /></svg>;
@@ -150,7 +162,7 @@ const GroupToolbar: React.FC<{ count: number; below: boolean; onRemove: () => vo
   </div>
 );
 
-const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCommit, boardKey, status = '', hint = DEFAULT_HINT, toolbarStart, onReset, onAutoPlace, empty, toolsBelowNearTop = false, toolbarEnd, canvasClassName = '', zoneLooks = false, onRemoveItems, onAnnounce, onDuplicateItems }) => {
+const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCommit, boardKey, status = '', hint = DEFAULT_HINT, toolbarStart, onReset, onAutoPlace, empty, toolsBelowNearTop = false, toolbarEnd, canvasClassName = '', zoneLooks = false, onRemoveItems, onAnnounce, onDuplicateItems, connectors = [], onConnect, onDisconnect, onRestyle }) => {
   // What is drawn: the parent's layout, or the live one while something is being dragged (only then is
   // there a copy here, so nothing typed can be overwritten by an older layout).
   const [live, setLive] = useState<CanvasLayout | null>(null);
@@ -176,8 +188,16 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
   const madeCopies = useRef<{ keys: string[]; primary: string | null; focus: boolean } | null>(null);
   // The items on the board as last drawn (a copy may already be drawn by the time its key comes back).
   const drawnKeys = useRef<Set<string>>(new Set());
+  // Connectors: the selected one (never mixed with selected items), the one with keyboard focus, one being drawn from a
+  // connect handle, and the item whose Connect to… list is open.
+  const [selectedConnector, setSelectedConnector] = useState<string | null>(null);
+  const [focusedConnector, setFocusedConnector] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState<{ from: string; x: number; y: number; target: string | null } | null>(null);
+  const [chooserFor, setChooserFor] = useState<string | null>(null);
+  // Card heights are measured once drawn: draw connectors again when they change.
+  const [, setMeasured] = useState(0);
 
-  useEffect(() => { setSelectedZone(null); sel.current = NO_SELECTION; setSelectionState(NO_SELECTION); setEmojiFor(null); setLive(null); }, [boardKey]);
+  useEffect(() => { setSelectedZone(null); sel.current = NO_SELECTION; setSelectionState(NO_SELECTION); setEmojiFor(null); setLive(null); setSelectedConnector(null); setConnecting(null); setChooserFor(null); }, [boardKey]);
   const setLayout = (next: CanvasLayout | ((current: CanvasLayout) => CanvasLayout)) =>
     setLive(current => (typeof next === 'function' ? next(current || latest.current) : next));
 
@@ -205,11 +225,16 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoKey]);
 
-  // Remember card sizes (zones and tidying use them).
+  // Remember card sizes (zones and tidying use them). Draws again only when a size actually changed, so it cannot loop.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useLayoutEffect(() => {
+    let changed = false;
     canvasRef.current?.querySelectorAll<HTMLElement>('[data-board-key]').forEach(el => {
+      const before = sizes.current[el.dataset.boardKey!];
+      if (!before || before.w !== el.offsetWidth || before.h !== el.offsetHeight) changed = true;
       sizes.current[el.dataset.boardKey!] = { w: el.offsetWidth, h: el.offsetHeight };
     });
+    if (changed && connectors.length) setMeasured(n => n + 1);
   });
 
   const zoneMembers = (zone: BoardZone, items = placed) => membersOf(zone, keys, items, sizeOf);
@@ -221,6 +246,8 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     const next: Selection = { keys: chosen, primary: primary && chosen.has(primary) ? primary : Array.from(chosen).pop() ?? null, held: held && chosen.size > 0 };
     sel.current = next;
     setSelectionState(next);
+    // Items, a zone or a connector: one kind of selection at a time.
+    setSelectedConnector(null);
     if (chosen.size) { setSelectedZone(null); setEmojiFor(null); }
     if (announce) onAnnounce?.(selectedCount(chosen.size));
   };
@@ -299,7 +326,7 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     const target = event.target as HTMLElement;
     if (target.closest('.board-item-toolbar')) return;
     const onGrip = Boolean(target.closest('.board-item-handle'));
-    const inContent = !onGrip && Boolean(target.closest(`${INTERACTIVE}, .board-item-resize`));
+    const inContent = !onGrip && Boolean(target.closest(`${INTERACTIVE}, .board-item-resize, .board-connect-handle`));
     if (event.shiftKey || commandKey(event)) {
       if (inContent) return;
       toggle(key);
@@ -319,6 +346,7 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     const additive = event.shiftKey || commandKey(event);
     toggledKey.current = null;
     setSelectedZone(null);
+    setSelectedConnector(null);
     setEmojiFor(null);
     if (!additive) clearSelection(sel.current.keys.size > 1);
     canvasRef.current?.focus({ preventScroll: true });
@@ -427,7 +455,7 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
   const dragItem = (key: string) => (event: React.PointerEvent) => {
     const target = event.target as HTMLElement;
     if (byKey.get(key)?.handleOnly && !target.closest('.board-item-handle')) return;
-    if (target.closest('.board-item-resize, .board-item-toolbar')) return;
+    if (target.closest('.board-item-resize, .board-item-toolbar, .board-connect-handle')) return;
     // Shift or Cmd/Ctrl changes the selection; it never starts a move.
     if (event.shiftKey || commandKey(event)) return;
     const group = groupOf(key);
@@ -568,6 +596,77 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     move(delta[0], delta[1]);
   };
 
+  // ---- Connectors: drawn from where their two items are now (nothing else about them is stored)
+  const outlineOf = (key: string): Outline => byKey.get(key)?.outline || 'box';
+  const nameOf = (key: string) => byKey.get(key)?.shortName || byKey.get(key)?.name || 'an item';
+  const names = new Map(keys.map(key => [key, nameOf(key)]));
+  const drawn: DrawnConnector[] = connectors.filter(c => placed[c.fromId] && placed[c.toId] && byKey.has(c.fromId) && byKey.has(c.toId)).map((c) => {
+    const from = rectOf(c.fromId);
+    const to = rectOf(c.toId);
+    const shape = connectorShape(from, outlineOf(c.fromId), to, outlineOf(c.toId), c.style);
+    const ends: [{ x: number; y: number }, { x: number; y: number }] = [anchorOf(from, outlineOf(c.fromId)), anchorOf(to, outlineOf(c.toId))];
+    return { c, shape, label: connectorLabel(c, names), ends, anchor: shape ? { x: shape.mx, y: shape.my } : { x: (ends[0].x + ends[1].x) / 2, y: (ends[0].y + ends[1].y) / 2 } };
+  });
+  const chosenConnector = drawn.find(d => d.c.id === selectedConnector) || null;
+  const selectConnector = (id: string) => {
+    select([], null, false);
+    setSelectedZone(null);
+    setEmojiFor(null);
+    setSelectedConnector(id);
+  };
+  const removeConnector = (id: string) => {
+    setSelectedConnector(null);
+    onDisconnect?.(id);
+  };
+  const made = (id: string | null, from: string, to: string) => {
+    if (!id) return;
+    selectConnector(id);
+    onAnnounce?.(`Arrow from ${nameOf(from)} to ${nameOf(to)} added.`);
+  };
+  // Drag from an item's connect handle onto another item: an arrow between them. Anywhere else (or Escape) makes nothing.
+  const startConnect = (from: string) => (event: React.PointerEvent) => {
+    if (event.button !== 0 || !onConnect) return;
+    event.stopPropagation();
+    event.preventDefault();
+    const scale = zoom();
+    let at = { x: event.clientX, y: event.clientY };
+    let target: string | null = null;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      const hit = document.elementFromPoint(at.x, at.y)?.closest<HTMLElement>('[data-board-key]')?.dataset.boardKey || null;
+      target = hit && hit !== from && byKey.has(hit) ? hit : null;
+      const r = canvasRef.current!.getBoundingClientRect();
+      setConnecting({ from, x: (at.x - r.left) / scale, y: (at.y - r.top) / scale, target });
+    };
+    const move = (e: PointerEvent) => { at = { x: e.clientX, y: e.clientY }; if (!frame) frame = requestAnimationFrame(update); };
+    const finish = (make: boolean) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+      window.removeEventListener('keydown', escape, true);
+      if (frame) cancelAnimationFrame(frame);
+      document.body.classList.remove('board-connecting');
+      setConnecting(null);
+      if (make && target) made(onConnect(from, target), from, target);
+    };
+    const up = (e: PointerEvent) => { at = { x: e.clientX, y: e.clientY }; update(); finish(true); };
+    const cancel = () => finish(false);
+    const escape = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); } };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+    window.addEventListener('keydown', escape, true);
+    document.body.classList.add('board-connecting');
+    update();
+  };
+  const preview = connecting && placed[connecting.from] ? (() => {
+    const from = rectOf(connecting.from);
+    const end = connecting.target ? edgePoint(rectOf(connecting.target), outlineOf(connecting.target), anchorOf(from, outlineOf(connecting.from))) : { x: connecting.x, y: connecting.y };
+    const start = edgePoint(from, outlineOf(connecting.from), end);
+    return { x1: start.x, y1: start.y, x2: end.x, y2: end.y };
+  })() : null;
+
   // A copyable item's quick actions: its own, then Duplicate, then Remove last.
   const withDuplicate = (entry: CanvasEntry) => {
     const actions = entry.actions || [];
@@ -577,8 +676,64 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     return at < 0 ? [...actions, duplicate] : [...actions.slice(0, at), duplicate, ...actions.slice(at)];
   };
 
+  // The selected item's quick actions with Connect to… (before Duplicate and Remove). A file or folder card has only
+  // that: its own File Box menu does everything else.
+  const toolbarActions = (entry: CanvasEntry): ItemAction[] => {
+    const own = withDuplicate(entry);
+    if (!onConnect) return own;
+    const connect: ItemAction = { id: 'connect', label: 'Connect to…', icon: CONNECT_ICON, run: () => setChooserFor(entry.key) };
+    if (!entry.actions?.length) return [connect];
+    const at = own.findIndex(a => a.id === 'duplicate' || a.id === 'remove');
+    return at < 0 ? [...own, connect] : [...own.slice(0, at), connect, ...own.slice(at)];
+  };
+  // The other items, in reading order, to connect an item to (an arrow from it already there cannot be made again).
+  const chooserOptions = (source: string) => keys.filter(key => key !== source && placed[key])
+    .sort((a, b) => placed[a].y - placed[b].y || placed[a].x - placed[b].x)
+    .map(key => ({ key, name: nameOf(key), taken: connectors.some(c => pairKey(c) === pairKey({ fromId: source, toId: key, style: 'arrow' })) }));
+
   const height = Math.max(560, ...Object.entries(placed).map(([key, pos]) => pos.y + sizeOf(key).h + PAD * 3), ...layout.zones.map(z => z.y + z.h + PAD * 3));
   const width = Math.max(...Object.entries(placed).map(([key, pos]) => pos.x + sizeOf(key).w + PAD), ...layout.zones.map(z => z.x + z.w + PAD), 0);
+
+  // One item on the board (drawn in layers: shapes, then content, then stickers).
+  const renderItem = (entry: CanvasEntry) => {
+    const pos = placed[entry.key];
+    const sized = entry.size ? { width: pos.w ?? entry.size.w, height: pos.h ?? entry.size.h } : { width: CARD_WIDTH };
+    const selected = selection.keys.has(entry.key);
+    const count = selection.keys.size;
+    const primary = selected && selection.primary === entry.key;
+    return (
+      <div key={entry.key} data-board-key={entry.key} className={`board-item ${draggingKeys.includes(entry.key) ? 'dragging' : ''}${selected ? ' selected' : ''}${primary && count > 1 ? ' is-primary' : ''}${primary && count === 1 ? ' is-only' : ''}${connecting?.target === entry.key ? ' connect-target' : ''}${connecting?.from === entry.key ? ' connect-source' : ''}${entry.className ? ` ${entry.className}` : ''}`} style={{ left: pos.x, top: pos.y, ...sized }}
+        onPointerDown={dragItem(entry.key)} onPointerDownCapture={pressItem(entry.key)}
+        onClickCapture={(event) => { if (toggledKey.current !== entry.key) return; toggledKey.current = null; event.stopPropagation(); event.preventDefault(); }}
+        onKeyDownCapture={() => { toggledKey.current = null; }}
+        onFocusCapture={() => { if (!pressing.current && !sel.current.held) selectOnly(entry.key); }}>
+        <button className="board-item-handle" title="Drag to move; arrow keys work too"
+          aria-label={selected && count > 1 ? `Move ${entry.name}, selected with ${count - 1} other ${count === 2 ? 'item' : 'items'}. Arrow keys move them all.` : `Move ${entry.name}. Arrow keys move it.`}
+          onKeyDown={(event) => {
+            // Shift+Space adds this item to the selection or takes it away; Delete takes the selection off the board.
+            if (event.key === ' ' && event.shiftKey) { event.preventDefault(); toggleFromKeys(entry.key); return; }
+            if ((event.key === 'Delete' || event.key === 'Backspace') && onRemoveItems) {
+              event.preventDefault();
+              removeItems(selected ? Array.from(sel.current.keys) : [entry.key]);
+              return;
+            }
+            if (entry.onHandleKey?.(event)) return;
+            nudge(event, (dx, dy) => commit({ ...latest.current, items: { ...placed, ...moveBy(groupOf(entry.key), dx, dy) } }));
+          }}>
+          {GRIP}
+        </button>
+        {primary && count === 1 && toolbarActions(entry).length ? <ItemToolbar name={entry.name} actions={toolbarActions(entry)} below={pos.y < 48} /> : null}
+        {primary && count > 1 && onRemoveItems ? (
+          <GroupToolbar count={count} below={pos.y < 48} onRemove={() => removeItems(Array.from(sel.current.keys))}
+            onDuplicate={onDuplicateItems && Array.from(selection.keys).some(key => byKey.get(key)?.copyable) ? () => duplicateItems() : undefined} />
+        ) : null}
+        <ItemBody entry={entry} />
+        {entry.resize && <span className="board-item-resize" onPointerDown={resizeItem(entry)} aria-hidden="true" title="Drag to resize" />}
+        {/* Drag onto another item to connect them (Connect to… in the toolbar does the same by keyboard). */}
+        {onConnect && <span className="board-connect-handle" onPointerDown={startConnect(entry.key)} aria-hidden="true" title="Drag to another item to connect them" />}
+      </div>
+    );
+  };
 
   return (
     <div className="file-board">
@@ -609,7 +764,9 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
             const target = event.target as HTMLElement;
             // Only on the board itself or an item's grip: in a field, a note, a dialog or a menu these keys do their usual thing.
             if (event.defaultPrevented || (target !== event.currentTarget && !target.classList.contains('board-item-handle'))) return;
-            if (commandKey(event) && !event.altKey && event.key.toLowerCase() === 'a') { event.preventDefault(); selectAll(); }
+            if (selectedConnector && target === event.currentTarget && (event.key === 'Delete' || event.key === 'Backspace')) { event.preventDefault(); removeConnector(selectedConnector); }
+            else if (selectedConnector && event.key === 'Escape') { event.preventDefault(); setSelectedConnector(null); }
+            else if (commandKey(event) && !event.altKey && event.key.toLowerCase() === 'a') { event.preventDefault(); selectAll(); }
             else if (commandKey(event) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'd' && onDuplicateItems) {
               event.preventDefault();
               duplicateItems(target.closest<HTMLElement>('[data-board-key]')?.dataset.boardKey);
@@ -699,47 +856,35 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
             );
           })}
 
-          {[...entries.filter(e => e.layer === 'back'), ...entries.filter(e => !e.layer), ...entries.filter(e => e.layer === 'front')].map(entry => {
-            const pos = placed[entry.key];
-            const sized = entry.size ? { width: pos.w ?? entry.size.w, height: pos.h ?? entry.size.h } : { width: CARD_WIDTH };
-            const selected = selection.keys.has(entry.key);
-            const count = selection.keys.size;
-            const primary = selected && selection.primary === entry.key;
-            return (
-              <div key={entry.key} data-board-key={entry.key} className={`board-item ${draggingKeys.includes(entry.key) ? 'dragging' : ''}${selected ? ' selected' : ''}${primary && count > 1 ? ' is-primary' : ''}${entry.className ? ` ${entry.className}` : ''}`} style={{ left: pos.x, top: pos.y, ...sized }}
-                onPointerDown={dragItem(entry.key)} onPointerDownCapture={pressItem(entry.key)}
-                onClickCapture={(event) => { if (toggledKey.current !== entry.key) return; toggledKey.current = null; event.stopPropagation(); event.preventDefault(); }}
-                onKeyDownCapture={() => { toggledKey.current = null; }}
-                onFocusCapture={() => { if (!pressing.current && !sel.current.held) selectOnly(entry.key); }}>
-                <button className="board-item-handle" title="Drag to move; arrow keys work too"
-                  aria-label={selected && count > 1 ? `Move ${entry.name}, selected with ${count - 1} other ${count === 2 ? 'item' : 'items'}. Arrow keys move them all.` : `Move ${entry.name}. Arrow keys move it.`}
-                  onKeyDown={(event) => {
-                    // Shift+Space adds this item to the selection or takes it away; Delete takes the selection off the board.
-                    if (event.key === ' ' && event.shiftKey) { event.preventDefault(); toggleFromKeys(entry.key); return; }
-                    if ((event.key === 'Delete' || event.key === 'Backspace') && onRemoveItems) {
-                      event.preventDefault();
-                      removeItems(selected ? Array.from(sel.current.keys) : [entry.key]);
-                      return;
-                    }
-                    if (entry.onHandleKey?.(event)) return;
-                    nudge(event, (dx, dy) => commit({ ...latest.current, items: { ...placed, ...moveBy(groupOf(entry.key), dx, dy) } }));
-                  }}>
-                  {GRIP}
-                </button>
-                {primary && count === 1 && entry.actions?.length ? <ItemToolbar name={entry.name} actions={withDuplicate(entry)} below={pos.y < 48} /> : null}
-                {primary && count > 1 && onRemoveItems ? (
-                  <GroupToolbar count={count} below={pos.y < 48} onRemove={() => removeItems(Array.from(sel.current.keys))}
-                    onDuplicate={onDuplicateItems && Array.from(selection.keys).some(key => byKey.get(key)?.copyable) ? () => duplicateItems() : undefined} />
-                ) : null}
-                <ItemBody entry={entry} />
-                {entry.resize && <span className="board-item-resize" onPointerDown={resizeItem(entry)} aria-hidden="true" title="Drag to resize" />}
-              </div>
-            );
-          })}
+          {entries.filter(e => e.layer === 'back').map(renderItem)}
+          {/* Connectors: over shapes, under everything else; the layer never takes the pointer, only each line does. */}
+          {(drawn.length > 0 || preview) && <ConnectorLayer width={Math.max(width, canvasWidth())} height={height} drawn={drawn} selected={selectedConnector} focused={focusedConnector} preview={preview} onPick={selectConnector} />}
+          {[...entries.filter(e => !e.layer), ...entries.filter(e => e.layer === 'front')].map(renderItem)}
+          {chosenConnector && (
+            <ConnectorToolbar c={chosenConnector.c} label={chosenConnector.label} at={chosenConnector.anchor}
+              onStyle={(style) => onRestyle?.(chosenConnector.c.id, style)}
+              onRemove={() => { removeConnector(chosenConnector.c.id); canvasRef.current?.focus({ preventScroll: true }); }}
+              onBack={() => canvasRef.current?.querySelector<HTMLElement>(`[data-connector-key="${chosenConnector.c.id}"]`)?.focus({ preventScroll: true })} />
+          )}
+          <ConnectorKeys drawn={drawn} active={selectedConnector} onFocusChange={setFocusedConnector}
+            onSelect={(id) => { selectConnector(id); requestAnimationFrame(() => canvasRef.current?.querySelector<HTMLElement>('.board-connector-toolbar button[aria-pressed="true"], .board-connector-toolbar button')?.focus({ preventScroll: true })); }}
+            onRemove={(id) => removeConnector(id)}
+            onLeave={() => { setSelectedConnector(null); canvasRef.current?.focus({ preventScroll: true }); }} />
           {marquee && <div className="board-marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} aria-hidden="true" />}
           {!entries.length && !layout.zones.length && empty}
         </div>
       </div>
+      {chooserFor && byKey.has(chooserFor) && (
+        <ConnectChooser sourceName={nameOf(chooserFor)} options={chooserOptions(chooserFor)}
+          onClose={() => setChooserFor(null)}
+          onPick={(to) => {
+            const from = chooserFor;
+            setChooserFor(null);
+            made(onConnect?.(from, to) ?? null, from, to);
+            // Back on the item (the dialog first puts focus back where it was opened from).
+            setTimeout(() => canvasRef.current?.querySelector<HTMLElement>(`[data-board-key="${from}"] .board-item-handle`)?.focus({ preventScroll: true }), 60);
+          }} />
+      )}
     </div>
   );
 };
