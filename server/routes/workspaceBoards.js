@@ -1,6 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const boards = require('../services/workspaceBoards');
+const { tabConnections } = require('../services/boardConnections');
 const router = express.Router();
 
 // Boards (/boards): each person's own tabs. Every route works only on the signed-in person's tabs.
@@ -76,6 +77,13 @@ router.post('/tabs/:tabId/searches', auth, async (req, res) => {
 router.get('/tabs/:tabId', auth, async (req, res) => {
   try {
     res.json(await boards.getTab(req.user._id, req.params.tabId));
+  } catch (error) { fail(res, error); }
+});
+
+// The file relationships for a tab's Connections view (?scope=board, the default, or all). Read-only.
+router.get('/tabs/:tabId/connections', auth, async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store').json(await tabConnections(req.user._id, req.params.tabId, req.query));
   } catch (error) { fail(res, error); }
 });
 

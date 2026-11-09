@@ -1,8 +1,12 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 const FileRelationship = require('../models/FileRelationship');
 const File = require('../models/File');
 const router = express.Router();
+
+// The files a person can see in their relationships: their own, not in Trash.
+const openableBy = (userId) => ({ owner: userId, isTrashed: { $ne: true } });
 
 /**
  * Create a relationship between two files
@@ -75,21 +79,24 @@ router.get('/file/:fileId', auth, async (req, res) => {
     const { fileId } = req.params;
 
     // Verify file exists and belongs to user
-    const file = await File.findOne({ _id: fileId, owner: req.user._id });
+    const file = mongoose.isValidObjectId(fileId) ? await File.findOne({ _id: fileId, owner: req.user._id }) : null;
     if (!file) {
       return res.status(404).json({ message: 'File not found' });
     }
 
-    // Get all relationships where this file is source or target
-    const relationships = await FileRelationship.find({
+    // Get all relationships where this file is source or target. An end that has been deleted, trashed or is no
+    // longer theirs comes back null; those relationships are kept but not listed, so nothing about that file shows.
+    const openable = openableBy(req.user._id);
+    const found = await FileRelationship.find({
       $or: [
         { sourceFile: fileId, owner: req.user._id },
         { targetFile: fileId, owner: req.user._id }
       ]
     })
-      .populate('sourceFile', 'originalName mimeType size createdAt')
-      .populate('targetFile', 'originalName mimeType size createdAt')
+      .populate({ path: 'sourceFile', select: 'originalName mimeType size createdAt', match: openable })
+      .populate({ path: 'targetFile', select: 'originalName mimeType size createdAt', match: openable })
       .sort({ createdAt: -1 });
+    const relationships = found.filter(r => r.sourceFile && r.targetFile);
 
     // Separate into outgoing and incoming relationships
     const outgoing = relationships.filter(r => r.sourceFile._id.toString() === fileId);
@@ -102,7 +109,8 @@ router.get('/file/:fileId', auth, async (req, res) => {
       },
       outgoing,
       incoming,
-      all: relationships
+      all: relationships,
+      unavailableCount: found.length - relationships.length
     });
   } catch (error) {
     console.error('Error fetching relationships:', error);
@@ -116,9 +124,12 @@ router.get('/file/:fileId', auth, async (req, res) => {
 router.get('/graph', auth, async (req, res) => {
   try {
     console.log('[Relationships] Fetching graph for user:', req.user._id);
+    // An end that has been deleted, trashed or is no longer theirs comes back null, and the filter below leaves that
+    // relationship out whole: its label and description can name the file.
+    const openable = openableBy(req.user._id);
     const relationships = await FileRelationship.find({ owner: req.user._id })
-      .populate('sourceFile', 'originalName mimeType size')
-      .populate('targetFile', 'originalName mimeType size')
+      .populate({ path: 'sourceFile', select: 'originalName mimeType size', match: openable })
+      .populate({ path: 'targetFile', select: 'originalName mimeType size', match: openable })
       .sort({ createdAt: -1 });
 
     console.log('[Relationships] Found', relationships.length, 'relationships');
@@ -195,6 +206,12 @@ router.put('/:relationshipId', auth, async (req, res) => {
     });
 
     if (!relationship) {
+      return res.status(404).json({ message: 'Relationship not found' });
+    }
+
+    // Answering would name both files, so one with an end they cannot open can only be removed, not edited.
+    const ends = [relationship.sourceFile, relationship.targetFile];
+    if (await File.countDocuments({ _id: { $in: ends }, ...openableBy(req.user._id) }) !== 2) {
       return res.status(404).json({ message: 'Relationship not found' });
     }
 

@@ -773,5 +773,5 @@ async function conflict(userId, tabId) {
 
 module.exports = {
   LIMITS, COLORS, NOTE_COLORS, SIZES: layout.SIZES, LAYOUT_VERSION, canvasOf, BoardInputError, cleanName, cleanIcon, cleanColor, listTabs, createTab, updateTab, deleteTab,
-  getTab, saveBlocks, resolveBlocks, duplicateTab, reorderTabs, setDefaultTab, placements, addRef, runTabSearches, addSearch, setAppearance, APPEARANCE, DEFAULT_TAB_NAME,
+  TAB_ID, listFileIds, resolveRefs, getTab, saveBlocks, resolveBlocks, duplicateTab, reorderTabs, setDefaultTab, placements, addRef, runTabSearches, addSearch, setAppearance, APPEARANCE, DEFAULT_TAB_NAME,
 };
