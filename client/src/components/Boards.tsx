@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { workspaceBoardsAPI, BoardAppearance, BoardShapeKind, BoardTab, BoardLimits } from '../services/api';
 import ItemActions from './ItemActions';
@@ -10,6 +10,10 @@ import { SavedSearchDialog } from './BoardSavedSearchBlock';
 import BoardAppearanceMenu from './BoardAppearanceMenu';
 import { useSavedSearchRuns } from '../hooks/useSavedSearchRuns';
 import PersonalBoard from './PersonalBoard';
+import type { BoardCanvasMemory } from './BoardCanvas';
+import BoardViewSwitch, { BoardView } from './BoardViewSwitch';
+import BoardConnectionsView from './BoardConnectionsView';
+import { ITEM_ICONS } from './BoardItemIcons';
 import BoardList from './BoardList';
 import BoardAddFileDialog from './BoardAddFileDialog';
 import FolderPickerModal from './FolderPickerModal';
@@ -35,6 +39,21 @@ import './BoardsPlayground.css';
  */
 
 const errorMessage = (error: any, fallback: string) => error?.response?.data?.message || fallback;
+
+/** Keeps the page's own scroll across a view change: set directly, so nothing is scrolled into view. */
+const PageScrollMemory: React.FC<{ top?: number; onLeave: (top: number) => void }> = ({ top, onLeave }) => {
+  const ref = useRef<HTMLSpanElement>(null);
+  const leaving = useRef(onLeave);
+  leaving.current = onLeave;
+  useLayoutEffect(() => {
+    const scroller = ref.current?.closest('.dashboard-content');
+    if (scroller && top !== undefined) scroller.scrollTop = top;
+    return () => { if (scroller) leaving.current(scroller.scrollTop); };
+    // Only when the Canvas appears and goes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return <span ref={ref} hidden />;
+};
 
 const usePhone = () => {
   const query = '(max-width: 600px)';
@@ -64,20 +83,7 @@ const ADD_HELP: Record<AddKind, string> = {
   note: 'Quick thought or reminder', text: 'Notes, headings and checklists', deadline: 'A date to keep in sight',
   label: 'A heading for part of the board', link: 'A web page to come back to',
 };
-const icon = (paths: React.ReactNode) => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths}</svg>;
-const ADD_ICONS: Record<AddKind, React.ReactNode> = {
-  sticker: icon(<><circle cx="12" cy="12" r="8.5" /><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0" /><path d="M9.2 9.5h.01M14.8 9.5h.01" /></>),
-  shape: icon(<><rect x="3.5" y="3.5" width="10" height="10" rx="1.5" /><circle cx="15.5" cy="15.5" r="5" /></>),
-  file: icon(<><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" /><path d="M14 3v5h5" /></>),
-  folder: icon(<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />),
-  filelist: icon(<><path d="M9 6h11M9 12h11M9 18h11" /><rect x="3.5" y="4.5" width="3" height="3" rx="0.6" /><rect x="3.5" y="10.5" width="3" height="3" rx="0.6" /><rect x="3.5" y="16.5" width="3" height="3" rx="0.6" /></>),
-  search: icon(<><circle cx="11" cy="11" r="6" /><path d="M20 20l-4.2-4.2" /><path d="M8.5 11h5" /></>),
-  note: icon(<><path d="M5 4h14v11l-5 5H5z" /><path d="M14 20v-5h5" /></>),
-  text: icon(<><path d="M5 6h14M5 11h14M5 16h9" /></>),
-  deadline: icon(<><rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M8 3v4M16 3v4M3.5 10h17" /><path d="M12 13v3l2 1" /></>),
-  label: icon(<><path d="M4 12V5a1 1 0 0 1 1-1h7l8 8-8 8-8-8z" /><circle cx="8.5" cy="8.5" r="1.3" /></>),
-  link: icon(<><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1" /><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" /></>),
-};
+const ADD_ICONS: Record<AddKind, React.ReactNode> = ITEM_ICONS;
 
 /**
  * "+ Add": a grouped menu, usable with the keyboard (arrows move between items, Enter, Escape). Sticker and Shape open a
@@ -179,6 +185,19 @@ const Boards: React.FC = () => {
   // The one text area being edited (only it has a live editor).
   const [editingId, setEditingId] = useState('');
   const location = useLocation();
+  const navigate = useNavigate();
+  // Canvas or Connections comes from the address only, so Back and Forward work and nothing can disagree with it.
+  const view: BoardView = new URLSearchParams(location.search).get('view') === 'connections' ? 'connections' : 'canvas';
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const showView = (next: BoardView) => {
+    if (next === view) return;
+    const params = new URLSearchParams(location.search);
+    if (next === 'connections') params.set('view', 'connections'); else params.delete('view');
+    navigate({ search: params.toString() });
+  };
+  // What the Canvas comes back to after Connections (page state only). Another tab, or a change of width, starts fresh.
+  const canvasKept = useRef<{ tabId: string; canvas?: BoardCanvasMemory; pageTop?: number } | null>(null);
   // "Open board" after Add to board… from a file menu asks for that tab.
   const requestedTab = (location.state as { openTabId?: string } | null)?.openTabId;
   // A notice to show once a newly opened tab is on screen (switching tabs clears notices).
@@ -392,7 +411,33 @@ const Boards: React.FC = () => {
     setNotice(noticeAfterSwitch.current);
     noticeAfterSwitch.current = null;
     setEditingId('');
+    canvasKept.current = null;
   }, [activeId]);
+
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+  const keepCanvas = useCallback((part: { canvas?: BoardCanvasMemory; pageTop?: number }) => {
+    if (viewRef.current !== 'connections') return;
+    canvasKept.current = { tabId: activeIdRef.current, ...(canvasKept.current || {}), ...part };
+  }, []);
+  const keepCanvasView = useCallback((canvas: BoardCanvasMemory) => keepCanvas({ canvas }), [keepCanvas]);
+  const keepPageTop = useCallback((pageTop: number) => keepCanvas({ pageTop }), [keepCanvas]);
+  // Only what still exists and can still be opened comes back selected.
+  const keptMemory = (): BoardCanvasMemory | null => {
+    const kept = canvasKept.current;
+    if (!kept || kept.tabId !== activeId || !kept.canvas) return null;
+    const usable = new Set(board.blocks.filter(b => (b.type !== 'file' && b.type !== 'folder') || b.ref.available).map(b => b.id));
+    const keys = kept.canvas.keys.filter(key => usable.has(key));
+    return { ...kept.canvas, keys, primary: kept.canvas.primary && usable.has(kept.canvas.primary) ? kept.canvas.primary : keys[keys.length - 1] ?? null, held: kept.canvas.held && keys.length > 0 };
+  };
+  const firstView = useRef(true);
+  useEffect(() => {
+    if (firstView.current) { firstView.current = false; return; }
+    setAnnouncement(view === 'connections' ? 'Connections view' : 'Canvas view');
+    if (view === 'connections') setEditingId(''); else canvasKept.current = null;
+    // Whatever had focus on the view just left is gone: the switch takes it, where the person already is.
+    if (document.activeElement === document.body) document.querySelector<HTMLElement>('.board-view-switch button[aria-pressed="true"]')?.focus({ preventScroll: true });
+  }, [view]);
   // A new note or text area opens for typing straight away.
   const focusNew = (id: string, type: 'note' | 'text') => {
     if (type === 'text') { setEditingId(id); return; }
@@ -544,11 +589,18 @@ const Boards: React.FC = () => {
         </div>
       )}
 
+      {active && <BoardViewSwitch view={view} onChange={showView} />}
+
       {active && (
         <div className={`file-browser personal-board tone-${appearance.tone}`} role="tabpanel" id={`board-panel-${active.id}`} aria-labelledby={`board-tab-${active.id}`}>
+          {view === 'connections' ? (
+            <BoardConnectionsView key={active.id} tabId={active.id} blocks={board.blocks} connectors={board.connectors} saveState={board.saveState} loading={board.loading} error={board.error || ''}
+              phone={phone} onShowCanvas={() => showView('canvas')} onAnnounce={setAnnouncement} />
+          ) : (
           <div className="file-canvas">
             {board.loading && <p className="boards-status">Loading this board…</p>}
             {board.error && <div className="boards-empty-canvas" role="alert"><p className="boards-empty-title">{board.error}</p></div>}
+            {!board.loading && !board.error && <PageScrollMemory top={canvasKept.current?.tabId === activeId ? canvasKept.current?.pageTop : undefined} onLeave={keepPageTop} />}
             {!board.loading && !board.error && (phone ? (
               <>
                 <div className="file-board-toolbar boards-phone-toolbar">
@@ -561,9 +613,10 @@ const Boards: React.FC = () => {
             ) : (
               <PersonalBoard tabId={active.id} blocks={board.blocks} zones={board.zones} saveState={board.saveState} editingId={editingId}
                 toolbarStart={<AddMenu disabled={room <= 0} onAdd={onAdd} />} toolbarEnd={look} canvasClassName={`pattern-${appearance.pattern}`}
-                onReset={() => setResetOpen(true)} empty={emptyBoard} onAnnounce={setAnnouncement} {...actions} />
+                onReset={() => setResetOpen(true)} empty={emptyBoard} onAnnounce={setAnnouncement} memory={keptMemory()} onLeave={keepCanvasView} {...actions} />
             ))}
           </div>
+          )}
         </div>
       )}
 

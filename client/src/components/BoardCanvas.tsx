@@ -46,6 +46,9 @@ export interface CanvasEntry {
 export interface ItemAction { id: string; label: string; icon: React.ReactNode; run: () => void }
 export interface CanvasLayout { items: Record<string, Spot>; zones: BoardZone[] }
 
+/** Page state only, never saved: which items were selected and how far the canvas was scrolled. */
+export interface BoardCanvasMemory { keys: string[]; primary: string | null; held: boolean; scrollLeft: number; scrollTop: number }
+
 interface BoardCanvasProps {
   layout: CanvasLayout;
   entries: CanvasEntry[];
@@ -67,6 +70,9 @@ interface BoardCanvasProps {
   canvasClassName?: string;
   // Zones can have a style and an emoji (personal Boards).
   zoneLooks?: boolean;
+  // What to come back to after another view of this board, and told what to remember when leaving for one.
+  memory?: BoardCanvasMemory | null;
+  onLeave?: (memory: BoardCanvasMemory) => void;
   // Take these items off the board (Delete on a selected grip, or Remove for several selected); several give one Undo.
   onRemoveItems?: (keys: string[]) => void;
   // Said by the page's live region ("3 selected", "Selection cleared").
@@ -162,7 +168,7 @@ const GroupToolbar: React.FC<{ count: number; below: boolean; onRemove: () => vo
   </div>
 );
 
-const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCommit, boardKey, status = '', hint = DEFAULT_HINT, toolbarStart, onReset, onAutoPlace, empty, toolsBelowNearTop = false, toolbarEnd, canvasClassName = '', zoneLooks = false, onRemoveItems, onAnnounce, onDuplicateItems, connectors = [], onConnect, onDisconnect, onRestyle }) => {
+const BoardCanvas: React.FC<BoardCanvasProps> = ({ memory, onLeave, layout: given, entries, onCommit, boardKey, status = '', hint = DEFAULT_HINT, toolbarStart, onReset, onAutoPlace, empty, toolsBelowNearTop = false, toolbarEnd, canvasClassName = '', zoneLooks = false, onRemoveItems, onAnnounce, onDuplicateItems, connectors = [], onConnect, onDisconnect, onRestyle }) => {
   // What is drawn: the parent's layout, or the live one while something is being dragged (only then is
   // there a copy here, so nothing typed can be overwritten by an older layout).
   const [live, setLive] = useState<CanvasLayout | null>(null);
@@ -171,12 +177,13 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
   const [dropZone, setDropZone] = useState<string | null>(null);
   const [draggingKeys, setDraggingKeys] = useState<string[]>([]);
   // The selected items (outlined; one alone shows its quick actions, several show how many and Remove). Page state only.
-  const [selection, setSelectionState] = useState<Selection>(NO_SELECTION);
+  const [selection, setSelectionState] = useState<Selection>(() => (memory ? { keys: new Set(memory.keys), primary: memory.primary, held: memory.held } : NO_SELECTION));
   const sel = useRef(selection);
   // The box being dragged out on empty board to select what it touches.
   const [marquee, setMarquee] = useState<Rect | null>(null);
   const [emojiFor, setEmojiFor] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const sizes = useRef<Record<string, { w: number; h: number }>>({});
   const latest = useRef(layout);
   latest.current = layout;
@@ -197,7 +204,8 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
   // Card heights are measured once drawn: draw connectors again when they change.
   const [, setMeasured] = useState(0);
 
-  useEffect(() => { setSelectedZone(null); sel.current = NO_SELECTION; setSelectionState(NO_SELECTION); setEmojiFor(null); setLive(null); setSelectedConnector(null); setConnecting(null); setChooserFor(null); }, [boardKey]);
+  const shownBoard = useRef(boardKey);
+  useEffect(() => { if (shownBoard.current === boardKey) return; shownBoard.current = boardKey; setSelectedZone(null); sel.current = NO_SELECTION; setSelectionState(NO_SELECTION); setEmojiFor(null); setLive(null); setSelectedConnector(null); setConnecting(null); setChooserFor(null); }, [boardKey]);
   const setLayout = (next: CanvasLayout | ((current: CanvasLayout) => CanvasLayout)) =>
     setLive(current => (typeof next === 'function' ? next(current || latest.current) : next));
 
@@ -224,6 +232,20 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
     // Reported once for each set of newly placed items.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoKey]);
+
+  // Back from another view: the canvas scrolls to where it was (set directly, so the page does not move).
+  const leaving = useRef(onLeave);
+  leaving.current = onLeave;
+  useLayoutEffect(() => {
+    if (memory && scrollRef.current) { scrollRef.current.scrollLeft = memory.scrollLeft; scrollRef.current.scrollTop = memory.scrollTop; }
+    return () => {
+      const s = sel.current;
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      leaving.current?.({ keys: Array.from(s.keys), primary: s.primary, held: s.held, scrollLeft: scrollRef.current?.scrollLeft || 0, scrollTop: scrollRef.current?.scrollTop || 0 });
+    };
+    // Only when the canvas appears and goes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Remember card sizes (zones and tidying use them). Draws again only when a size actually changed, so it cannot loop.
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -756,7 +778,7 @@ const BoardCanvas: React.FC<BoardCanvasProps> = ({ layout: given, entries, onCom
       </div>
       {status && <p className="file-board-status" role="status">{status}</p>}
 
-      <div className="file-board-scroll" onPointerDown={pressCanvas}>
+      <div ref={scrollRef} className="file-board-scroll" onPointerDown={pressCanvas}>
         {/* Focusable by clicking empty board (not a tab stop): then Cmd/Ctrl+A selects every item and Escape clears. */}
         <div ref={canvasRef} className={`file-list file-board-canvas${canvasClassName ? ` ${canvasClassName}` : ''}`} style={{ height, minWidth: width }}
           tabIndex={-1} role="group" aria-label="Board"

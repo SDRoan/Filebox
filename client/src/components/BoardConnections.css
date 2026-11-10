@@ -1,0 +1,140 @@
+/*
+ * Boards > Connections. Colours come from the tab's own tone (the --pb-* colours in BoardsPlayground.css), so the view
+ * matches its Canvas. In the app's dark mode the page is inverted as a whole; this view turns that back like the
+ * Board's own surfaces do, so the dark colours show as they are.
+ */
+
+.board-view-switch { display: inline-flex; gap: 2px; margin: 10px 0 12px; padding: 3px; border: 1px solid var(--border-light, #e2e7db); border-radius: calc(10px * var(--fb-radius-scale, 1)); background: var(--fb-surface, #ffffff); }
+.board-view-switch button { padding: 6px 16px; border: 0; border-radius: calc(7px * var(--fb-radius-scale, 1)); background: transparent; color: var(--text-secondary, #5b6654); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.board-view-switch button:hover { color: var(--text-primary, #1f2a1c); }
+.board-view-switch button[aria-pressed="true"] { background: var(--fb-g-3f6543, #3f6543); color: #ffffff; }
+
+.board-connections {
+  --rel-related: #5f6b7a; --rel-depends_on: #b3402f; --rel-references: #2470b3; --rel-part_of: #7d4bb0;
+  --rel-version_of: #a86a00; --rel-duplicate_of: #a84f1d; --rel-custom: #0f8574;
+  display: flex; flex-direction: column; gap: 10px; color: var(--pb-ink);
+}
+:is(html.fb-dark .personal-board, .personal-board.tone-dark) .board-connections {
+  --rel-related: #aab4bf; --rel-depends_on: #f08b7a; --rel-references: #74b3ee; --rel-part_of: #c39cec;
+  --rel-version_of: #e8b45a; --rel-duplicate_of: #ee9f6b; --rel-custom: #5fd0bd;
+}
+html.fb-dark .personal-board .board-connections { filter: invert(1) hue-rotate(180deg); }
+
+/* ---- Notices */
+.board-connections-notices { display: flex; flex-direction: column; gap: 6px; }
+.board-connections-notices:empty { display: none; }
+.board-connections-notes { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.board-connections-notes .board-connections-note { padding: 0; border: 0; background: none; font-size: 12px; }
+.board-connections-note { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; padding: 7px 12px; border: 1px solid var(--pb-edge); border-radius: calc(8px * var(--fb-radius-scale, 1)); background: var(--pb-surface); color: var(--pb-ink-soft); font-size: 13px; }
+.board-connections-note.is-error { border-color: #d27a6a; color: var(--pb-ink); }
+.board-connections-note button { padding: 3px 10px; border: 1px solid var(--pb-edge); border-radius: calc(6px * var(--fb-radius-scale, 1)); background: transparent; color: var(--pb-ink); font: inherit; font-size: 12px; cursor: pointer; }
+.board-connections-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--pb-sel); animation: board-connections-pulse 1.1s ease-in-out infinite alternate; }
+@keyframes board-connections-pulse { from { opacity: 0.3; } to { opacity: 1; } }
+
+/* ---- Toolbar */
+.board-graph { display: flex; flex-direction: column; gap: 10px; }
+.board-graph-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.board-graph-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; flex: 1 1 320px; }
+.board-connections-search { position: relative; display: flex; align-items: center; flex: 0 1 240px; min-width: 160px; }
+.board-connections-search input { width: 100%; box-sizing: border-box; padding: 7px 78px 7px 11px; border: 1px solid var(--pb-edge); border-radius: calc(8px * var(--fb-radius-scale, 1)); background: var(--pb-surface); color: var(--pb-ink); font: inherit; font-size: 13px; }
+.board-connections-search input::placeholder { color: var(--pb-ink-soft); }
+.board-connections-search-count { position: absolute; right: 10px; color: var(--pb-ink-soft); font-size: 11px; pointer-events: none; }
+.board-connections-filters { display: flex; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.board-connections-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border: 1px solid var(--pb-edge); border-radius: calc(999px * var(--fb-radius-scale, 1)); background: var(--pb-surface); color: var(--pb-ink-soft); font: inherit; font-size: 12px; cursor: pointer; text-decoration: line-through; }
+.board-connections-chip[aria-pressed="true"] { border-color: var(--pb-sel); color: var(--pb-ink); text-decoration: none; }
+.board-connections-swatch { width: 16px; border-top: 2px solid var(--conn); }
+.board-connections-chip.is-file .board-connections-swatch { border-top-style: dashed; border-top-color: var(--pb-ink-soft); }
+
+.board-graph-zoom { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--pb-edge); border-radius: calc(8px * var(--fb-radius-scale, 1)); background: var(--pb-surface); }
+.board-graph-zoom button { min-width: 30px; height: 28px; padding: 0 8px; border: 0; border-radius: calc(6px * var(--fb-radius-scale, 1)); background: transparent; color: var(--pb-ink); font: inherit; font-size: 13px; cursor: pointer; }
+.board-graph-zoom button:hover:not(:disabled) { background: var(--pb-line-soft); }
+.board-graph-zoom button:disabled { color: var(--pb-ink-soft); opacity: 0.5; cursor: default; }
+.board-graph-zoom-level { min-width: 44px; text-align: center; color: var(--pb-ink-soft); font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* ---- The frame and the drawing */
+.board-graph-view { display: flex; height: 420px; overflow: auto; overscroll-behavior: contain; border: 1px solid var(--pb-edge); border-radius: calc(12px * var(--fb-radius-scale, 1)); background: var(--pb-surface); background-image: radial-gradient(var(--pb-line-soft) 1px, transparent 1px); background-size: 22px 22px; }
+.board-graph-spacer { flex: none; margin: auto; }
+.board-graph-world { position: relative; transform-origin: 0 0; }
+.board-graph-edges { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+
+.board-graph-edge { color: var(--conn); }
+.board-graph-edge.is-file { color: var(--rel-related); }
+.board-graph-edge.type-depends_on { color: var(--rel-depends_on); }
+.board-graph-edge.type-references { color: var(--rel-references); }
+.board-graph-edge.type-part_of { color: var(--rel-part_of); }
+.board-graph-edge.type-version_of { color: var(--rel-version_of); }
+.board-graph-edge.type-duplicate_of { color: var(--rel-duplicate_of); }
+.board-graph-edge.type-custom { color: var(--rel-custom); }
+.board-graph-edge-line { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.board-graph-edge.is-file .board-graph-edge-line { stroke-dasharray: 6 5; stroke-linecap: butt; }
+.board-graph-edge-head { fill: currentColor; }
+.board-graph-edge-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
+.board-graph-edge-halo { fill: none; stroke: currentColor; stroke-width: 8; stroke-opacity: 0.2; stroke-linecap: round; }
+.board-graph-edge.is-dim { opacity: 0.18; }
+.board-graph-edge.is-related .board-graph-edge-line, .board-graph-edge.is-active .board-graph-edge-line { stroke-width: 2.6; }
+.board-graph-edge-label { position: absolute; transform: translate(-50%, -50%); padding: 2px 8px; border: 1px solid var(--pb-edge); border-radius: calc(999px * var(--fb-radius-scale, 1)); background: var(--pb-surface); color: var(--pb-ink); font-size: 11px; white-space: nowrap; box-shadow: var(--pb-shadow); pointer-events: none; }
+
+.board-graph-node { position: absolute; display: flex; align-items: center; gap: 9px; box-sizing: border-box; padding: 0 11px; border: 1.5px solid var(--pb-edge); border-radius: calc(11px * var(--fb-radius-scale, 1)); background: var(--pb-surface); color: var(--pb-ink); font: inherit; text-align: left; cursor: pointer; box-shadow: var(--pb-shadow); transition: box-shadow 0.15s ease, opacity 0.15s ease; }
+.board-graph-node:hover { box-shadow: var(--pb-shadow-hover); border-color: var(--pb-sel); }
+.board-graph-node:focus-visible { outline: 2px solid var(--pb-sel); outline-offset: 2px; }
+.board-graph-node.is-list-file { border-left: 4px solid var(--pb-sel); }
+.board-graph-node.is-off-board { border-style: dashed; border-color: var(--pb-ink-soft); box-shadow: none; }
+.board-graph-node.is-unavailable { background: var(--pb-line-soft); color: var(--pb-ink-soft); box-shadow: none; }
+.board-graph-node.is-selected { border-color: var(--pb-sel); box-shadow: 0 0 0 2px var(--pb-sel); }
+.board-graph-node.is-match { border-color: var(--pb-sel); border-width: 2px; }
+.board-graph-node.is-current-match { box-shadow: 0 0 0 3px color-mix(in srgb, var(--pb-sel) 45%, transparent); }
+.board-graph-node.is-dim { opacity: 0.32; }
+.board-graph-node-icon { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: calc(8px * var(--fb-radius-scale, 1)); background: var(--pb-line-soft); color: var(--pb-ink-soft); }
+.board-graph-node-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.board-graph-node-name { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.board-graph-node-where { overflow: hidden; color: var(--pb-ink-soft); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- Legend and empty states */
+.board-connections-legend { display: flex; gap: 6px 18px; flex-wrap: wrap; margin: 0; padding: 0; list-style: none; color: var(--pb-ink-soft); font-size: 12px; }
+.board-connections-legend li { display: inline-flex; align-items: center; gap: 7px; }
+.board-connections-legend line { stroke: var(--conn); stroke-width: 2; }
+.board-connections-legend line.is-file { stroke: var(--pb-ink-soft); stroke-dasharray: 6 5; }
+.board-connections-legend path.is-head { fill: var(--conn); }
+.board-connections-legend-card { width: 22px; height: 14px; box-sizing: border-box; border: 1.5px solid var(--pb-ink-soft); border-radius: 4px; background: var(--pb-surface); }
+.board-connections-legend-card.is-list-file { border-left: 4px solid var(--pb-sel); }
+.board-connections-legend-card.is-off-board { border-style: dashed; }
+.board-connections-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; margin: 0; padding: 26px 20px; border: 1px dashed var(--pb-edge); border-radius: calc(12px * var(--fb-radius-scale, 1)); background: var(--pb-surface); color: var(--pb-ink-soft); font-size: 13px; text-align: center; }
+.board-connections-empty p { margin: 0; }
+.board-connections-empty-title { color: var(--pb-ink); font-size: 15px; font-weight: 600; }
+
+/* ---- Phone */
+.board-graph-toolbar.is-phone .board-connections-search { flex: 1 1 100%; }
+.board-connections-phone, .board-connections-phone ul { margin: 0; padding: 0; list-style: none; }
+.board-connections-phone { display: flex; flex-direction: column; gap: 10px; }
+.board-connections-phone-group { padding: 12px; border: 1px solid var(--pb-edge); border-radius: calc(12px * var(--fb-radius-scale, 1)); background: var(--pb-surface); }
+.board-connections-phone-group.is-off-board { border-style: dashed; border-color: var(--pb-ink-soft); }
+.board-connections-phone-group.is-list-file { border-left: 4px solid var(--pb-sel); }
+.board-connections-phone-group h3 { display: flex; align-items: center; gap: 9px; margin: 0 0 8px; font-weight: 400; }
+.board-connections-phone-group > ul { display: flex; flex-direction: column; gap: 8px; padding-left: 37px; }
+.board-connections-phone-group > ul > li { display: flex; gap: 8px; align-items: flex-start; }
+.board-connections-phone-arrow { flex: none; width: 16px; color: var(--pb-ink-soft); text-align: center; }
+.board-connections-phone-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.board-connections-phone-other { overflow-wrap: anywhere; font-size: 14px; }
+.board-connections-phone-kind { color: var(--pb-ink-soft); font-size: 12px; }
+
+/* ---- Short screens: search and filters share one row, and the filters scroll sideways inside it. Connections only. */
+@media (max-height: 759.98px) and (min-width: 601px) {
+  .boards:has(.board-connections) { padding-top: 10px; padding-bottom: 12px; }
+  .boards:has(.board-connections) .board-view-switch { margin: 6px 0; }
+  .board-connections, .board-graph { gap: 6px; }
+  .board-graph-tools { flex: 1 1 0; flex-wrap: nowrap; }
+  .board-connections-search { flex: 0 0 190px; min-width: 0; }
+  .board-connections-filters { flex: 1 1 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; padding: 2px; }
+  .board-connections-chip { flex: none; }
+  .board-connections-chip:focus-visible { outline: 2px solid var(--pb-sel); outline-offset: -2px; }
+  .board-connections-legend { font-size: 11px; }
+}
+/* Too narrow for one row: the filters take their own, still a single line. */
+@media (max-height: 759.98px) and (min-width: 601px) and (max-width: 1180px) {
+  .board-graph-tools { flex-wrap: wrap; }
+  .board-connections-filters { flex: 1 1 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-graph-node { transition: none; }
+  .board-connections-dot { animation: none; }
+}

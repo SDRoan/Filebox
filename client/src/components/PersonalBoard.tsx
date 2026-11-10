@@ -1,6 +1,6 @@
 import React, { useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import BoardCanvas, { CanvasEntry, CanvasLayout, ItemAction } from './BoardCanvas';
+import BoardCanvas, { BoardCanvasMemory, CanvasEntry, CanvasLayout, ItemAction } from './BoardCanvas';
 import FileItem from './FileItem';
 import FolderItem from './FolderItem';
 import { StickyNoteBlock, RichTextBlock } from './BoardNoteBlocks';
@@ -201,6 +201,9 @@ interface PersonalBoardProps extends BoardActions {
   toolbarEnd?: React.ReactNode;
   // The page's live region (how many items are selected).
   onAnnounce?: (text: string) => void;
+  // What the canvas comes back to after the Connections view.
+  memory?: BoardCanvasMemory | null;
+  onLeave?: (memory: BoardCanvasMemory) => void;
 }
 
 const ICON = {
@@ -212,7 +215,7 @@ const EDIT_NAMES: Record<string, string> = { note: 'Edit sticky note', text: 'Ed
 
 const sameSpot = (a: Spot | undefined, b: Spot) => Boolean(a) && a!.x === b.x && a!.y === b.y && a!.w === b.w && a!.h === b.h;
 
-const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, saveState, editingId, toolbarStart, onReset, empty, canvasClassName, toolbarEnd, onAnnounce, ...actions }) => {
+const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, saveState, editingId, toolbarStart, onReset, empty, canvasClassName, toolbarEnd, onAnnounce, memory, onLeave, ...actions }) => {
   const { onArrange, onEdit, onFlush, onRemove, onEditingChange } = actions;
   const refCard = useRefCard(actions);
   const editingRef = useRef(editingId);
@@ -361,7 +364,7 @@ const PersonalBoard: React.FC<PersonalBoardProps> = ({ tabId, blocks, zones, sav
   }).map((entry, i) => ({ ...entry, shortName: shortNames.get(entry.key), outline: outlineOf(blocks[i]) }));
 
   return (
-    <BoardCanvas boardKey={tabId} layout={layout} entries={entries} onCommit={onCommit} toolbarStart={toolbarStart} onReset={onReset} empty={empty} toolsBelowNearTop
+    <BoardCanvas memory={memory} onLeave={onLeave} boardKey={tabId} layout={layout} entries={entries} onCommit={onCommit} toolbarStart={toolbarStart} onReset={onReset} empty={empty} toolsBelowNearTop
       toolbarEnd={toolbarEnd} canvasClassName={canvasClassName} zoneLooks onAnnounce={onAnnounce} onDuplicateItems={actions.onDuplicate}
       connectors={actions.connectors} onConnect={actions.onConnect} onDisconnect={actions.onDisconnect} onRestyle={actions.onRestyle}
       onRemoveItems={(ids) => {
